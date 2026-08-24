@@ -140,10 +140,10 @@ modified. See [Flashing and recovery](docs/FLASHING.md) before writing anything.
 ## Development status
 
 The current source version is `0.2.4-dev`. It has been built, passed offline
-policy/safety/image/localization checks, and was written to the development unit.
-Absolute NTC calibration, PI coefficients, and the additional interface-side
-80 °C IGBT / 120 °C lower-sensor limits still require repeatable supervised
-validation before unattended use.
+policy/safety/image/localization checks, was written to the development unit,
+and its UI, power mode, temperature-control behavior, timers, warnings, and
+normal cooking flow were accepted by the owner after supervised real-use tests.
+No separate NTC or PI calibration step is currently planned.
 
 This is an independent community project, not an official Xiaomi or Chunmi
 product. Use it at your own risk. Licensed under the [MIT License](LICENSE).

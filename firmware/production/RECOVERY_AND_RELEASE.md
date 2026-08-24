@@ -41,8 +41,8 @@ SHA-256 `045d50e56bb3c537b95a93df1bf9f2aa2b2762464b3c1d774a0d7a6e066a1bd4`.
 7. Fault screen/alarm test without artificial overheating.
 8. Only then short TEMPERATURE tests, starting at low target; HOLD must never
    exceed 35 and `HOLD SATURATED` must not raise it.
-9. После калибровки NTC отдельно проверить interface guards 80/120 °C без
-   намеренного доведения плиты до реального перегрева.
+9. Во время обычных supervised-тестов проверять правдоподобность NTC/IGBT
+   readings; не доводить плиту намеренно до interface guards 80/120 °C.
 10. Проверить, что web-страница позволяет редактировать Presets, но не содержит
     и не принимает Start/Stop/Pause/setpoint/timer/delayed Start; reset/power
     loss должен забывать schedule и не восстанавливать нагрев.

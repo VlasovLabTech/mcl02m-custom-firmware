@@ -311,7 +311,7 @@ PAUSED, NO_PAN, COMPLETE, FAULT
 
 ### TEMPERATURE
 
-- Provisional setpoint range: 40–175 °C, 1 °C steps.
+- Accepted setpoint range: 40–175 °C, 1 °C steps.
 - PREHEAT: gear 99 for error ≥30 °C, 77 for error ≥18 °C, otherwise 56.
 - APPROACH: below the first topology boundary; current formula `8 + 2×error`,
   capped at 35.
@@ -319,8 +319,9 @@ PAUSED, NO_PAN, COMPLETE, FAULT
 - Current PI: base 4.0, proportional 2.0, integral 0.08 per second.
 - If gear 35 remains saturated for 90 seconds while error is at least 3 °C,
   set `HOLD SATURATED`, show an orange warning, but do not raise the cap.
-- These constants and both NTC calibrations are provisional and require supervised
-  validation with external temperature instrumentation.
+- These constants and the observed NTC behavior were accepted by the owner after
+  supervised real-use tests. No separate external-instrument calibration is
+  currently planned.
 
 ### Cooking timer
 
@@ -498,14 +499,14 @@ The previously built `0.2.4-dev` app was 877,488 bytes and had SHA-256
 `38cefdefb127ca8190522e1b493452df166cfb9f9a2799da7a6baf13cd34e6e2`.
 Treat this as a historical known build, not as permission to flash.
 
-## 13. Remaining uncertainties and validation backlog
+## 13. Remaining uncertainties and optional characterization
 
-- Calibrate lower NTC and IGBT NTC against external instruments.
-- Validate the provisional 40–175 °C user range.
-- Tune PI gains, preheat thresholds, approach behavior, overshoot, and
-  `HOLD SATURATED` using repeatable thermal loads.
-- Validate interface guards (80 °C IGBT, 120 °C lower sensor) against the power
-  board's own protections.
+- The owner accepted the current 40–175 °C range, NTC readings, PI gains,
+  preheat/approach behavior, overshoot, and `HOLD SATURATED` after supervised
+  real-use tests. No additional calibration is planned.
+- Interface guards (80 °C IGBT, 120 °C lower sensor) intentionally remain
+  conservative secondary limits above the power board's own protections; do not
+  force a real overheating event merely to exercise them.
 - Long-duration soak of web/network tasks while heating.
 - Exercise every stable and transient power-board error path.
 - Optionally trace GPIO32 physically; it is not a functional blocker.

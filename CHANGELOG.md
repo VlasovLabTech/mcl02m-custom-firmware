@@ -14,5 +14,6 @@
 - Documented the panel hardware and the 0x2A power-board I²C protocol.
 - Added a self-contained trilingual HTML user manual.
 
-This is still a development release. NTC calibration and temperature-controller
-tuning require further supervised validation.
+This remains a development release, but the current NTC readings and
+temperature-controller behavior were accepted by the owner after supervised
+real-use tests; no separate calibration step is currently planned.
