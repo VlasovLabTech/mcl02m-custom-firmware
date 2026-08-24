@@ -45,6 +45,19 @@ keeping all heating commands behind the physical controls on the cooker.
 The complete three-language operating guide is available as a single offline
 file: **[User manual](docs/user-manual.html)**.
 
+> # **BACK UP THE COMPLETE 16 MiB FLASH BEFORE YOU WRITE ANYTHING**
+>
+> **Do not flash this project until you have read the ESP32's entire flash from
+> `0x000000` through `0xFFFFFF`, saved it in at least two safe locations, and
+> verified the backup by reading it twice and comparing SHA-256 hashes.**
+>
+> The original image contains the stock firmware as well as device-specific
+> partitions and settings. Without a verified full-flash backup, restoring this
+> particular cooker to its original factory state may be impossible. A copy of
+> somebody else's dump is not an equivalent recovery image and must not be
+> published with this repository. See [Flashing and recovery](docs/FLASHING.md)
+> before connecting the programmer.
+
 ## Hardware and programming connection
 
 The interface board exposes ROM-bootloader test points:
