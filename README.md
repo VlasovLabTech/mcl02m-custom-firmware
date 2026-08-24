@@ -89,6 +89,15 @@ original low-voltage panel connector**, not through the `3V3` test point.
 > within its specified USB speed/current limits. A normal USB-UART adapter, a
 > laptop charger, or an oscilloscope ground is **not** galvanic isolation.
 
+<p align="center">
+  <img src="hardware/adum3160-usb-isolator.png"
+       alt="ADuM3160-based USB galvanic isolator" width="440">
+</p>
+
+<p align="center"><em>An ADuM3160-based USB galvanic isolator of the type
+discussed above. Always verify the specifications and actual isolation of the
+particular module before use.</em></p>
+
 The induction cooker contains rectified mains and high-current switching nodes.
 Do not work on it energized unless you are qualified and have an isolation plan.
 Never connect an earth-referenced scope or non-isolated USB ground to an unknown
