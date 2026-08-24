@@ -43,7 +43,22 @@ Connector 2: GND, S1, KA, KB
 | Direct UI output | GPIO22 |
 | Unknown, held LOW | GPIO32 |
 
-Connection photographs will be added in this directory later.
+## Physical access and connection photographs
+
+> **Removing the interface board is not recommended.** The rotary encoder makes
+> board removal extremely difficult. On the unit documented here, the author
+> instead used a regular utility knife to cut away a small section of the plastic
+> housing, working carefully and gradually, step by step. This provided access
+> to the programming area without removing the board. Disconnect the appliance
+> from mains power before doing any mechanical work, and avoid damaging the PCB,
+> wiring, or nearby components.
+
+![Interface board with the plastic housing carefully cut away](interface-board-access.jpg)
+
+![Close-up of the ESP32 programming connections](programming-connections.jpg)
+
+Wire colors are only illustrative; use the labeled test points and the mapping
+above when making connections.
 
 > **Mains warning:** use the interface board completely disconnected from the
 > power board, or use a verified isolated USB/data/power path. A normal USB-UART

@@ -1,6 +1,7 @@
 <div align="center">
 
-![Happy MCL02M tiger](assets/images/manual/happy-tiger-color.png)
+<img src="assets/images/manual/happy-tiger-color.png"
+     alt="Happy MCL02M tiger" width="320">
 
 # Xiaomi Mijia MCL02M Custom Firmware
 
@@ -94,8 +95,27 @@ Never connect an earth-referenced scope or non-isolated USB ground to an unknown
 internal ground. Allow the power-board-controlled fan to finish cooling before
 removing power.
 
-Photographs of the solder points and a link to the full project article will be
-added later.
+### Accessing the programming points
+
+> **Removing the interface board is not recommended.** The rotary encoder makes
+> board removal extremely difficult. On the unit documented here, the author
+> instead used a regular utility knife to cut away a small section of the plastic
+> housing, working carefully and gradually, step by step. This exposed the
+> programming area without removing the board. Disconnect the appliance from
+> mains power before doing any mechanical work, and take care not to damage the
+> PCB, wiring, or nearby components.
+
+![Interface board with the plastic housing carefully cut away](hardware/interface-board-access.jpg)
+
+*Overall view of the interface board after creating access to the programming
+area.*
+
+![Close-up of the ESP32 programming connections](hardware/programming-connections.jpg)
+
+*Close-up of the soldered programming connections. Follow the test-point table
+above rather than relying on wire colors.*
+
+A link to the full project article will be added later.
 
 ## Repository map
 
@@ -112,7 +132,7 @@ firmware/
   production/             current ESP-IDF application
   lab/power-test/         power-board test harness
   lab/ui-test/            panel test harness and shared UI drivers
-hardware/                 pinout and future connection photographs
+hardware/                 pinout and connection photographs
 tools/                    image and reverse-engineering utilities
 ```
 
