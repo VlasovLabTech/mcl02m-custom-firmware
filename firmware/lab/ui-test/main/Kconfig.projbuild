@@ -1,0 +1,26 @@
+menu "MCL02M UI test firmware"
+
+config MCL02M_STA_SSID
+    string "Optional home Wi-Fi SSID"
+    default ""
+    help
+        Optional build-time STA SSID. Leave empty to configure Wi-Fi in RAM
+        from the local test page. It is never stored in NVS.
+
+config MCL02M_STA_PASSWORD
+    string "Optional home Wi-Fi password"
+    default ""
+
+config MCL02M_TEST_AP_PASSWORD
+    string "Fallback test AP password"
+    default "mcl02m-test"
+
+config MCL02M_OLED_CS_GPIO
+    int "Candidate OLED CS GPIO"
+    range -1 39
+    default 0
+    help
+        Static analysis indicates GPIO0. Set -1 only for the deliberate
+        no-CS retry build if the first OLED test produces no image.
+
+endmenu

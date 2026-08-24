@@ -1,0 +1,16 @@
+menu "MCL02M custom firmware"
+
+config MCL02M_OLED_CS_GPIO
+    int "OLED CS GPIO"
+    range -1 39
+    default 0
+
+config MCL02M_SETUP_AP_PASSWORD
+    string "Initial setup AP password"
+    default "12345678"
+
+config MCL02M_HOSTNAME
+    string "LAN hostname"
+    default "mcl02m-cooker"
+
+endmenu

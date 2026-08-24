@@ -1,0 +1,95 @@
+# MCL02M Power-Board Protocol
+
+This is the compact implementation reference for the local interface between the
+ESP32 panel board and the original MCL02M power board. The protocol was derived
+from passive logic captures, stock-firmware analysis, synchronized oscilloscope
+tests, and controlled custom-firmware tests.
+
+## Electrical/bus settings
+
+| Property | Value |
+|---|---|
+| ESP32 bus | I²C0 |
+| SDA / SCL | GPIO13 / GPIO15 |
+| Clock | 10 kHz |
+| 7-bit address | `0x2A` |
+| Wire address | `0x54` write, `0x55` read |
+| Heartbeat | approximately 500 ms |
+| Checksum | `(register + value) & 0xFF` |
+
+Reads send the selector, then receive `value, checksum`. Writes send
+`register, value, checksum`.
+
+```text
+R26 R27 R20 R21 R22 R23 R24 R25 W0D W00 W0C
+```
+
+This complete cycle repeats every 500 ms in active, paused, idle, and standby
+states. The power driver must be the only I²C owner.
+
+## Commands
+
+| Register | Values |
+|---|---|
+| `0x0D` | `00` Stop; `80` pan search; `A1` gears 1–35; `C1` gears 36–55; `E1` gears 56–99 |
+| `0x00` | `00` output disabled; `01` output requested |
+| `0x0C` | requested gear, hexadecimal `00…63` = decimal 0…99 |
+
+Stock Stop sequence:
+
+```text
+0D 00
+~50 ms
+00 00
+~4 ms
+0C 00
+```
+
+Stock Start sequence:
+
+```text
+0D <topology>
+~50 ms
+00 01
+~4 ms
+0C <gear>
+```
+
+Do not introduce a synthetic Stop between topology changes. The ESP sends the new
+nonzero command and the power MCU performs IGBT-off, relay sequencing, and
+deadtime internally. `R26=02` is the useful active-output acknowledgement.
+
+## Feedback
+
+| Register | Interpretation |
+|---|---|
+| `0x20` | status: `00` normal, `02` no pan, `2B` short relay transition, other stable groups are faults |
+| `0x21` | load/power feedback |
+| `0x22` | mains raw, approximately volts minus 50 on the tested revision |
+| `0x23` | IGBT NTC raw, converted by lookup table |
+| `0x24` | lower NTC raw, converted by lookup table |
+| `0x25` | observed `0A`, unknown/reserved |
+| `0x26` | induction output: `02` active, `00` inactive |
+| `0x27` | auxiliary/topology feedback `00/01/02`, exact meaning unknown |
+
+The transient `R20=2B` is accepted for no more than 10 seconds. Use the extracted
+NTC lookup tables; early linear diagnostic fits are not production conversions.
+
+## No-pan flow
+
+After three consecutive 500 ms samples of `R20=02`, send `W0D=80` while keeping
+`W00=01` and retaining `W0C`. On `R20=00`, restore the topology for the retained
+gear. The custom UI gives the user 60 seconds before latching E02.
+
+## Safety observations
+
+- The power board retained output during a deliberate 5-second heartbeat gap;
+  no sufficiently short independent communication watchdog was found.
+- Therefore the ESP high-priority task watchdog and safe boot Stop are mandatory.
+- The fan is entirely controlled by the power MCU. No fan register was found.
+- Relay and output setup after Start took about 2.13–3.63 seconds before
+  `R26=02`; this is normal and must not be treated as instant Start.
+- Only `0x0D`, `0x00`, and `0x0C` are writable in this project.
+
+For full rationale and state-machine rules, see
+[AI Development Context](AI_DEVELOPMENT_CONTEXT.md).

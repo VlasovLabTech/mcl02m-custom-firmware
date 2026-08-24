@@ -1,0 +1,39 @@
+# Never publish local captures, dumps, credentials, or reverse-engineering workspaces.
+/_local_private/
+/.env
+/.env.*
+*.bin
+*.elf
+*.map
+*.sr
+*.pcap
+*.pcapng
+*.dmp
+*.dump
+*.nvs
+
+# ESP-IDF and CMake output.
+**/build/
+**/build_*/
+**/release/
+**/sdkconfig.old
+**/managed_components/
+**/.cache/
+
+# Python and local environments.
+**/__pycache__/
+*.py[cod]
+/.venv/
+/venv/
+
+# Ghidra and editor state.
+*.gpr
+*.rep/
+*.lock
+/.vscode/
+/.idea/
+
+# OS noise.
+Thumbs.db
+Desktop.ini
+.DS_Store

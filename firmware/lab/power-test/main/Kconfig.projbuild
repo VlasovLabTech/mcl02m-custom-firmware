@@ -1,0 +1,20 @@
+menu "MCL02M power-stage bring-up firmware"
+
+config MCL02M_STA_SSID
+    string "Optional home Wi-Fi SSID"
+    default ""
+
+config MCL02M_STA_PASSWORD
+    string "Optional home Wi-Fi password"
+    default ""
+
+config MCL02M_TEST_AP_PASSWORD
+    string "Fallback test AP password"
+    default "mcl02m-test"
+
+config MCL02M_OLED_CS_GPIO
+    int "OLED CS GPIO"
+    range -1 39
+    default 0
+
+endmenu

@@ -1,0 +1,16 @@
+# Keep the original MCL02M flash layout. This file is for link/build checks only.
+# Flashing the partition table is forbidden for the UI test procedure.
+# Name,      Type, SubType, Offset,   Size,      Flags
+nvs,         data, nvs,     0x9000,   0x4000,
+otadata,     data, ota,     0xd000,   0x2000,
+phy_init,    data, phy,     0xf000,   0x1000,
+miio_fw1,    app,  ota_0,   0x10000,  0x160000,
+miio_fw2,    app,  ota_1,   0x170000, 0x160000,
+test,        app,  test,    0x2d0000, 0x13000,
+mimcu,       data, 0xfd,    0x2e3000, 0x100000,
+coredump,    data, coredump,0x3e3000, 0x10000,
+minvs,       data, 0xfe,    0x3f8000, 0x4000,
+icon1,       data, 0xf6,    0x400000, 0x100000,
+wordcode1,   data, 0xf4,    0x500000, 0x500000,
+wordcode2,   data, 0xf3,    0xa00000, 0x300000,
+wordcode3,   data, 0xf2,    0xd00000, 0x300000,
