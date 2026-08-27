@@ -334,7 +334,7 @@ static void display_task(void *arg)
             }
             if (picture != NULL) {
                 if (picture_has_fault_code)
-                    ui_oled_show_bitmap_text(picture, fault_code, 46, 32);
+                    ui_oled_show_bitmap_text(picture, fault_code, 30, 32, 2);
                 else
                     ui_oled_show_bitmap(picture);
             } else if (sleep_clock) {

@@ -11,6 +11,8 @@
 - Allowed timed POWER-0 profile stages as non-heating wait stages.
 - Added compile-time removable active-zero UART/Wi-Fi diagnostics, including the
   last command frame and transition counters.
+- Enlarged every live OLED fault code to 2× and removed the misleading separator
+  stroke left behind by the example code in the source artwork.
 - Kept faults and runtime control out of NVS; no automatic NVS erase was added.
 
 ## 0.2.4-dev — 2026-08-24

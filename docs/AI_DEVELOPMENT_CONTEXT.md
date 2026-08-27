@@ -424,6 +424,9 @@ center → left → right to reduce OLED burn-in.
 - The optional I²C debug counter is drawn as one small digit at `x=0, y=10`
   over the current frame. It deliberately may overlap normal content and also
   remains visible on the E09 fault picture.
+- The error artwork's lower-right source label and separator are cleared during
+  generation. The actual three-character fault code is rendered at 2× scale in
+  the reserved `x=30…63`, `y=30…47` corner.
 
 Approved image states:
 

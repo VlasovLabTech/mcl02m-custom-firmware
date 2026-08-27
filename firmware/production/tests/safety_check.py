@@ -375,15 +375,17 @@ def main() -> int:
             "OLED_ASSET_FRAME_BYTES == UI_OLED_BITMAP_BYTES" in display and
             "ui_oled_show_bitmap" in outputs and "ui_oled_show_bitmap_text" in outputs,
             "all ten approved 64x48 pictures compile as exact 384-byte OLED frames")
-    require("error.png" in asset_generator and "for y in range(30, 41)" in asset_generator and
-            "for x in range(42, 64)" in asset_generator and
+    require("error.png" in asset_generator and "for y in range(30, 48)" in asset_generator and
+            "for x in range(30, 64)" in asset_generator and
             all(code in display for code in ('code = "E02"', 'code = "E03"',
                                              'code = "E04"', 'code = "E05"',
                                              'code = "E07"', 'code = "E08"',
                                              'code = "E09"', 'code = "E10"',
-                                             'code = "E12"')) and
-            "ui_oled_show_bitmap_text(picture, fault_code, 46, 32)" in display,
-            "error artwork removes example E03 and renders the actual live fault code")
+                                             'code = "E12"', 'code = "EPB"',
+                                             'code = "EST"', 'code = "ETM"')) and
+            "ui_oled_show_bitmap_text(picture, fault_code, 30, 32, 2)" in display and
+            "oled_draw_scaled_text(text, x, y, scale, scale)" in outputs,
+            "error artwork removes the separator/example and renders the live code at 2x")
     require("#define COOKER_IMAGE_CONFIRM_MS         1500U" in config and
             "#define COOKER_IMAGE_WAKEUP_MS          3000U" in config and
             "#define COOKER_IMAGE_TURN_ON_MS         5000U" in config and

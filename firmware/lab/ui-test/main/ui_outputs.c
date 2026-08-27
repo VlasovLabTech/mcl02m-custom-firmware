@@ -1105,16 +1105,17 @@ esp_err_t ui_oled_show_bitmap(const uint8_t bitmap[UI_OLED_BITMAP_BYTES])
 }
 
 esp_err_t ui_oled_show_bitmap_text(const uint8_t bitmap[UI_OLED_BITMAP_BYTES],
-                                   const char *text, int x, int y)
+                                   const char *text, int x, int y, unsigned scale)
 {
-    if (bitmap == NULL || text == NULL || *text == '\0' ||
-        x < 0 || x >= OLED_WIDTH || y < 0 || y > OLED_HEIGHT - 7)
+    if (bitmap == NULL || text == NULL || *text == '\0' || scale == 0 || scale > 2 ||
+        x < 0 || x + oled_text_width(text, scale, false) > OLED_WIDTH ||
+        y < 0 || y + (int)(7U * scale) > OLED_HEIGHT)
         return ESP_ERR_INVALID_ARG;
     xSemaphoreTake(s_lock, portMAX_DELAY);
     esp_err_t err = oled_init_once();
     if (err == ESP_OK) {
         memcpy(s_oled_frame, bitmap, OLED_FRAME_BYTES);
-        oled_draw_scaled_text(text, x, y, 1, 1);
+        oled_draw_scaled_text(text, x, y, scale, scale);
         err = oled_flush();
     }
     xSemaphoreGive(s_lock);

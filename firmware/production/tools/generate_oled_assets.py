@@ -34,11 +34,12 @@ def frame_from_png(path: Path) -> tuple[bytes, str]:
             raise ValueError(f"{path}: expected {WIDTH}x{HEIGHT} mode 1, got {source.size} {source.mode}")
         image = source.copy()
 
-    # error.png contains the example E03 at x=42..63, y=30..40.  Keep the
-    # approved source untouched and reserve that rectangle for the live code.
+    # error.png contains an example E03 plus a separator stroke in the lower-right
+    # corner. Keep the approved source untouched and reserve that entire corner
+    # for the live 2x fault code so no part of the separator remains visible.
     if path.name == "error.png":
-        for y in range(30, 41):
-            for x in range(42, 64):
+        for y in range(30, 48):
+            for x in range(30, 64):
                 image.putpixel((x, y), 0)
 
     output = bytearray(FRAME_BYTES)
