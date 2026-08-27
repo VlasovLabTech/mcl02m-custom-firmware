@@ -89,6 +89,7 @@ typedef struct {
     uint16_t mains_voltage_v;
     bool readings_valid;
     bool pan_present;
+    bool active_zero;
     bool timer_enabled;
     uint32_t timer_remaining_s;
     uint32_t timer_last_s;
@@ -98,6 +99,7 @@ typedef struct {
     uint32_t delayed_remaining_s;
     bool clock_valid;
     bool hold_saturated;
+    uint32_t pause_remaining_s;
     uint32_t run_elapsed_s;
     uint8_t profile_index;
     uint8_t profile_stage_index;

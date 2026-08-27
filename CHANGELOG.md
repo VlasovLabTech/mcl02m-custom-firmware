@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.5-dev — 2026-08-28
+
+- Added the experimental stock-derived active-zero command (`0x81/0x00/0x00`)
+  for POWER gear 0, temperature-control coast, and manual Pause.
+- Resume from active zero no longer deliberately sends a full Stop/re-arm cycle.
+- Added a full Stop after two continuous hours of manual Pause. POWER gear 0 and
+  POWER-0 profile stages remain ordinary active sessions and do not use that
+  Pause timeout.
+- Allowed timed POWER-0 profile stages as non-heating wait stages.
+- Added compile-time removable active-zero UART/Wi-Fi diagnostics, including the
+  last command frame and transition counters.
+- Kept faults and runtime control out of NVS; no automatic NVS erase was added.
+
 ## 0.2.4-dev — 2026-08-24
 
 - Added complete English, Russian, and Simplified Chinese local UI.

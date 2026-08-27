@@ -43,6 +43,11 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     MCL02M_MAX_RUN_MS=18000000U
     MCL02M_MAX_IGBT_C=80U
     MCL02M_I2C_BAD_CYCLES_TO_FAULT=6U
+    # Stock-firmware static analysis shows 0x81/0x00/0x00 as the distinct
+    # in-session zero-output command. Keep both switches here for quick lab
+    # fallback after the first supervised hardware validation.
+    MCL02M_ACTIVE_ZERO_ENABLED=1
+    MCL02M_ACTIVE_ZERO_DIAGNOSTICS=1
     # Separate interface-side emergency cutoff above the 190 C setpoint range.
     # The stock power MCU continues to enforce its native E05 protection.
     MCL02M_MAX_BOTTOM_C=210U

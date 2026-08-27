@@ -31,6 +31,19 @@ def profile_sequence(durations: list[int]) -> list[int]:
     return [index + 1 for index, duration in enumerate(durations) if duration > 0]
 
 
+def active_zero_command(state: str) -> tuple[int, int, int]:
+    """Model the retained-session command used by zero output and manual Pause."""
+    if state in {"ACTIVE_ZERO", "PAUSED"}:
+        return 0x81, 0, 0
+    if state == "STOPPED":
+        return 0, 0, 0
+    raise ValueError(state)
+
+
+def manual_pause_state(elapsed_s: int) -> str:
+    return "STOPPED" if elapsed_s >= 2 * 60 * 60 else "PAUSED"
+
+
 def picture_policy(
     state: str,
     *,
@@ -84,6 +97,13 @@ def run() -> None:
     assert (56 + 10) // 11 == 6
     assert profile_sequence([2400, 1500, 0, 300, 0]) == [1, 2, 4]
     assert profile_sequence([0, 0, 0, 0, 0]) == []
+    assert active_zero_command("ACTIVE_ZERO") == (0x81, 0, 0)
+    assert active_zero_command("PAUSED") == (0x81, 0, 0)
+    assert active_zero_command("STOPPED") == (0, 0, 0)
+    assert manual_pause_state(2 * 60 * 60 - 1) == "PAUSED"
+    assert manual_pause_state(2 * 60 * 60) == "STOPPED"
+    # A zero-power profile cell is still an ordinary timed cell, not manual Pause.
+    assert profile_sequence([3 * 60 * 60, 60, 0, 0, 0]) == [1, 2]
     assert picture_policy("IDLE", idle_ms=49_999) is None
     assert picture_policy("IDLE", idle_ms=50_000) == "sleep1"
     assert picture_policy("SLEEP", sleep_ms=0) == "sleep2"

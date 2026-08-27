@@ -2,8 +2,8 @@
 
 Этот документ описывает будущую процедуру, но **не разрешает запись сейчас**.
 
-Текущий reference app artifact: `build/mcl02m_custom.bin`, 877472 bytes,
-SHA-256 `208d6539a5e4d85e8ee1e79c7c421a1cabe1402ef5b965fdda7bddc27d81eb86`.
+Текущий reference app artifact: `build/mcl02m_custom.bin`, 879792 bytes,
+SHA-256 `57a999fb1175cf2915e3540f16a0bea2af90cf2646d4db53eaae41b648d7b3d9`.
 Чистая пересборка может иметь другой hash из-за compile metadata; для release
 нужно сохранить новый manifest и заново пройти все gates.
 
@@ -21,6 +21,16 @@ SHA-256 `208d6539a5e4d85e8ee1e79c7c421a1cabe1402ef5b965fdda7bddc27d81eb86`.
 6. Переключение `otadata` согласовывается отдельно и только подготовленной
    минимальной записью. Никакого erase всего flash.
 
+## Pending one-time NVS refresh
+
+The owner requested one exceptional NVS refresh at the next explicitly authorized
+flash. Before erasing, read the current NVS partition at `0x9000` with length
+`0x4000`, verify the backup is exactly 16,384 bytes, and record its SHA-256. Then
+erase only `0x9000..0xCFFF` exactly once. This is not part of the application and
+must never become the default update flow; the firmware still contains no automatic
+NVS erase. The ignored local checklist `_local_private/NEXT_FLASH_ONCE.md` records
+the pending/completed state. No hardware operation has been performed yet.
+
 ## Возврат
 
 - Сначала вернуть загрузку в штатный `ota_0` минимальной OTA-select записью.
@@ -34,17 +44,22 @@ SHA-256 `208d6539a5e4d85e8ee1e79c7c421a1cabe1402ef5b965fdda7bddc27d81eb86`.
 
 1. Boot without pan, no Start: I²C readings/UI/web only.
 2. Pan with water, POWER gear 1, 10 s; verify Stop and telemetry.
-3. Pause/Resume and Cancel; verify actual power board state.
-4. NoPan remove/return well inside 60 s; countdown must freeze.
-5. Boundary commands 35↔36 and 55↔56 no faster than stock 500-ms heartbeat.
-6. Timer complete and completion melody.
-7. Fault screen/alarm test without artificial overheating.
-8. Only then short TEMPERATURE tests, starting at low target; HOLD must never
+3. Heat briefly, select POWER 0, then a positive gear. Confirm UART/Wi-Fi reports
+   `ACTIVE_ZERO`, command `81/00/00`, and one resume without any deliberate Stop
+   frame; listen for unexpected relay clicks.
+4. Pause/Resume and Cancel. Confirm Pause sends `81/00/00`, Resume does not send
+   `00/00/00`, the cooking timer freezes, and Cancel does send full Stop.
+5. NoPan remove/return well inside 60 s; countdown must freeze.
+6. Boundary commands 35↔36 and 55↔56 no faster than stock 500-ms heartbeat.
+7. Timer complete and completion melody.
+8. Fault screen/alarm test without artificial overheating.
+9. Only then short TEMPERATURE tests, starting at low target; HOLD must never
    exceed 35 and `HOLD SATURATED` must not raise it.
-9. Во время обычных supervised-тестов проверять правдоподобность NTC/IGBT
+10. Во время обычных supervised-тестов проверять правдоподобность NTC/IGBT
    readings; не доводить плиту намеренно до IGBT interface guard 80 °C или
    штатной E05 силовой платы.
-10. Проверить, что web-страница позволяет редактировать Presets, но не содержит
+11. Проверить, что web-страница позволяет редактировать Presets, including a
+    timed POWER-0 wait stage, но не содержит
     и не принимает Start/Stop/Pause/setpoint/timer/delayed Start; reset/power
     loss должен забывать schedule и не восстанавливать нагрев.
 

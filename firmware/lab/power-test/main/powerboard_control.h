@@ -12,6 +12,7 @@ typedef enum {
     PB_STATE_ARMED,
     PB_STATE_STARTING,
     PB_STATE_HEATING,
+    PB_STATE_ACTIVE_ZERO,
     PB_STATE_PAUSED,
     PB_STATE_NO_PAN,
     PB_STATE_HEARTBEAT_GAP,
@@ -23,6 +24,9 @@ typedef struct {
     uint8_t target_gear;
     uint8_t applied_gear;
     uint8_t topology;
+    uint8_t last_command_0d;
+    uint8_t last_command_00;
+    uint8_t last_command_0c;
     uint8_t registers[16];
     uint16_t valid_mask;
     uint8_t igbt_c;
@@ -35,6 +39,8 @@ typedef struct {
     uint32_t completed_cycles;
     uint32_t bad_cycles;
     uint32_t consecutive_bad_cycles;
+    uint32_t active_zero_entries;
+    uint32_t active_zero_resumes;
     bool stop_verified;
     bool heartbeat_gap_observed_stop;
     char fault[24];

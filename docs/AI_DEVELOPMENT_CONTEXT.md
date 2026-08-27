@@ -13,7 +13,7 @@ from a request to edit or build software.
 - Xiaomi device model: `chunmi.ihcooker.v2`.
 - Interface controller: Espressif `ESP-WROOM-32D` (classic ESP32).
 - Display: monochrome 64×48 OLED, page-major 384-byte framebuffer.
-- Current custom source version: `0.2.4-dev`.
+- Current custom source version: `0.2.5-dev`.
 - Framework: ESP-IDF.
 - Public repository language: English for technical documents; the device UI
   supports English, Russian, and Simplified Chinese.
@@ -43,7 +43,7 @@ Intentionally excluded:
    selectors `0x20…0x2F`.
 6. A nonzero gear is permitted only after explicit arm, valid critical readings,
    and accepted power-board status.
-7. Two consecutive bad I²C cycles, invalid critical readings, unknown persistent
+7. Six consecutive bad I²C cycles, invalid critical readings, unknown persistent
    power status, thermal guard, start timeout, or output active after Stop cause
    a Stop/fault transition.
 8. The high-priority power-control task is registered with the 5-second task
@@ -191,7 +191,7 @@ W0D, W00, W0C
 
 | Register | Meaning | Known values |
 |---|---|---|
-| `W0D` | topology/state | `00` Stop, `80` pan-search, `A1` gear 1–35, `C1` gear 36–55, `E1` gear 56–99; `01` observed transitional state |
+| `W0D` | topology/state | `00` Stop, `80` pan-search, `81` stock-derived active-zero candidate, `A1` gear 1–35, `C1` gear 36–55, `E1` gear 56–99; `01` observed transitional state |
 | `W00` | output permission | `00` disabled, `01` enabled |
 | `W0C` | requested gear | hexadecimal `00…63`, decimal 0…99 |
 
@@ -218,6 +218,14 @@ serializes relay changes, and acknowledges active induction with `R26=02` after
 an observed 2.13–3.63 s startup window. Direct A↔E transitions are allowed. Do
 not add artificial Stop pulses between gear ranges unless new hardware evidence
 requires it.
+
+Custom `0.2.5-dev` repeats `W0D=81, W00=00, W0C=00` for POWER gear 0,
+temperature coast, and manual Pause. This is distinct from full Stop and is based
+on stock static analysis; relay retention still requires supervised hardware
+confirmation. UART telemetry logs every write and transition, while authenticated
+Wi-Fi status exposes the state, last triple, counters, and Pause time remaining.
+`MCL02M_ACTIVE_ZERO_ENABLED` and `MCL02M_ACTIVE_ZERO_DIAGNOSTICS` can disable the
+behavior/extra events at compile time.
 
 ### Feedback registers
 
@@ -308,6 +316,8 @@ PAUSED, NO_PAN, COMPLETE, FAULT
 - Slow encoder movement changes by 1; fast movement changes by 5.
 - Turning the encoder never starts heat.
 - Gear ranges select topology automatically: 1–35 A1, 36–55 C1, 56–99 E1.
+- Gear 0 enters active zero. Returning to a positive gear does not deliberately
+  send a full Stop/re-arm sequence.
 
 ### TEMPERATURE
 
@@ -331,6 +341,7 @@ PAUSED, NO_PAN, COMPLETE, FAULT
 - Editable as `MM:SS`, then hours; maximum 5 hours.
 - Last value is retained in RAM, not flash.
 - Timer freezes in Pause and NoPan.
+- Manual Pause uses active zero and performs a full Stop after two continuous hours.
 - Completion stops output, plays the completion melody, shows the Ready image,
   and waits for acknowledgement.
 - Timer is unavailable for an active profile because every profile stage already
@@ -351,6 +362,8 @@ PAUSED, NO_PAN, COMPLETE, FAULT
 - Five persistent profiles.
 - Each profile has up to five sequential timed stages.
 - Each stage is POWER or TEMPERATURE and must have a nonzero duration to run.
+- A timed POWER stage may use gear 0 as an active-zero wait stage. It is not manual
+  Pause and therefore does not use the two-hour Pause timeout.
 - Zero-duration stages are skipped.
 - Total profile duration is limited to 300 minutes.
 - A double stage beep marks each transition.
@@ -502,15 +515,13 @@ Before any release or hardware write:
 8. After flashing, first perform a no-heat boot/UI/I²C soak, then supervised short
    power tests with a water load.
 
-The current offline-built `0.2.4-dev` app is 878,448 bytes and has SHA-256
-`bc6f31355eef9086292a845b51bd4e480eb4d60bba61e127da417d08bc08d716`.
-This identifies the reviewed artifact; it is not permission to flash.
+The current offline-built `0.2.5-dev` artifact is identified in
+`firmware/production/BUILD_MANIFEST.md`. This is not permission to flash.
 
 ## 13. Remaining uncertainties and optional characterization
 
-- The selectable range is 40–190 °C. The revised controller must still be
-  characterized with real cookware after its earlier cutoff and zero-output
-  coast changes.
+- The selectable range is 40–190 °C. The revised controller and stock-derived
+  active-zero relay/session behavior must still be characterized under supervision.
 - Production retains the 80 °C interface-side IGBT guard and uses 210 °C for
   the separate interface-side bottom cutoff; the power MCU's native E05 also
   remains active.

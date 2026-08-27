@@ -72,8 +72,6 @@ static bool profile_valid(const cooker_profile_t *profile)
             stage->temperature_c > COOKER_TEMP_MAX_C ||
             stage->timer_s > COOKER_MAX_TIMER_S)
             return false;
-        if (stage->timer_s > 0 && stage->mode == COOK_MODE_POWER && stage->gear == 0)
-            return false;
     }
     return true;
 }

@@ -56,11 +56,11 @@ static const char PAGE[] =
 "<button onclick=saveSettings()>Save</button></section></div>"
 "<section><h2>Profiles</h2><label># <input id=pindex type=number min=1 max=5 value=1 onchange=showProfile()></label>"
 "<label>Name <input id=pname maxlength=11 value='PROFILE 1'></label>"
-"<div class=stage><b>Stage 1</b><label>Mode <select id=pmode1><option value=0>POWER</option><option value=1>TEMPERATURE</option></select></label><label>Gear <input id=pgear1 type=number min=1 max=99 value=30></label><label>Temp °C <input id=ptemp1 type=number min=40 max=190 value=100></label><label>Time, min <input id=ptime1 type=number min=0 max=300 value=0></label></div>"
-"<div class=stage><b>Stage 2</b><label>Mode <select id=pmode2><option value=0>POWER</option><option value=1>TEMPERATURE</option></select></label><label>Gear <input id=pgear2 type=number min=1 max=99 value=30></label><label>Temp °C <input id=ptemp2 type=number min=40 max=190 value=100></label><label>Time, min <input id=ptime2 type=number min=0 max=300 value=0></label></div>"
-"<div class=stage><b>Stage 3</b><label>Mode <select id=pmode3><option value=0>POWER</option><option value=1>TEMPERATURE</option></select></label><label>Gear <input id=pgear3 type=number min=1 max=99 value=30></label><label>Temp °C <input id=ptemp3 type=number min=40 max=190 value=100></label><label>Time, min <input id=ptime3 type=number min=0 max=300 value=0></label></div>"
-"<div class=stage><b>Stage 4</b><label>Mode <select id=pmode4><option value=0>POWER</option><option value=1>TEMPERATURE</option></select></label><label>Gear <input id=pgear4 type=number min=1 max=99 value=30></label><label>Temp °C <input id=ptemp4 type=number min=40 max=190 value=100></label><label>Time, min <input id=ptime4 type=number min=0 max=300 value=0></label></div>"
-"<div class=stage><b>Stage 5</b><label>Mode <select id=pmode5><option value=0>POWER</option><option value=1>TEMPERATURE</option></select></label><label>Gear <input id=pgear5 type=number min=1 max=99 value=30></label><label>Temp °C <input id=ptemp5 type=number min=40 max=190 value=100></label><label>Time, min <input id=ptime5 type=number min=0 max=300 value=0></label></div>"
+"<div class=stage><b>Stage 1</b><label>Mode <select id=pmode1><option value=0>POWER</option><option value=1>TEMPERATURE</option></select></label><label>Gear <input id=pgear1 type=number min=0 max=99 value=30></label><label>Temp °C <input id=ptemp1 type=number min=40 max=190 value=100></label><label>Time, min <input id=ptime1 type=number min=0 max=300 value=0></label></div>"
+"<div class=stage><b>Stage 2</b><label>Mode <select id=pmode2><option value=0>POWER</option><option value=1>TEMPERATURE</option></select></label><label>Gear <input id=pgear2 type=number min=0 max=99 value=30></label><label>Temp °C <input id=ptemp2 type=number min=40 max=190 value=100></label><label>Time, min <input id=ptime2 type=number min=0 max=300 value=0></label></div>"
+"<div class=stage><b>Stage 3</b><label>Mode <select id=pmode3><option value=0>POWER</option><option value=1>TEMPERATURE</option></select></label><label>Gear <input id=pgear3 type=number min=0 max=99 value=30></label><label>Temp °C <input id=ptemp3 type=number min=40 max=190 value=100></label><label>Time, min <input id=ptime3 type=number min=0 max=300 value=0></label></div>"
+"<div class=stage><b>Stage 4</b><label>Mode <select id=pmode4><option value=0>POWER</option><option value=1>TEMPERATURE</option></select></label><label>Gear <input id=pgear4 type=number min=0 max=99 value=30></label><label>Temp °C <input id=ptemp4 type=number min=40 max=190 value=100></label><label>Time, min <input id=ptime4 type=number min=0 max=300 value=0></label></div>"
+"<div class=stage><b>Stage 5</b><label>Mode <select id=pmode5><option value=0>POWER</option><option value=1>TEMPERATURE</option></select></label><label>Gear <input id=pgear5 type=number min=0 max=99 value=30></label><label>Temp °C <input id=ptemp5 type=number min=40 max=190 value=100></label><label>Time, min <input id=ptime5 type=number min=0 max=300 value=0></label></div>"
 "<button onclick=saveProfile()>Save preset</button></section></main>"
 "<script>let csrf='';const enc=o=>new URLSearchParams(o).toString(),el=id=>document.getElementById(id);"
 "async function req(u,o={}){o.credentials='same-origin';o.headers=o.headers||{};if(o.method==='POST'){o.headers['Content-Type']='application/x-www-form-urlencoded';o.headers['X-CSRF-Token']=csrf}let r=await fetch(u,o);let t=await r.text();if(!r.ok)throw Error(t);return JSON.parse(t)}"
@@ -358,7 +358,7 @@ static esp_err_t profile_handler(httpd_req_t *req)
         const int temperature = form_int(body, key, 100);
         snprintf(key, sizeof(key), "time%u", stage + 1U);
         const int minutes = form_int(body, key, 0);
-        if (mode < 0 || mode > COOK_MODE_TEMPERATURE || gear < 1 || gear > 99 ||
+        if (mode < 0 || mode > COOK_MODE_TEMPERATURE || gear < 0 || gear > 99 ||
             temperature < COOKER_TEMP_MIN_C || temperature > COOKER_TEMP_MAX_C ||
             minutes < 0 || minutes > 300)
             return error(req, "400 Bad Request", "profile stage range");

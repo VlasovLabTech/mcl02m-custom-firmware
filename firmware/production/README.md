@@ -10,6 +10,8 @@
 - подтверждённый heartbeat и whitelist силовой I²C (`0x20…0x2f`, записи только
   `0x0d/0x00/0x0c`);
 - POWER `0…99`, TEMPERATURE с PREHEAT/APPROACH/HOLD и пределом HOLD `35`;
+- active zero `0x81/0/0` for POWER 0, temperature coast and Pause; manual Pause
+  performs a full Stop after 2 h while ordinary zero-power sessions continue;
 - Stop, Pause/Resume, NoPan `60 s` с обязательным циклом `мелодия → пауза 3 s`
   даже при `SOUND OFF`, critical fault latch, IGBT/bottom guards;
 - cooking timer `MM:SS + HH` до 5 h, подтверждаемое отключение, RAM-last-value,
@@ -27,7 +29,8 @@
 - Wi-Fi по умолчанию выключен, включается из физического `Setup → Wi-Fi`,
   сохраняет toggle и STA credentials; AP+STA provisioning, NTP и web login/session/CSRF;
 - пять сохраняемых Profiles по пять последовательных POWER/TEMPERATURE-ячеек;
-  нулевая длительность пропускает ячейку, общий профиль не длиннее 5 h, web только
+  POWER 0 is a timed active-zero wait stage, нулевая длительность пропускает
+  ячейку, общий профиль не длиннее 5 h, web только
   редактирует, а выбор и Start выполняются с физической панели.
 - три языка OLED-интерфейса: English, Русский и упрощённый китайский `简体中文`;
   китайские надписи используют компактный встроенный 8×8 subset, все строки
@@ -43,7 +46,7 @@
 ## Важные ограничения dev-версии
 
 - Temperature setpoints are `40…190 °C`. Starting above the setpoint now enters
-  a zero-power cooling state and resumes heating after a 3 °C hysteresis margin.
+  active zero and resumes heating after a 3 °C hysteresis margin.
   PREHEAT/APPROACH/HOLD were retuned to reduce stored-heat overshoot.
 - Production keeps the interface-side 80 °C IGBT guard and uses a separate
   210 °C bottom emergency cutoff. The power MCU's native E05 remains active.
@@ -53,6 +56,12 @@
 - Temporary `Settings → Show → I2C Errors` is OFF by default. When enabled it
   overlays the current consecutive-bad-cycle count `0…6` at OLED `x=0, y=10`,
   including over the E09 picture. A clean cycle resets the displayed value to 0.
+- Active-zero diagnostics are available in UART telemetry and authenticated
+  `/api/status`: current driver state, last `0D/00/0C` command and entry/resume
+  counters. Both active-zero switches are compile-time definitions for quick
+  removal after supervised validation.
+- Fault handling never writes runtime or LED state to NVS. Only explicit settings,
+  profile, Wi-Fi, admin, and physical Factory actions use the custom namespace.
 - All nine white power LEDs run a 1.5-second all-on boot test. If this test is
   not visible, inspect the panel LED driver, flex cable, supply and GPIO path.
 - GPIO32 не имеет подтверждённого эффекта и всегда оставлен LOW.

@@ -31,7 +31,7 @@ states. The power driver must be the only I²C owner.
 
 | Register | Values |
 |---|---|
-| `0x0D` | `00` Stop; `80` pan search; `A1` gears 1–35; `C1` gears 36–55; `E1` gears 56–99 |
+| `0x0D` | `00` Stop; `80` pan search; `81` stock-derived active-zero candidate; `A1` gears 1–35; `C1` gears 36–55; `E1` gears 56–99 |
 | `0x00` | `00` output disabled; `01` output requested |
 | `0x0C` | requested gear, hexadecimal `00…63` = decimal 0…99 |
 
@@ -54,6 +54,23 @@ Stock Start sequence:
 ~4 ms
 0C <gear>
 ```
+
+Active-zero candidate used by custom `0.2.5-dev` for POWER 0, temperature coast,
+and manual Pause:
+
+```text
+0D 81
+~50 ms
+00 00
+~4 ms
+0C 00
+```
+
+This sequence is distinct from full Stop and was recovered from stock-firmware
+static analysis. Its ability to retain the relay/session state without clicks
+must still be confirmed on hardware. The production driver exposes every write,
+the last command triple, active-zero transition counters, and state through UART
+telemetry and authenticated Wi-Fi status. The diagnostics are compile-time removable.
 
 Do not introduce a synthetic Stop between topology changes. The ESP sends the new
 nonzero command and the power MCU performs IGBT-off, relay sequencing, and
@@ -90,6 +107,8 @@ gear. The custom UI gives the user 60 seconds before latching E02.
 - Relay and output setup after Start took about 2.13–3.63 seconds before
   `R26=02`; this is normal and must not be treated as instant Start.
 - Only `0x0D`, `0x00`, and `0x0C` are writable in this project.
+- Manual Pause uses the active-zero candidate but remains a distinct logical
+  state. It becomes full Stop after two hours; POWER 0 and profile wait stages do not.
 
 For full rationale and state-machine rules, see
 [AI Development Context](AI_DEVELOPMENT_CONTEXT.md).

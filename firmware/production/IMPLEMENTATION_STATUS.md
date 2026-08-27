@@ -1,23 +1,21 @@
 # MCL02M custom firmware — implementation status
 
 Дата: 2026-08-28
-Версия исходников: `0.2.4-dev`
-Статус: app-образ записан только в штатный `ota_1` по `0x170000`; esptool
-подтвердил hash записи. Bootloader, partition table, `otadata`, NVS, `ota_0`,
-eFuse и силовая firmware не изменялись. Владелец подтвердил нормальный boot,
-работу пользовательского интерфейса, режим мощности, температурное управление,
-таймеры и штатный цикл готовки этой версии. The 2026-08-28 controller revision
-still requires supervised cookware validation before it is treated as calibrated.
+Версия исходников: `0.2.5-dev`
+Статус: new app image built and checked offline, but not flashed. The earlier
+`0.2.4-dev` image remains on the development unit. Bootloader, partition table,
+`otadata`, NVS, `ota_0`, eFuse and power-board firmware have not been changed by
+this revision. Active-zero relay retention requires supervised hardware validation.
 
 ## Реализованный пользовательский контур
 
 | Блок | Поведение |
 |---|---|
-| POWER | `0…99`; encoder slow `1`, fast `5`; вращение не запускает нагрев |
-| TEMPERATURE | `40…190 °C`; Start above target enters a real zero-power cooling state; heating resumes at target minus 3 °C; PREHEAT `56/77/99`, APPROACH/HOLD are capped at `35` and tuned for earlier coast |
+| POWER | `0…99`; encoder slow `1`, fast `5`; вращение не запускает нагрев; gear 0 enters the active-zero session rather than full Stop |
+| TEMPERATURE | `40…190 °C`; Start above target enters active zero; heating resumes at target minus 3 °C; PREHEAT `56/77/99`, APPROACH/HOLD are capped at `35` and tuned for earlier coast |
 | HOLD SATURATED | gear `35` в течение 90 s при ошибке не менее 3 °C: orange, warning и сообщение; предел не повышается |
 | Start | только отдельным нажатием центра; силовой preflight и `STARTING` до `R26=02` |
-| Pause/Resume | короткий центр во время работы; timer заморожен, белые LED медленно мигают |
+| Pause/Resume | short center enters the same active-zero command while preserving a distinct PAUSED state; timer freezes; Resume does not deliberately Stop/re-arm; 2 h continuous manual Pause performs full Stop |
 | Stop/Sleep | hold центра 1,5 s с немедленным срабатыванием и звуком — Stop/Back; следующий hold в Idle — Sleep; Cancel всегда Stop/Back |
 | Sleep | default 1 min Idle; wake returns to Home/Power, or Home/Temperature when Sleep began from Temperature; secondary menu selections are never restored; heartbeat and safety continue at zero output |
 | OLED | renderer использует полные `64×48` без отладочной рамки; десять 1-bit картинок показывают turn-on 5 s синхронно с boot-мелодией, wake 3 s, cooking 2,5 s, confirm/cancel 1,5 s, ready/no-pan/error до изменения состояния и две 10-s стадии Sleep; active timeout default 3 min; первое нажатие/вращение только будит; encoder guard 1,5 s |
@@ -25,7 +23,7 @@ still requires supervised cookware validation before it is treated as calibrated
 | Cooking timer | крупные редакторы `MM:SS → HH`, максимум 5 h; при остатке ≥1 h рабочий экран показывает `H:MM′`, ниже часа — `MM:SS″`; TIMER открывает редактор, активный timer отключается только подтверждением центра; RAM only |
 | Delayed start | крупные `START IN/START AT` (`СТАРТ ЧЕРЕЗ/СТАРТ В`) `HH:MM`; максимум ближайшие 24 h; Cancel или hold центра отменяют; RAM only; timer LED мигает; при NoPan ждёт 60 s |
 | Clock | отдельный пункт `CLOCK/ЧАСЫ` показывает идущие `HH:MM`; ручные 24-часовые `HH:MM` без секунд и без flash-write; реальная SNTP-синхронизация всегда приоритетнее ручной установки; после полного снятия питания offline clock снова недействителен |
-| Profiles | пять NVS-профилей, каждый содержит до пяти последовательных POWER/TEMPERATURE-ячеек с обязательной длительностью; `0` пропускает ячейку, общий максимум 5 h; переход даёт двойной писк; Load не запускает нагрев, нужен отдельный физический Start |
+| Profiles | five NVS profiles with up to five timed POWER/TEMPERATURE cells; POWER gear 0 is an active-zero wait cell and is not subject to the manual-Pause timeout; zero duration skips a cell; total maximum 5 h; Load still requires a separate physical Start |
 | Readings | INFO: три строки `VOLT`, `NTC`, `IGBT`; сверху рабочего POWER — NTC, сверху TEMPERATURE — `S…°` и power; без timer опциональный IGBT заменяет context на 2 s после 5 s context; с timer IGBT скрыт, context остаётся; Pause скрывает timer/context |
 | Languages | English / Русский / `简体中文`; китайский использует встроенный 8×8 subset из фактически нужных глифов, UTF-8 decoder поддерживает трёхбайтовые code points, все текстовые строки статичны и проходят 64-px width/coverage gate; полноэкранные картинки не содержат языкового текста |
 | Sounds | Утверждённые PWM-таблицы: boot, wake, complete, NoPan, critical и sleep; normal duty 50%, sleep около 18%; Main, Timer и Cancel сохраняют UI click, encoder беззвучен, STAGE/WARNING остаются короткими; `SOUND OFF` не отключает NoPan и critical |
@@ -33,6 +31,7 @@ still requires supervised cookware validation before it is treated as calibrated
 | NoPan | три последовательных отсчёта по 500 ms; отдельный `nopan.png`, orange blink, обязательный цикл `мелодия 2,74 s → тишина 3 s` даже при `SOUND OFF`, timer freeze, окно возврата 60 s, затем E02 fault; возврат/Stop/Pause немедленно прерывает цикл |
 | Stock E-groups | известные устойчивые raw-группы сохраняют E03/E04/E05/E07/E08/E10/E12; communication — E09; неизвестные остаются generic |
 | I²C debug | Temporary persisted setting, OFF by default; overlays consecutive bad cycles `0…6` in small text at OLED `x=0, y=10`, including the E09 picture; one clean cycle resets it to zero |
+| Active-zero debug | Compile-time removable UART and authenticated Wi-Fi diagnostics expose state, last `0D/00/0C` frame, entry/resume counters and manual-Pause time remaining |
 
 ## Силовой и safety-контур
 
@@ -42,6 +41,9 @@ still requires supervised cookware validation before it is treated as calibrated
 - На boot до любых остальных подсистем выдаётся `ALL OFF`, затем силовой Stop и
   read-only startup probe.
 - Ненулевой gear требует валидных `R20/R23/R24/R26`, нормальных NTC и явного Arm.
+- Active zero repeats the stock-derived candidate `W0D=81, W00=00, W0C=00` every
+  500 ms. Full Stop remains `00/00/00` and is used for completion, Cancel, faults,
+  Sleep paths and the two-hour manual-Pause timeout.
 - Gear изменяется максимум на 10 за один heartbeat; релейные паузы остаются во
   владении силового MCU.
 - E09 is generated locally after six consecutive bad 500-ms I²C cycles. A
@@ -52,6 +54,9 @@ still requires supervised cookware validation before it is treated as calibrated
 - High-priority power-control task зарегистрирован в 5-s Task Watchdog с panic/reset;
   после reset boot снова начинается с Stop.
 - Вентилятором интерфейсная ESP32 не управляет.
+- Fault handlers and LED runtime state never write NVS. Only `settings.c` persists
+  explicit settings/profile/Wi-Fi/admin changes; the application never erases NVS
+  automatically.
 
 ## Wi-Fi и web
 
@@ -89,7 +94,7 @@ still requires supervised cookware validation before it is treated as calibrated
 ## Оставшиеся ограничения и необязательная характеризация
 
 - Setpoint range is `40…190 °C`. The revised PREHEAT/APPROACH/HOLD controller
-  and zero-output cooling state still need supervised cookware characterization.
+  and active-zero command still need supervised cookware/relay characterization.
 - Production keeps the 80 °C interface IGBT guard and a separate 210 °C bottom
   emergency cutoff. The power MCU's native E05 remains active.
 - Полный перебор редких fault paths и длительный web/network soak могут быть

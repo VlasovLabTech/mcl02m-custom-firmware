@@ -2,13 +2,14 @@
 
 #include <stdint.h>
 
-#define MCL02M_FIRMWARE_VERSION "0.2.4-dev"
+#define MCL02M_FIRMWARE_VERSION "0.2.5-dev"
 
 #define COOKER_MAX_GEAR                 99U
 #define COOKER_HOLD_MAX_GEAR            35U
 #define COOKER_PREHEAT_MIN_GEAR         56U
 #define COOKER_MAX_TIMER_S              (5U * 60U * 60U)
 #define COOKER_HARD_RUN_LIMIT_MS         (5U * 60U * 60U * 1000U)
+#define COOKER_MANUAL_PAUSE_TIMEOUT_MS   (2U * 60U * 60U * 1000U)
 #define COOKER_NO_PAN_TIMEOUT_MS         60000U
 #define COOKER_NO_PAN_SOUND_PAUSE_MS      3000U
 #define COOKER_POWERBOARD_ARM_MS         30000U

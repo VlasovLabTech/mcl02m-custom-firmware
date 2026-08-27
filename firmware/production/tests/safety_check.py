@@ -40,6 +40,7 @@ def main() -> int:
     files = list(MAIN.glob("*.c")) + list(MAIN.glob("*.h"))
     source = "\n".join(path.read_text(encoding="utf-8") for path in files)
     config = (MAIN / "app_config.h").read_text(encoding="utf-8")
+    cmake = (MAIN / "CMakeLists.txt").read_text(encoding="utf-8")
     engine = (MAIN / "cooking_engine.c").read_text(encoding="utf-8")
     web = (MAIN / "web_server_prod.c").read_text(encoding="utf-8")
     sound = (MAIN / "sound.c").read_text(encoding="utf-8")
@@ -86,9 +87,9 @@ def main() -> int:
             "HOLD SATURATED measures actual gear-35 dwell with at least 3 C undershoot")
     require("if (error <= 1)" in (MAIN / "temperature_ctrl.c").read_text(encoding="utf-8") and
             "if (error < 3)" in (MAIN / "temperature_ctrl.c").read_text(encoding="utf-8") and
-            "s_temperature_coasting" in engine and "apply_output_locked(gear)" in engine and
-            '"COOLING TO SETPOINT"' in engine,
-            "temperature mode can wait at zero output and restarts with hysteresis")
+            "s_active_zero" in engine and "apply_output_locked(gear)" in engine and
+            '"ACTIVE ZERO"' in engine,
+            "temperature mode can wait in active zero and restart with hysteresis")
     require("s_status.state != COOK_STATE_COOKING" in engine and
             "update_timer_locked" in engine,
             "cooking countdown freezes on Pause and NoPan")
@@ -153,8 +154,28 @@ def main() -> int:
             "prepare_profile_stage_locked(next, true)" in engine and
             "stage->timer_s == 0" in engine and "sound_play(SOUND_STAGE)" in engine,
             "five timed profile cells skip zero durations and require a second physical Start")
-    require('normal_stop_locked("GEAR ZERO", false)' in engine,
-            "POWER gear zero during an active cycle is an explicit Stop")
+    require("MCL02M_ACTIVE_ZERO_ENABLED=1" in cmake and
+            "MCL02M_ACTIVE_ZERO_DIAGNOSTICS=1" in cmake and
+            "PB_STATE_ACTIVE_ZERO" in power and "#define PB_ACTIVE_ZERO_0D 0x81U" in power and
+            "command_state == PB_STATE_ACTIVE_ZERO" in power and
+            "powerboard_control_set_gear(unsigned gear)" in power and
+            "if (gear > MCL02M_MAX_GEAR)" in power and
+            'normal_stop_locked("GEAR ZERO", false)' not in engine,
+            "POWER and temperature gear zero use the diagnostic active-zero session command")
+    require("#define COOKER_MANUAL_PAUSE_TIMEOUT_MS   (2U * 60U * 60U * 1000U)" in config and
+            "update_manual_pause_timeout_locked" in engine and
+            'normal_stop_locked("PAUSE TIMEOUT", false)' in engine and
+            "s_status.state != COOK_STATE_PAUSED" in engine and
+            "powerboard_control_pause()" in engine and "PB_STATE_PAUSED" in power,
+            "manual Pause uses active zero and performs a full Stop after two hours")
+    require("stage->gear > COOKER_MAX_GEAR" in settings and
+            "stage->mode == COOK_MODE_POWER && stage->gear == 0" not in settings and
+            web.count("min=0 max=99") == 5 and "gear < 0 || gear > 99" in web,
+            "timed POWER profile stages accept gear zero as a wait stage")
+    require('\\"cmd_0d\\":%u' in power and '\\"active_zero_entries\\":%' in power and
+            '\\"active_zero_enabled\\":%s' in power and '\\"active_zero\\":%s' in engine and
+            "powerboard_control_status_json" in web,
+            "UART and authenticated Wi-Fi status expose removable active-zero diagnostics")
     require("state_schedulable" in engine and
             "if (!state_schedulable(snapshot.state)) return ESP_ERR_INVALID_STATE" in engine,
             "delayed Start cannot overwrite an active cooking state")

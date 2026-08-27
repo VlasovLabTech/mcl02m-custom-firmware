@@ -20,6 +20,16 @@
 #define PB_CLOCK_HZ 10000
 #define PB_READ_RESPONSE_DELAY_MS 30U
 
+#ifndef MCL02M_ACTIVE_ZERO_ENABLED
+#define MCL02M_ACTIVE_ZERO_ENABLED 0
+#endif
+
+#ifndef MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+#define MCL02M_ACTIVE_ZERO_DIAGNOSTICS 0
+#endif
+
+#define PB_ACTIVE_ZERO_0D 0x81U
+
 static i2c_master_bus_handle_t s_bus;
 static i2c_master_dev_handle_t s_device;
 static SemaphoreHandle_t s_bus_lock;
@@ -109,6 +119,12 @@ static bool state_can_energize(powerboard_state_t state)
            state == PB_STATE_NO_PAN || state == PB_STATE_HEARTBEAT_GAP;
 }
 
+static bool state_session_open(powerboard_state_t state)
+{
+    return state_can_energize(state) || state == PB_STATE_ACTIVE_ZERO ||
+           state == PB_STATE_PAUSED;
+}
+
 static bool bottom_temperature_interface_safe(uint8_t temperature_c)
 {
 #if MCL02M_MAX_BOTTOM_C == 0U
@@ -127,6 +143,7 @@ const char *powerboard_state_name(powerboard_state_t state)
     case PB_STATE_ARMED: return "ARMED";
     case PB_STATE_STARTING: return "STARTING";
     case PB_STATE_HEATING: return "HEATING";
+    case PB_STATE_ACTIVE_ZERO: return "ACTIVE_ZERO";
     case PB_STATE_PAUSED: return "PAUSED";
     case PB_STATE_NO_PAN: return "NO_PAN";
     case PB_STATE_HEARTBEAT_GAP: return "HB_GAP";
@@ -202,6 +219,11 @@ static esp_err_t send_stop_sequence(void)
     const esp_err_t e0c = write_register(0x0c, 0x00);
     if (result == ESP_OK && e00 != ESP_OK) result = e00;
     if (result == ESP_OK && e0c != ESP_OK) result = e0c;
+    xSemaphoreTake(s_status_lock, portMAX_DELAY);
+    s_status.last_command_0d = 0;
+    s_status.last_command_00 = 0;
+    s_status.last_command_0c = 0;
+    xSemaphoreGive(s_status_lock);
     return result;
 }
 
@@ -324,7 +346,7 @@ static void update_time_and_safety(int64_t now_us)
         strlcpy(s_status.fault, "ARM EXPIRED", sizeof(s_status.fault));
     }
     if (s_run_deadline_us != 0 && now_us >= s_run_deadline_us &&
-        (state_can_energize(s_status.state) || s_status.state == PB_STATE_PAUSED)) {
+        state_session_open(s_status.state)) {
         stop_locked("COMPLETE");
     }
     if (s_status.state == PB_STATE_STARTING && s_start_confirm_deadline_us != 0 &&
@@ -335,7 +357,7 @@ static void update_time_and_safety(int64_t now_us)
         fault_locked("HB GAP END");
     }
 
-    if (state_can_energize(s_status.state)) {
+    if (state_session_open(s_status.state)) {
         if ((s_status.valid_mask & (1U << 3)) != 0 &&
             (s_status.registers[3] < 0x41 || s_status.registers[3] >= 0xf8 ||
              s_status.igbt_c >= MCL02M_MAX_IGBT_C)) {
@@ -382,12 +404,12 @@ static void update_status_feedback(void)
     if (r20_valid && r20 == 0x2b) {
         /* Verified stock relay-transition status; nonfatal for up to ten seconds. */
         if (++s_unknown_status_samples >= MCL02M_R20_TRANSITION_MAX_SAMPLES &&
-            state_can_energize(s_status.state)) {
+            state_session_open(s_status.state)) {
             fault_locked("POWER TRANSITION");
         }
     } else if (r20_valid && r20 != 0 && r20 != 0x02) {
         if (++s_unknown_status_samples >= MCL02M_UNKNOWN_STATUS_SAMPLES_TO_FAULT &&
-            state_can_energize(s_status.state)) {
+            state_session_open(s_status.state)) {
             const char *fault = "POWER STATUS";
             if (r20 == 0x0b) fault = "E03 HIGH VOLT";
             else if (r20 == 0x0c) fault = "E04 LOW VOLT";
@@ -441,7 +463,7 @@ static void advance_ramp(void)
 
 static void emit_status(void)
 {
-    char json[512];
+    char json[768];
     powerboard_control_status_json(json, sizeof(json));
     telemetry_emit(json);
 }
@@ -502,11 +524,21 @@ static void control_task(void *arg)
                     command_0d = topology;
                     command_00 = 1;
                     command_0c = gear;
+                } else if (command_state == PB_STATE_ACTIVE_ZERO ||
+                           command_state == PB_STATE_PAUSED) {
+#if MCL02M_ACTIVE_ZERO_ENABLED
+                    command_0d = PB_ACTIVE_ZERO_0D;
+#endif
                 } else if (command_state == PB_STATE_NO_PAN) {
                     command_0d = 0x80;
                     command_00 = 1;
                     command_0c = target_gear;
                 }
+                xSemaphoreTake(s_status_lock, portMAX_DELAY);
+                s_status.last_command_0d = command_0d;
+                s_status.last_command_00 = command_00;
+                s_status.last_command_0c = command_0c;
+                xSemaphoreGive(s_status_lock);
                 if (write_register(0x0d, command_0d) != ESP_OK) ++cycle_errors;
                 if (!wait_until_or_stop(cycle_start, 450)) {
                     interrupted = true;
@@ -615,22 +647,28 @@ size_t powerboard_control_status_json(char *output, size_t output_size)
     return (size_t)snprintf(output, output_size,
         "{\"t_ms\":%lld,\"type\":\"power_control\",\"state\":\"%s\","
         "\"gear_target\":%u,\"gear_applied\":%u,\"topology\":%u,"
+        "\"cmd_0d\":%u,\"cmd_00\":%u,\"cmd_0c\":%u,"
         "\"r20\":%u,\"r21\":%u,\"r22\":%u,\"r23\":%u,\"r24\":%u,"
         "\"r26\":%u,\"r27\":%u,\"igbt_c\":%u,\"bottom_c\":%u,"
         "\"valid_mask\":%u,\"run_ms\":%" PRIu32 ",\"remaining_ms\":%" PRIu32 ","
         "\"arm_ms\":%" PRIu32 ",\"start_confirm_ms\":%" PRIu32 ","
         "\"hb_gap_ms\":%" PRIu32 ",\"stop_verified\":%s,"
         "\"hb_gap_observed_stop\":%s,\"cycles\":%" PRIu32 ",\"bad_cycles\":%" PRIu32 ","
-        "\"consecutive_bad_cycles\":%" PRIu32 ",\"fault\":\"%s\"}",
+        "\"consecutive_bad_cycles\":%" PRIu32 ","
+        "\"active_zero_entries\":%" PRIu32 ",\"active_zero_resumes\":%" PRIu32 ","
+        "\"active_zero_enabled\":%s,\"fault\":\"%s\"}",
         esp_timer_get_time() / 1000, powerboard_state_name(s.state),
         s.target_gear, s.applied_gear, s.topology,
+        s.last_command_0d, s.last_command_00, s.last_command_0c,
         s.registers[0], s.registers[1], s.registers[2], s.registers[3],
         s.registers[4], s.registers[6], s.registers[7], s.igbt_c, s.bottom_c,
         s.valid_mask, s.run_elapsed_ms, s.run_remaining_ms, s.arm_remaining_ms,
         s.start_confirm_remaining_ms, s.heartbeat_gap_remaining_ms,
         s.stop_verified ? "true" : "false",
         s.heartbeat_gap_observed_stop ? "true" : "false", s.completed_cycles,
-        s.bad_cycles, s.consecutive_bad_cycles, s.fault);
+        s.bad_cycles, s.consecutive_bad_cycles,
+        s.active_zero_entries, s.active_zero_resumes,
+        MCL02M_ACTIVE_ZERO_ENABLED ? "true" : "false", s.fault);
 }
 
 esp_err_t powerboard_control_arm(unsigned window_ms)
@@ -653,7 +691,7 @@ esp_err_t powerboard_control_arm(unsigned window_ms)
 
 esp_err_t powerboard_control_start(unsigned gear, unsigned duration_ms)
 {
-    if (gear == 0 || gear > MCL02M_MAX_GEAR || duration_ms < 1000 ||
+    if (gear > MCL02M_MAX_GEAR || duration_ms < 1000 ||
         duration_ms > MCL02M_MAX_RUN_MS) return ESP_ERR_INVALID_ARG;
     xSemaphoreTake(s_status_lock, portMAX_DELAY);
     const int64_t now = esp_timer_get_time();
@@ -665,7 +703,8 @@ esp_err_t powerboard_control_start(unsigned gear, unsigned duration_ms)
     s_status.target_gear = (uint8_t)gear;
     s_status.applied_gear = (uint8_t)(gear > 10 ? 10 : gear);
     s_status.topology = topology_for_gear(s_status.applied_gear);
-    s_status.state = PB_STATE_STARTING;
+    s_status.state = gear == 0 ? PB_STATE_ACTIVE_ZERO : PB_STATE_STARTING;
+    if (gear == 0) ++s_status.active_zero_entries;
     s_status.heartbeat_gap_observed_stop = false;
     s_run_started_us = now;
     s_run_deadline_us = now + (int64_t)duration_ms * 1000;
@@ -676,41 +715,84 @@ esp_err_t powerboard_control_start(unsigned gear, unsigned duration_ms)
     if (s_control_task != NULL) xTaskNotifyGive(s_control_task);
     telemetry_emitf("{\"t_ms\":%lld,\"type\":\"power_start\",\"gear\":%u,"
                     "\"duration_ms\":%u}", esp_timer_get_time() / 1000, gear, duration_ms);
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+    if (gear == 0) {
+        telemetry_emitf("{\"t_ms\":%lld,\"type\":\"active_zero_enter\","
+                        "\"source\":\"start\",\"cmd_0d\":%u}",
+                        esp_timer_get_time() / 1000, PB_ACTIVE_ZERO_0D);
+    }
+#endif
     return ESP_OK;
 }
 
 esp_err_t powerboard_control_set_gear(unsigned gear)
 {
-    if (gear == 0 || gear > MCL02M_MAX_GEAR) return ESP_ERR_INVALID_ARG;
+    if (gear > MCL02M_MAX_GEAR) return ESP_ERR_INVALID_ARG;
     xSemaphoreTake(s_status_lock, portMAX_DELAY);
-    if (s_status.state != PB_STATE_STARTING && s_status.state != PB_STATE_HEATING &&
-        s_status.state != PB_STATE_NO_PAN && s_status.state != PB_STATE_PAUSED) {
+    const powerboard_state_t previous = s_status.state;
+    if (previous != PB_STATE_STARTING && previous != PB_STATE_HEATING &&
+        previous != PB_STATE_NO_PAN && previous != PB_STATE_ACTIVE_ZERO &&
+        previous != PB_STATE_PAUSED) {
         xSemaphoreGive(s_status_lock);
         return ESP_ERR_INVALID_STATE;
     }
     const uint8_t new_gear = (uint8_t)gear;
     s_status.target_gear = new_gear;
+    if (previous == PB_STATE_PAUSED) {
+        if (new_gear != 0) s_status.topology = topology_for_gear(new_gear);
+    } else if (new_gear == 0) {
+        s_status.applied_gear = 0;
+        s_status.state = PB_STATE_ACTIVE_ZERO;
+        s_start_confirm_deadline_us = 0;
+        if (previous != PB_STATE_ACTIVE_ZERO) ++s_status.active_zero_entries;
+    } else if (previous == PB_STATE_ACTIVE_ZERO) {
+        /* Resume the retained session directly, without the cold-start gear-10 ramp. */
+        s_status.applied_gear = new_gear;
+        s_status.topology = topology_for_gear(new_gear);
+        s_status.state = PB_STATE_STARTING;
+        s_start_confirm_deadline_us = 0;
+        ++s_status.active_zero_resumes;
+    }
+    const powerboard_state_t current = s_status.state;
     xSemaphoreGive(s_status_lock);
     if (s_control_task != NULL) xTaskNotifyGive(s_control_task);
-    telemetry_emitf("{\"t_ms\":%lld,\"type\":\"power_set_gear\",\"gear\":%u}",
-                    esp_timer_get_time() / 1000, gear);
+    telemetry_emitf("{\"t_ms\":%lld,\"type\":\"power_set_gear\",\"gear\":%u,"
+                    "\"from\":\"%s\",\"to\":\"%s\"}",
+                    esp_timer_get_time() / 1000, gear,
+                    powerboard_state_name(previous),
+                    powerboard_state_name(current));
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+    if (gear == 0 && previous != PB_STATE_PAUSED) {
+        telemetry_emitf("{\"t_ms\":%lld,\"type\":\"active_zero_enter\","
+                        "\"source\":\"set_gear\",\"from\":\"%s\",\"cmd_0d\":%u}",
+                        esp_timer_get_time() / 1000, powerboard_state_name(previous),
+                        PB_ACTIVE_ZERO_0D);
+    } else if (gear != 0 && previous == PB_STATE_ACTIVE_ZERO) {
+        telemetry_emitf("{\"t_ms\":%lld,\"type\":\"active_zero_resume\","
+                        "\"gear\":%u,\"topology\":%u}",
+                        esp_timer_get_time() / 1000, gear, topology_for_gear(new_gear));
+    }
+#endif
     return ESP_OK;
 }
 
 esp_err_t powerboard_control_pause(void)
 {
     xSemaphoreTake(s_status_lock, portMAX_DELAY);
-    if (!state_can_energize(s_status.state)) {
+    if (!state_can_energize(s_status.state) && s_status.state != PB_STATE_ACTIVE_ZERO) {
         xSemaphoreGive(s_status_lock);
         return ESP_ERR_INVALID_STATE;
     }
     s_status.state = PB_STATE_PAUSED;
     s_status.applied_gear = 0;
-    s_status.topology = 0;
     s_start_confirm_deadline_us = 0;
-    s_force_stop = true;
     xSemaphoreGive(s_status_lock);
     if (s_control_task != NULL) xTaskNotifyGive(s_control_task);
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+    telemetry_emitf("{\"t_ms\":%lld,\"type\":\"active_zero_enter\","
+                    "\"source\":\"manual_pause\",\"cmd_0d\":%u}",
+                    esp_timer_get_time() / 1000, PB_ACTIVE_ZERO_0D);
+#endif
     return ESP_OK;
 }
 
@@ -723,12 +805,22 @@ esp_err_t powerboard_control_resume(void)
         xSemaphoreGive(s_status_lock);
         return ESP_ERR_INVALID_STATE;
     }
-    s_status.applied_gear = (uint8_t)(s_status.target_gear > 10 ? 10 : s_status.target_gear);
+    s_status.applied_gear = s_status.target_gear;
     s_status.topology = topology_for_gear(s_status.applied_gear);
-    s_status.state = PB_STATE_STARTING;
+    s_status.state = s_status.target_gear == 0 ? PB_STATE_ACTIVE_ZERO : PB_STATE_STARTING;
     s_start_confirm_deadline_us = 0;
+    if (s_status.target_gear != 0) ++s_status.active_zero_resumes;
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+    const uint8_t resumed_gear = s_status.target_gear;
+    const uint8_t resumed_topology = s_status.topology;
+#endif
     xSemaphoreGive(s_status_lock);
     if (s_control_task != NULL) xTaskNotifyGive(s_control_task);
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+    telemetry_emitf("{\"t_ms\":%lld,\"type\":\"active_zero_resume\","
+                    "\"source\":\"manual_pause\",\"gear\":%u,\"topology\":%u}",
+                    esp_timer_get_time() / 1000, resumed_gear, resumed_topology);
+#endif
     return ESP_OK;
 }
 
