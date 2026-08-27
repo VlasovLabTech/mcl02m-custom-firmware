@@ -32,6 +32,7 @@ still requires supervised cookware validation before it is treated as calibrated
 | Critical | Stop + latched `error.png` с фактическим E-кодом; один мотив 2,5 s проигрывается дважды на burst, всего 3 bursts с паузами 4 s; ACK немедленно вызывает `sound_stop()`; Sleep запрещён до ACK |
 | NoPan | три последовательных отсчёта по 500 ms; отдельный `nopan.png`, orange blink, обязательный цикл `мелодия 2,74 s → тишина 3 s` даже при `SOUND OFF`, timer freeze, окно возврата 60 s, затем E02 fault; возврат/Stop/Pause немедленно прерывает цикл |
 | Stock E-groups | известные устойчивые raw-группы сохраняют E03/E04/E05/E07/E08/E10/E12; communication — E09; неизвестные остаются generic |
+| I²C debug | Temporary persisted setting, OFF by default; overlays consecutive bad cycles `0…6` in small text at OLED `x=0, y=10`, including the E09 picture; one clean cycle resets it to zero |
 
 ## Силовой и safety-контур
 

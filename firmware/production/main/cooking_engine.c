@@ -380,6 +380,9 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
     s_status.applied_gear = pb->applied_gear;
     s_status.igbt_c = pb->igbt_c;
     s_status.bottom_c = pb->bottom_c;
+    s_status.i2c_bad_cycles = (uint8_t)(pb->consecutive_bad_cycles > COOKER_I2C_DEBUG_MAX ?
+                                        COOKER_I2C_DEBUG_MAX :
+                                        pb->consecutive_bad_cycles);
     s_status.readings_valid = (pb->valid_mask & ((1U << 3) | (1U << 4))) ==
                               ((1U << 3) | (1U << 4));
     if (pb->valid_mask & (1U << 2)) s_status.mains_voltage_v = pb->registers[2] + 50U;
@@ -682,7 +685,8 @@ size_t cooking_engine_status_json(char *output, size_t output_size)
     return snprintf(output, output_size,
         "{\"state\":\"%s\",\"mode\":%u,\"phase\":%u,\"fault\":\"%s\","
         "\"selected_gear\":%u,\"applied_gear\":%u,\"paused_gear\":%u,\"target_c\":%u,"
-        "\"bottom_c\":%u,\"igbt_c\":%u,\"voltage_v\":%u,\"readings_valid\":%s,"
+        "\"bottom_c\":%u,\"igbt_c\":%u,\"i2c_bad_cycles\":%u,"
+        "\"voltage_v\":%u,\"readings_valid\":%s,"
         "\"pan\":%s,\"timer_enabled\":%s,\"timer_s\":%" PRIu32 ","
         "\"timer_last_s\":%" PRIu32 ",\"delayed\":%s,\"delayed_s\":%" PRIu32 ","
         "\"clock_valid\":%s,\"hold_saturated\":%s,"
@@ -690,7 +694,8 @@ size_t cooking_engine_status_json(char *output, size_t output_size)
         "\"profile_mode\":%u,"
         "\"run_s\":%" PRIu32 ",\"detail\":\"%s\"}",
         cooking_state_name(s.state), s.mode, s.temp_phase, cooking_fault_name(s.fault),
-        s.selected_gear, s.applied_gear, s.paused_gear, s.target_temperature_c, s.bottom_c, s.igbt_c,
+        s.selected_gear, s.applied_gear, s.paused_gear, s.target_temperature_c,
+        s.bottom_c, s.igbt_c, s.i2c_bad_cycles,
         s.mains_voltage_v, s.readings_valid ? "true" : "false", s.pan_present ? "true" : "false",
         s.timer_enabled ? "true" : "false", s.timer_remaining_s, s.timer_last_s,
         s.delayed_start ? "true" : "false", s.delayed_remaining_s,

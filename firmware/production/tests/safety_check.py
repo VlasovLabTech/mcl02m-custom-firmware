@@ -169,11 +169,23 @@ def main() -> int:
             "fault/live screens cannot be hidden behind a menu overlay")
     require("TIMER_SCREEN_ALWAYS" in display and "ui_oled_show_timer" in display,
             "TIMER SCREEN setting supports movable countdown or full OLED off")
-    require("#define SETTING_ITEMS 11" in ui and
+    require("#define SETTING_ITEMS 12" in ui and
             ui.count('"SHOW"') >= 4 and ui.count('"ПОКАЗАТЬ"') >= 4 and
             all(label in ui for label in ('"LIVE DATA"', '"IGBT T°C"',
                                           '"TIMER SCREEN"', '"SLEEP CLOCK"')),
             "Settings 3-6 use SHOW plus a descriptive second line")
+    require("show_i2c_debug" in settings and
+            "s_settings.show_i2c_debug = 0;" in settings and
+            "if (stored.schema <= 4U) s_settings.show_i2c_debug = 0;" in settings and
+            'case 9: return "I2C ERRORS";' in ui and
+            "case 9: s_setting_value = settings.show_i2c_debug;" in ui and
+            "case 9: settings.show_i2c_debug = s_setting_value;" in ui,
+            "temporary I2C counter display is an opt-in persisted physical setting")
+    require("pb->consecutive_bad_cycles > COOKER_I2C_DEBUG_MAX" in engine and
+            "s_status.i2c_bad_cycles" in engine and
+            "ui_oled_overlay_debug_counter(cooker.i2c_bad_cycles)" in display and
+            "oled_draw_scaled_text(text, 0, 10, 1, 1)" in outputs,
+            "I2C debug counter is clamped to six and overlaid at row 2, x=0")
     cjk_codepoints = {
         ord(char) for char in ui + display if 0x3400 <= ord(char) <= 0x9FFF
     }
@@ -311,6 +323,10 @@ def main() -> int:
             "elapsed % 42U" in display and "(elapsed / 42U) % 3U" in display and
             "ui_oled_show_sleep_clock" in outputs,
             "sleep Clock is persisted and moves down one pixel per minute across center/left/right passes")
+    require("#define COOKER_SETTINGS_SCHEMA           5U" in config and
+            "sizeof(app_settings_t) == 32" in settings and
+            "stored.schema == 4U" in settings,
+            "settings schema 5 preserves and migrates the 32-byte settings blob")
     require("input_status.state == COOK_STATE_SLEEP && event->type == UI_INPUT_MAIN_PRESSED" in ui and
             "input_status.state == COOK_STATE_SLEEP && event->type == UI_INPUT_ENCODER" in ui and
             "s_swallow_main = true" in ui and "s_encoder_guard_until_us" in ui,

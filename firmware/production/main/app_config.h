@@ -32,6 +32,7 @@
 /* Additional interface-side guard; the power MCU retains its own protections. */
 #define COOKER_IGBT_LIMIT_C              80U
 
-#define COOKER_SETTINGS_SCHEMA           4U
+#define COOKER_SETTINGS_SCHEMA           5U
+#define COOKER_I2C_DEBUG_MAX             6U
 #define COOKER_PROFILE_COUNT             5U
 #define COOKER_PROFILE_STAGE_COUNT       5U

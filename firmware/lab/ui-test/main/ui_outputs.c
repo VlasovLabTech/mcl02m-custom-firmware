@@ -1121,6 +1121,21 @@ esp_err_t ui_oled_show_bitmap_text(const uint8_t bitmap[UI_OLED_BITMAP_BYTES],
     return err;
 }
 
+esp_err_t ui_oled_overlay_debug_counter(unsigned value)
+{
+    char text[2];
+    snprintf(text, sizeof(text), "%u", value > 6U ? 6U : value);
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    esp_err_t err = oled_init_once();
+    if (err == ESP_OK) {
+        /* Debug row 2: small text at the absolute left edge, overlap allowed. */
+        oled_draw_scaled_text(text, 0, 10, 1, 1);
+        err = oled_flush();
+    }
+    xSemaphoreGive(s_lock);
+    return err;
+}
+
 esp_err_t ui_oled_show_text(const char *lines[UI_OLED_TEXT_LINES])
 {
     if (lines == NULL) return ESP_ERR_INVALID_ARG;

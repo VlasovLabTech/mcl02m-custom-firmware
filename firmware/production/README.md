@@ -50,6 +50,9 @@
 - Interface-generated E09 now requires six consecutive bad 500-ms I²C cycles.
   While any power-board fault remains latched, the complete Stop sequence is
   retransmitted every heartbeat.
+- Temporary `Settings → Show → I2C Errors` is OFF by default. When enabled it
+  overlays the current consecutive-bad-cycle count `0…6` at OLED `x=0, y=10`,
+  including over the E09 picture. A clean cycle resets the displayed value to 0.
 - All nine white power LEDs run a 1.5-second all-on boot test. If this test is
   not visible, inspect the panel LED driver, flex cable, supply and GPIO path.
 - GPIO32 не имеет подтверждённого эффекта и всегда оставлен LOW.

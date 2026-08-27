@@ -23,6 +23,7 @@ esp_err_t ui_oled_show_pattern(unsigned pattern);
 esp_err_t ui_oled_show_bitmap(const uint8_t bitmap[UI_OLED_BITMAP_BYTES]);
 esp_err_t ui_oled_show_bitmap_text(const uint8_t bitmap[UI_OLED_BITMAP_BYTES],
                                    const char *text, int x, int y);
+esp_err_t ui_oled_overlay_debug_counter(unsigned value);
 esp_err_t ui_oled_show_text(const char *lines[UI_OLED_TEXT_LINES]);
 esp_err_t ui_oled_show_menu_item(unsigned index, const char *label, const char *subtitle);
 esp_err_t ui_oled_show_large_number(unsigned value);

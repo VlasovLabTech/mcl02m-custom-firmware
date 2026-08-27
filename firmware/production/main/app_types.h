@@ -57,7 +57,8 @@ typedef struct {
     int16_t timezone_minutes;
     uint8_t show_sleep_clock;
     uint8_t wifi_enabled;
-    uint8_t reserved[12];
+    uint8_t show_i2c_debug;
+    uint8_t reserved[11];
     uint32_t crc32;
 } app_settings_t;
 
@@ -84,6 +85,7 @@ typedef struct {
     uint16_t target_temperature_c;
     uint8_t bottom_c;
     uint8_t igbt_c;
+    uint8_t i2c_bad_cycles;
     uint16_t mains_voltage_v;
     bool readings_valid;
     bool pan_present;

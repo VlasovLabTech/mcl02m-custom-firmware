@@ -12,15 +12,15 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 ## App image
 
 - File: `build/mcl02m_custom.bin`
-- Size: `878160` bytes (`0xD6650`)
-- SHA-256: `3cd2b3beed1d22814402d23227f6ac1bf7967b6e6f9c53c05665a4e306f4d2c3`
-- ESP image validation hash: `829143908d2be8fb91ee5901ac56377f83052a76ded27b41e6124aeef5c8ea29`
-- Stock OTA slot: `0x160000` bytes; image fits with `563632` bytes free.
+- Size: `878448` bytes (`0xD6770`)
+- SHA-256: `bc6f31355eef9086292a845b51bd4e480eb4d60bba61e127da417d08bc08d716`
+- ESP image validation hash: `79ebd4adf81f79e6f673f6d235b32ff309c22e0e5361e61f832fe946f141f510`
+- Stock OTA slot: `0x160000` bytes; image fits with `563344` bytes free.
 
 ## Linked memory
 
-- Flash code: 628418 bytes
-- Flash data: 145068 bytes
+- Flash code: 628662 bytes
+- Flash data: 145116 bytes
 - IRAM: 89047 / 131072 bytes (67.94%)
 - DRAM static: 36404 / 180736 bytes (20.14%)
 - RTC slow: 64 / 8192 bytes

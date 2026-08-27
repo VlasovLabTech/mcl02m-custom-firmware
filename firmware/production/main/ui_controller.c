@@ -20,7 +20,7 @@
 
 #define LINE_BYTES 32
 #define HOME_ITEMS 7
-#define SETTING_ITEMS 11
+#define SETTING_ITEMS 12
 #define WIFI_ITEMS 4
 #define EDITOR_TIMEOUT_US (10LL * 1000000LL)
 #define TEMPERATURE_EDIT_TIMEOUT_US (2LL * 1000000LL)
@@ -126,15 +126,15 @@ static const char *setting_name(unsigned item, app_language_t language)
 {
     static const char *en[SETTING_ITEMS] = {
         "LANGUAGE", "SOUND", "SHOW", "SHOW", "SHOW", "SHOW",
-        "SLEEP MIN", "OLED TIME", "TIMEZONE", "WI-FI", "FACTORY"
+        "SLEEP MIN", "OLED TIME", "TIMEZONE", "SHOW", "WI-FI", "FACTORY"
     };
     static const char *ru[SETTING_ITEMS] = {
         "ЯЗЫК", "ЗВУК", "ПОКАЗАТЬ", "ПОКАЗАТЬ", "ПОКАЗАТЬ", "ПОКАЗАТЬ",
-        "СОН МИН", "ЭКРАН ВР", "ЧАС ПОЯС", "WI-FI", "ЗАВОДСКИЕ"
+        "СОН МИН", "ЭКРАН ВР", "ЧАС ПОЯС", "ПОКАЗАТЬ", "WI-FI", "ЗАВОДСКИЕ"
     };
     static const char *zh[SETTING_ITEMS] = {
         "语言", "声音", "显示", "显示", "显示", "显示",
-        "休眠分钟", "屏幕时间", "时区", "WI-FI", "恢复出厂"
+        "休眠分钟", "屏幕时间", "时区", "显示", "WI-FI", "恢复出厂"
     };
     if (item >= SETTING_ITEMS) return "?";
     if (language == LANG_RU) return ru[item];
@@ -149,6 +149,7 @@ static const char *setting_name_second(unsigned item, app_language_t language)
     case 3: return "IGBT T°C";
     case 4: return tr(language, "TIMER SCREEN", "ТАЙМЕР", "定时屏幕");
     case 5: return tr(language, "SLEEP CLOCK", "ЧАСЫ В СНЕ", "休眠时钟");
+    case 9: return "I2C ERRORS";
     default: return "";
     }
 }
@@ -278,7 +279,7 @@ static void render(void)
             static const char *language_names[] = {"ENGLISH", "РУССКИЙ", "中文"};
             snprintf(l2, sizeof(l2), "%s", language_names[clamp(s_setting_value, LANG_EN, LANG_ZH)]);
         }
-        else if (s_setting >= 1 && s_setting <= 5)
+        else if ((s_setting >= 1 && s_setting <= 5) || s_setting == 9)
             snprintf(l2, sizeof(l2), "%s", s_setting_value ?
                      tr(lang, "ON", "ВКЛ", "开") : tr(lang, "OFF", "ВЫКЛ", "关"));
         else if (s_setting == 8) {
@@ -548,6 +549,7 @@ static void open_setting_value(void)
     case 6: s_setting_value = settings.sleep_minutes; break;
     case 7: s_setting_value = settings.oled_timeout_s; break;
     case 8: s_setting_value = settings.timezone_minutes; break;
+    case 9: s_setting_value = settings.show_i2c_debug; break;
     }
     s_view = VIEW_SETTING_VALUE;
 }
@@ -566,6 +568,7 @@ static void save_setting(void)
     case 6: settings.sleep_minutes = s_setting_value; break;
     case 7: settings.oled_timeout_s = s_setting_value; break;
     case 8: settings.timezone_minutes = s_setting_value; break;
+    case 9: settings.show_i2c_debug = s_setting_value; break;
     }
     const esp_err_t err = settings_update(&settings);
     if (err != ESP_OK) {
@@ -617,7 +620,7 @@ static void encoder_event(const ui_input_event_t *event)
         if (s_setting == 0)
             s_setting_value = clamp(s_setting_value + (step > 0 ? 1 : -1),
                                     LANG_EN, LANG_ZH);
-        else if (s_setting <= 5) s_setting_value = !s_setting_value;
+        else if (s_setting <= 5 || s_setting == 9) s_setting_value = !s_setting_value;
         else if (s_setting == 6) s_setting_value = clamp(s_setting_value + (step > 0 ? 1 : -1), 1, 60);
         else if (s_setting == 7) s_setting_value = oled_timeout_step(s_setting_value, step);
         else s_setting_value = clamp(s_setting_value + (step > 0 ? 30 : -30), -720, 840);
@@ -710,8 +713,8 @@ static void central_short(void)
         cooking_start();
         break;
     case VIEW_SETTINGS:
-        if (s_setting == 9) { s_wifi_selection = 0; s_view = VIEW_WIFI_MENU; }
-        else if (s_setting == 10) s_view = VIEW_FACTORY_CONFIRM;
+        if (s_setting == 10) { s_wifi_selection = 0; s_view = VIEW_WIFI_MENU; }
+        else if (s_setting == 11) s_view = VIEW_FACTORY_CONFIRM;
         else open_setting_value();
         break;
     case VIEW_SETTING_VALUE: save_setting(); break;

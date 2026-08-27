@@ -418,6 +418,8 @@ static void display_task(void *arg)
                 for (unsigned i = 0; i < UI_OLED_TEXT_LINES; ++i) pointers[i] = lines[i];
                 ui_oled_show_text(pointers);
             }
+            if (settings.show_i2c_debug)
+                ui_oled_overlay_debug_counter(cooker.i2c_bad_cycles);
         }
         vTaskDelay(pdMS_TO_TICKS(250));
     }

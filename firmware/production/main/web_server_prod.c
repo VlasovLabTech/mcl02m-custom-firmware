@@ -275,6 +275,7 @@ static esp_err_t status_handler(httpd_req_t *req)
              "\"ap_ssid\":\"%s\",\"clock\":%s},"
              "\"settings\":{\"language\":%u,\"sound\":%s,\"context\":%s,"
              "\"igbt\":%s,\"timer_screen\":%s,\"sleep_clock\":%s,"
+             "\"i2c_debug\":%s,"
              "\"wifi_enabled\":%s,\"sleep\":%u,\"oled\":%u,"
              "\"timezone\":%d},\"profiles\":%s,\"persistence\":%s,"
              "\"telemetry_dropped\":%" PRIu32 "}",
@@ -287,6 +288,7 @@ static esp_err_t status_handler(httpd_req_t *req)
              settings.show_igbt ? "true" : "false",
              settings.timer_screen_mode == TIMER_SCREEN_ALWAYS ? "true" : "false",
              settings.show_sleep_clock ? "true" : "false",
+             settings.show_i2c_debug ? "true" : "false",
              settings.wifi_enabled ? "true" : "false",
              settings.sleep_minutes, settings.oled_timeout_s, settings.timezone_minutes,
              profiles_json,

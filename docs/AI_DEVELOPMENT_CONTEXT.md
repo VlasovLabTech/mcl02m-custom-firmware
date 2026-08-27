@@ -392,8 +392,9 @@ Settings menu:
 7. Idle-to-Sleep minutes.
 8. Active OLED timeout (1, 2, 3, 5, 10, 20, 30 min; 1–5 h).
 9. Timezone (`UTC-12:00…UTC+14:00`).
-10. Wi-Fi submenu.
-11. Factory reset.
+10. Show the temporary I²C consecutive-bad-cycle counter (`0…6`).
+11. Wi-Fi submenu.
+12. Factory reset.
 
 The sleep clock moves down one pixel per minute and cycles horizontal alignment
 center → left → right to reduce OLED burn-in.
@@ -407,6 +408,9 @@ center → left → right to reduce OLED burn-in.
 - Never use more than five small text lines; keep at least 2 pixels between text
   rows when composing new screens.
 - Full-screen art is monochrome and exactly 64×48 (`384` packed bytes).
+- The optional I²C debug counter is drawn as one small digit at `x=0, y=10`
+  over the current frame. It deliberately may overlap normal content and also
+  remains visible on the E09 fault picture.
 
 Approved image states:
 
@@ -498,8 +502,8 @@ Before any release or hardware write:
 8. After flashing, first perform a no-heat boot/UI/I²C soak, then supervised short
    power tests with a water load.
 
-The current offline-built `0.2.4-dev` app is 878,160 bytes and has SHA-256
-`3cd2b3beed1d22814402d23227f6ac1bf7967b6e6f9c53c05665a4e306f4d2c3`.
+The current offline-built `0.2.4-dev` app is 878,448 bytes and has SHA-256
+`bc6f31355eef9086292a845b51bd4e480eb4d60bba61e127da417d08bc08d716`.
 This identifies the reviewed artifact; it is not permission to flash.
 
 ## 13. Remaining uncertainties and optional characterization
