@@ -53,6 +53,7 @@ def main() -> int:
     defaults = (ROOT / "sdkconfig.defaults").read_text(encoding="utf-8")
     settings = (MAIN / "settings.c").read_text(encoding="utf-8")
     power = (SHARED_POWER / "powerboard_control.c").read_text(encoding="utf-8")
+    power_safety = (SHARED_POWER / "safety.h").read_text(encoding="utf-8")
     inputs = (SHARED_UI / "ui_inputs.c").read_text(encoding="utf-8")
     outputs = (SHARED_UI / "ui_outputs.c").read_text(encoding="utf-8")
     output_header = (SHARED_UI / "ui_outputs.h").read_text(encoding="utf-8")
@@ -83,6 +84,11 @@ def main() -> int:
     require("controller->last_gear == COOKER_HOLD_MAX_GEAR && error >= 3" in
             (MAIN / "temperature_ctrl.c").read_text(encoding="utf-8"),
             "HOLD SATURATED measures actual gear-35 dwell with at least 3 C undershoot")
+    require("if (error <= 1)" in (MAIN / "temperature_ctrl.c").read_text(encoding="utf-8") and
+            "if (error < 3)" in (MAIN / "temperature_ctrl.c").read_text(encoding="utf-8") and
+            "s_temperature_coasting" in engine and "apply_output_locked(gear)" in engine and
+            '"COOLING TO SETPOINT"' in engine,
+            "temperature mode can wait at zero output and restarts with hysteresis")
     require("s_status.state != COOK_STATE_COOKING" in engine and
             "update_timer_locked" in engine,
             "cooking countdown freezes on Pause and NoPan")
@@ -154,6 +160,8 @@ def main() -> int:
             "delayed Start cannot overwrite an active cooking state")
     require("ui_direct_output_set(PIN_UI_DIRECT_1, 0)" in indicators,
             "unidentified GPIO32 remains LOW")
+    require("self_test_deadline" in indicators and "leds = 9;" in indicators,
+            "all nine white LEDs run a visible boot self-test")
     require("cooker.state == COOK_STATE_FAULT" in display and
             "urgent_screen && s_timer_editing" in ui and
             "if (urgent_screen) s_temperature_edit_deadline_us = 0;" in ui and
@@ -307,6 +315,10 @@ def main() -> int:
             "input_status.state == COOK_STATE_SLEEP && event->type == UI_INPUT_ENCODER" in ui and
             "s_swallow_main = true" in ui and "s_encoder_guard_until_us" in ui,
             "center and encoder wake safely even while the sleep Clock keeps OLED powered")
+    require("remember_primary_wake_selection();" in ui and
+            "restore_primary_wake_selection();" in ui and
+            "s_wake_selection" in ui,
+            "Sleep wake returns to Power or preserves Temperature, never a secondary menu item")
     image_symbols = (
         "oled_image_cancel", "oled_image_confirm", "oled_image_cooking",
         "oled_image_error", "oled_image_no_pan", "oled_image_ready",
@@ -419,21 +431,27 @@ def main() -> int:
             "power-board read selector remains 0x20..0x2f")
     require("vTaskDelayUntil(&next, pdMS_TO_TICKS(MCL02M_CONTROL_HEARTBEAT_MS))" in power,
             "verified 500-ms power heartbeat remains the sole pacing loop")
+    require("MCL02M_I2C_BAD_CYCLES_TO_FAULT=6U" in
+            (MAIN / "CMakeLists.txt").read_text(encoding="utf-8") and
+            "#define MCL02M_I2C_BAD_CYCLES_TO_FAULT 2U" in power_safety,
+            "E09 requires six consecutive bad 500-ms I2C cycles")
+    require("s_force_stop || s_status.state == PB_STATE_FAULT" in power and
+            "Preserve the fault latch so the control task keeps sending Stop" in power,
+            "a latched power-board fault retransmits Stop on every heartbeat")
     require("esp_task_wdt_add(NULL)" in power and "esp_task_wdt_reset()" in power and
             "CONFIG_ESP_TASK_WDT_PANIC=y" in defaults,
             "the actual power-control task is watched by a 5-second panic/reset watchdog")
     require(all(code in power for code in ("E03 HIGH VOLT", "E04 LOW VOLT", "E05 BOTTOM",
                                             "E07 IGBT", "E08 SENSOR", "E10 CHANNEL", "E12 POWER")),
             "known persistent stock R20 groups retain their E-code numbers")
-    require("MCL02M_MAX_BOTTOM_C=0U" in
+    require("MCL02M_MAX_BOTTOM_C=210U" in
             (MAIN / "CMakeLists.txt").read_text(encoding="utf-8") and
-            "bottom_temperature_interface_safe" in power and
-            "#if MCL02M_MAX_BOTTOM_C == 0U" in power,
-            "production disables the lab-only 120 C bottom guard while retaining stock E05")
+            "bottom_temperature_interface_safe" in power,
+            "production interface cutoff is 210 C above the 190 C setpoint range")
     require('fault_locked("E08 BOTTOM SENSOR")' in power and
             power.find('fault_locked("E08 BOTTOM SENSOR")') <
             power.find('fault_locked("BOTTOM LIMIT")'),
-            "disabling the production bottom-temperature limit retains NTC fault detection")
+            "the 210 C production cutoff retains separate NTC fault detection")
 
     actual: dict[str, tuple[int, int]] = {}
     with (ROOT / "partitions.csv").open(newline="", encoding="utf-8") as stream:

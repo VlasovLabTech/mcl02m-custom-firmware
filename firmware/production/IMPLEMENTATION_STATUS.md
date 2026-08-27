@@ -1,25 +1,25 @@
 # MCL02M custom firmware — implementation status
 
-Дата: 2026-08-24
+Дата: 2026-08-28
 Версия исходников: `0.2.4-dev`
 Статус: app-образ записан только в штатный `ota_1` по `0x170000`; esptool
 подтвердил hash записи. Bootloader, partition table, `otadata`, NVS, `ota_0`,
 eFuse и силовая firmware не изменялись. Владелец подтвердил нормальный boot,
 работу пользовательского интерфейса, режим мощности, температурное управление,
-таймеры и штатный цикл готовки этой версии. Текущие показания NTC и поведение
-регулятора приняты владельцем; отдельная калибровка NTC/PI не планируется.
+таймеры и штатный цикл готовки этой версии. The 2026-08-28 controller revision
+still requires supervised cookware validation before it is treated as calibrated.
 
 ## Реализованный пользовательский контур
 
 | Блок | Поведение |
 |---|---|
 | POWER | `0…99`; encoder slow `1`, fast `5`; вращение не запускает нагрев |
-| TEMPERATURE | `40…190 °C`; до Start уставка `S…°` и текущий NTC показываются двумя строками ×2; во время работы/паузы вращение encoder временно включает тот же экран на 2 s после последнего шага; PREHEAT `56/77/99`, APPROACH/HOLD не выше `35` |
+| TEMPERATURE | `40…190 °C`; Start above target enters a real zero-power cooling state; heating resumes at target minus 3 °C; PREHEAT `56/77/99`, APPROACH/HOLD are capped at `35` and tuned for earlier coast |
 | HOLD SATURATED | gear `35` в течение 90 s при ошибке не менее 3 °C: orange, warning и сообщение; предел не повышается |
 | Start | только отдельным нажатием центра; силовой preflight и `STARTING` до `R26=02` |
 | Pause/Resume | короткий центр во время работы; timer заморожен, белые LED медленно мигают |
 | Stop/Sleep | hold центра 1,5 s с немедленным срабатыванием и звуком — Stop/Back; следующий hold в Idle — Sleep; Cancel всегда Stop/Back |
-| Sleep | default 1 min Idle; опциональные мелкие часы `HH:MM` двигаются вниз на 1 px/min и меняют горизонтальный проход `центр → лево → право`; часы не мешают безопасному wake центра/encoder; heartbeat и safety продолжают работать с нулевой командой |
+| Sleep | default 1 min Idle; wake returns to Home/Power, or Home/Temperature when Sleep began from Temperature; secondary menu selections are never restored; heartbeat and safety continue at zero output |
 | OLED | renderer использует полные `64×48` без отладочной рамки; десять 1-bit картинок показывают turn-on 5 s синхронно с boot-мелодией, wake 3 s, cooking 2,5 s, confirm/cancel 1,5 s, ready/no-pan/error до изменения состояния и две 10-s стадии Sleep; active timeout default 3 min; первое нажатие/вращение только будит; encoder guard 1,5 s |
 | TIMER SCREEN | `AUTO` полностью гасит OLED; `ALWAYS` оставляет только countdown и перемещает его раз в минуту |
 | Cooking timer | крупные редакторы `MM:SS → HH`, максимум 5 h; при остатке ≥1 h рабочий экран показывает `H:MM′`, ниже часа — `MM:SS″`; TIMER открывает редактор, активный timer отключается только подтверждением центра; RAM only |
@@ -43,8 +43,10 @@ eFuse и силовая firmware не изменялись. Владелец п�
 - Ненулевой gear требует валидных `R20/R23/R24/R26`, нормальных NTC и явного Arm.
 - Gear изменяется максимум на 10 за один heartbeat; релейные паузы остаются во
   владении силового MCU.
-- Два последовательных плохих I²C-цикла, start timeout, неизвестный power status,
-  активный `R26` после Stop или температурный guard приводят к Stop/fault.
+- E09 is generated locally after six consecutive bad 500-ms I²C cycles. A
+  latched power-board fault retransmits the complete Stop sequence every 500 ms.
+- Start timeout, unknown power status, active `R26` after Stop, or a temperature
+  guard also causes Stop/fault.
 - Hard run limit — 5 h. После reset нагрев не восстанавливается.
 - High-priority power-control task зарегистрирован в 5-s Task Watchdog с panic/reset;
   после reset boot снова начинается с Stop.
@@ -85,9 +87,9 @@ eFuse и силовая firmware не изменялись. Владелец п�
 
 ## Оставшиеся ограничения и необязательная характеризация
 
-- Диапазон уставки расширен до `40…190 °C`; PI и переходы
-  PREHEAT/APPROACH/HOLD не изменены.
-- Production сохраняет interface guard IGBT `80 °C`. Лабораторный guard bottom
-  `120 °C` отключён; штатная защита E05 силовой платы остаётся активной.
+- Setpoint range is `40…190 °C`. The revised PREHEAT/APPROACH/HOLD controller
+  and zero-output cooling state still need supervised cookware characterization.
+- Production keeps the 80 °C interface IGBT guard and a separate 210 °C bottom
+  emergency cutoff. The power MCU's native E05 remains active.
 - Полный перебор редких fault paths и длительный web/network soak могут быть
   выполнены позднее как необязательная характеризация.

@@ -27,35 +27,57 @@ uint8_t temperature_ctrl_update(temperature_ctrl_t *controller,
 
     if (controller->phase == TEMP_PHASE_OFF) controller->phase = TEMP_PHASE_PREHEAT;
 
+    /*
+     * Stop before the setpoint and wait for a three-degree restart margin. This
+     * gives the pan and glass time to release stored heat instead of driving a
+     * small positive gear through the setpoint.
+     */
+    if (error <= 1) {
+        controller->phase = TEMP_PHASE_HOLD;
+        controller->integral = 0;
+        controller->at_limit_ms = 0;
+        controller->saturated = false;
+        controller->heat_enabled = false;
+        controller->last_gear = 0;
+        return 0;
+    }
+    if (!controller->heat_enabled) {
+        if (error < 3) {
+            controller->last_gear = 0;
+            return 0;
+        }
+        controller->heat_enabled = true;
+    }
+
     if (controller->phase == TEMP_PHASE_PREHEAT) {
-        if (error <= 10) {
+        if (error <= 20) {
             controller->phase = TEMP_PHASE_APPROACH;
             controller->integral = 0;
         } else {
-            controller->last_gear = error >= 30 ? 99 : (error >= 18 ? 77 : 56);
+            controller->last_gear = error >= 45 ? 99 : (error >= 30 ? 77 : 56);
             return controller->last_gear;
         }
     }
 
     if (controller->phase == TEMP_PHASE_APPROACH) {
-        if (error <= 2) {
+        if (error <= 4) {
             controller->phase = TEMP_PHASE_HOLD;
             controller->integral = 0;
-        } else if (error >= 14) {
+        } else if (error >= 28) {
             controller->phase = TEMP_PHASE_PREHEAT;
             controller->last_gear = 56;
             return controller->last_gear;
         } else {
-            /* Stay below the first relay/topology boundary while approaching. */
-            controller->last_gear = clamp_gear(8 + error * 2, COOKER_HOLD_MAX_GEAR);
+            /* Reduce energy early while the pan and glass still carry heat. */
+            controller->last_gear = clamp_gear(4 + error, COOKER_HOLD_MAX_GEAR);
             return controller->last_gear;
         }
     }
 
-    /* Conservative PI V1, deliberately capped at gear 35. */
+    /* Conservative PI, deliberately capped below the first topology change. */
     const float dt = elapsed_ms / 1000.0f;
     const float candidate_integral = controller->integral + error * dt;
-    float output = 4.0f + 2.0f * error + 0.08f * candidate_integral;
+    float output = 2.0f + 1.25f * error + 0.04f * candidate_integral;
     if (output > COOKER_HOLD_MAX_GEAR) {
         output = COOKER_HOLD_MAX_GEAR;
     } else {

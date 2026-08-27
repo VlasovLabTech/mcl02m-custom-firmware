@@ -52,6 +52,7 @@ static int64_t s_delayed_due_mono_us;
 static bool s_saturation_announced;
 static bool s_no_pan_announced;
 static bool s_waiting_pan_before_start;
+static bool s_temperature_coasting;
 static cooker_profile_t s_active_profile;
 static bool s_profile_selected;
 
@@ -127,6 +128,7 @@ static void set_fault_locked(cooker_fault_t fault, const char *detail)
     s_status.delayed_start = false;
     s_status.timer_enabled = false;
     s_waiting_pan_before_start = false;
+    s_temperature_coasting = false;
     strlcpy(s_status.detail, detail == NULL ? cooking_fault_name(fault) : detail,
             sizeof(s_status.detail));
     sound_stop();
@@ -209,18 +211,29 @@ static esp_err_t begin_run_locked(void)
     if (s_status.mode == COOK_MODE_PROFILE && !prepare_profile_stage_locked(0, true))
         return ESP_ERR_INVALID_ARG;
     uint8_t gear = s_status.selected_gear;
-    if (control_mode_locked() == COOK_MODE_TEMPERATURE)
+    const bool temperature_mode = control_mode_locked() == COOK_MODE_TEMPERATURE;
+    if (temperature_mode)
         gear = initial_temperature_gear_locked();
-    if (gear == 0 || gear > COOKER_MAX_GEAR) return ESP_ERR_INVALID_ARG;
+    if (gear > COOKER_MAX_GEAR || (gear == 0 && !temperature_mode))
+        return ESP_ERR_INVALID_ARG;
 
-    esp_err_t err = powerboard_control_arm(COOKER_POWERBOARD_ARM_MS);
-    if (err == ESP_OK) err = powerboard_control_start(gear, COOKER_HARD_RUN_LIMIT_MS);
+    esp_err_t err = ESP_OK;
+    if (gear == 0) {
+        powerboard_status_t pb;
+        powerboard_control_get_status(&pb);
+        if (pb.state != PB_STATE_STOPPED) err = ESP_ERR_INVALID_STATE;
+    } else {
+        err = powerboard_control_arm(COOKER_POWERBOARD_ARM_MS);
+        if (err == ESP_OK)
+            err = powerboard_control_start(gear, COOKER_HARD_RUN_LIMIT_MS);
+    }
     if (err != ESP_OK) {
         if (s_status.mode == COOK_MODE_PROFILE) s_status.timer_enabled = false;
         return err;
     }
 
-    s_status.state = COOK_STATE_STARTING;
+    s_temperature_coasting = gear == 0;
+    s_status.state = s_temperature_coasting ? COOK_STATE_COOKING : COOK_STATE_STARTING;
     s_status.fault = FAULT_NONE;
     s_status.applied_gear = gear;
     s_status.paused_gear = 0;
@@ -232,7 +245,8 @@ static esp_err_t begin_run_locked(void)
     s_no_pan_since_us = 0;
     s_run_started_us = esp_timer_get_time();
     s_timer_accumulator_us = 0;
-    strlcpy(s_status.detail, "STARTING", sizeof(s_status.detail));
+    strlcpy(s_status.detail, s_temperature_coasting ? "COOLING TO SETPOINT" : "STARTING",
+            sizeof(s_status.detail));
     emit_status("start");
     return ESP_OK;
 }
@@ -249,12 +263,57 @@ static void normal_stop_locked(const char *reason, bool complete)
     s_status.hold_saturated = false;
     s_status.timer_enabled = false;
     s_waiting_pan_before_start = false;
+    s_temperature_coasting = false;
     if (!complete) s_status.timer_remaining_s = s_status.timer_last_s;
     s_no_pan_since_us = 0;
     s_no_pan_announced = false;
     if (complete) sound_play(SOUND_COMPLETE);
     strlcpy(s_status.detail, reason == NULL ? "STOP" : reason, sizeof(s_status.detail));
     emit_status(complete ? "complete" : "stop");
+}
+
+static esp_err_t apply_output_locked(uint8_t gear)
+{
+    const bool temperature_mode = control_mode_locked() == COOK_MODE_TEMPERATURE;
+    powerboard_status_t pb;
+    powerboard_control_get_status(&pb);
+
+    if (gear == 0) {
+        if (!temperature_mode) return ESP_ERR_INVALID_ARG;
+        if (pb.state == PB_STATE_STARTING || pb.state == PB_STATE_HEATING ||
+            pb.state == PB_STATE_NO_PAN || pb.state == PB_STATE_HEARTBEAT_GAP) {
+            const esp_err_t err = powerboard_control_pause();
+            if (err != ESP_OK) return err;
+        } else if (pb.state != PB_STATE_PAUSED && pb.state != PB_STATE_STOPPED) {
+            return ESP_ERR_INVALID_STATE;
+        }
+        s_temperature_coasting = true;
+        s_status.applied_gear = 0;
+        if (s_status.state != COOK_STATE_PAUSED) s_status.state = COOK_STATE_COOKING;
+        strlcpy(s_status.detail, "COOLING TO SETPOINT", sizeof(s_status.detail));
+        return ESP_OK;
+    }
+
+    if (!s_temperature_coasting) return powerboard_control_set_gear(gear);
+
+    esp_err_t err = ESP_ERR_INVALID_STATE;
+    if (pb.state == PB_STATE_PAUSED) {
+        err = powerboard_control_set_gear(gear);
+        if (err == ESP_OK) err = powerboard_control_resume();
+    } else if (pb.state == PB_STATE_STOPPED) {
+        err = powerboard_control_arm(COOKER_POWERBOARD_ARM_MS);
+        if (err == ESP_OK)
+            err = powerboard_control_start(gear, COOKER_HARD_RUN_LIMIT_MS);
+    } else if (pb.state == PB_STATE_STARTING || pb.state == PB_STATE_HEATING ||
+               pb.state == PB_STATE_NO_PAN) {
+        err = powerboard_control_set_gear(gear);
+    }
+    if (err == ESP_OK) {
+        s_temperature_coasting = false;
+        s_status.state = COOK_STATE_STARTING;
+        strlcpy(s_status.detail, "RESUMING HEAT", sizeof(s_status.detail));
+    }
+    return err;
 }
 
 static void update_timer_locked(int64_t delta_us)
@@ -273,7 +332,7 @@ static void update_timer_locked(int64_t delta_us)
                 uint8_t gear = s_status.selected_gear;
                 if (control_mode_locked() == COOK_MODE_TEMPERATURE)
                     gear = initial_temperature_gear_locked();
-                if (powerboard_control_set_gear(gear) != ESP_OK) {
+                if (apply_output_locked(gear) != ESP_OK) {
                     set_fault_locked(FAULT_POWER_STATUS, "PROFILE STAGE FAILED");
                     return;
                 }
@@ -305,7 +364,7 @@ static void update_temperature_locked(int64_t now_us)
                                                   s_status.target_temperature_c,
                                                   s_status.bottom_c, elapsed);
     s_status.temp_phase = s_temperature.phase;
-    if (gear != s_status.applied_gear && powerboard_control_set_gear(gear) == ESP_OK)
+    if (gear != s_status.applied_gear && apply_output_locked(gear) == ESP_OK)
         s_status.applied_gear = gear;
     s_status.hold_saturated = s_temperature.saturated;
     if (s_status.hold_saturated && !s_saturation_announced) {
@@ -376,7 +435,11 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
         strlcpy(s_status.detail, "COOKING", sizeof(s_status.detail));
         emit_status("heating_confirmed");
     }
-    if (pb->state == PB_STATE_STOPPED && state_active(s_status.state))
+    const bool cooling_without_power = s_temperature_coasting &&
+        (pb->state == PB_STATE_STOPPED || pb->state == PB_STATE_PAUSED) &&
+        (s_status.state == COOK_STATE_COOKING || s_status.state == COOK_STATE_PAUSED);
+    if (pb->state == PB_STATE_STOPPED && state_active(s_status.state) &&
+        !cooling_without_power)
         set_fault_locked(FAULT_HARD_RUN_LIMIT, "UNEXPECTED STOP");
 }
 
@@ -421,15 +484,20 @@ static void handle_intent_locked(const intent_t *intent)
             s_status.state == COOK_STATE_NO_PAN) {
             const bool pausing_no_pan = s_status.state == COOK_STATE_NO_PAN;
             s_status.paused_gear = s_status.applied_gear;
-            if (powerboard_control_pause() == ESP_OK) {
+            if (s_temperature_coasting || powerboard_control_pause() == ESP_OK) {
                 if (pausing_no_pan && s_no_pan_announced) sound_stop();
                 if (pausing_no_pan) s_no_pan_announced = false;
                 s_status.state = COOK_STATE_PAUSED;
                 strlcpy(s_status.detail, "PAUSED", sizeof(s_status.detail));
             }
-        } else if (s_status.state == COOK_STATE_PAUSED && powerboard_control_resume() == ESP_OK) {
-            s_status.state = COOK_STATE_STARTING;
-            strlcpy(s_status.detail, "RESUMING", sizeof(s_status.detail));
+        } else if (s_status.state == COOK_STATE_PAUSED) {
+            if (s_temperature_coasting) {
+                s_status.state = COOK_STATE_COOKING;
+                strlcpy(s_status.detail, "COOLING TO SETPOINT", sizeof(s_status.detail));
+            } else if (powerboard_control_resume() == ESP_OK) {
+                s_status.state = COOK_STATE_STARTING;
+                strlcpy(s_status.detail, "RESUMING", sizeof(s_status.detail));
+            }
         }
         break;
     case INTENT_SLEEP:

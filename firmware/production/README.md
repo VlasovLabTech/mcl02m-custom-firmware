@@ -42,10 +42,16 @@
 
 ## Важные ограничения dev-версии
 
-- Диапазон температуры `40…190 °C`; текущие PI coefficients и поведение
-  `HOLD SATURATED` не изменены. Production сохраняет дополнительный IGBT guard
-  `80 °C`, но больше не применяет лабораторный bottom guard `120 °C`; штатная
-  защита E05 силовой платы остаётся активной.
+- Temperature setpoints are `40…190 °C`. Starting above the setpoint now enters
+  a zero-power cooling state and resumes heating after a 3 °C hysteresis margin.
+  PREHEAT/APPROACH/HOLD were retuned to reduce stored-heat overshoot.
+- Production keeps the interface-side 80 °C IGBT guard and uses a separate
+  210 °C bottom emergency cutoff. The power MCU's native E05 remains active.
+- Interface-generated E09 now requires six consecutive bad 500-ms I²C cycles.
+  While any power-board fault remains latched, the complete Stop sequence is
+  retransmitted every heartbeat.
+- All nine white power LEDs run a 1.5-second all-on boot test. If this test is
+  not visible, inspect the panel LED driver, flex cable, supply and GPIO path.
 - GPIO32 не имеет подтверждённого эффекта и всегда оставлен LOW.
 - Ventilator полностью принадлежит силовой плате, custom ESP им не управляет.
 - HTTP предназначен для доверенной локальной сети и не содержит управления

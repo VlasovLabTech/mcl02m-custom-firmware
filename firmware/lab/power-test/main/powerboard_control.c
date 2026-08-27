@@ -225,6 +225,11 @@ static esp_err_t read_and_store(uint8_t reg)
     uint8_t value = 0;
     const esp_err_t err = read_register(reg, &value);
     store_register(reg, value, err);
+    if (err != ESP_OK) {
+        telemetry_emitf("{\"t_ms\":%lld,\"type\":\"pb_read_error\","
+                        "\"reg\":%u,\"err\":%d}",
+                        esp_timer_get_time() / 1000, reg, err);
+    }
     return err;
 }
 
@@ -475,7 +480,8 @@ static void control_task(void *arg)
         update_time_and_safety(esp_timer_get_time());
 
         xSemaphoreTake(s_status_lock, portMAX_DELAY);
-        if (s_force_stop) interrupted = true;
+        /* A latched fault retransmits the complete Stop frame every heartbeat. */
+        if (s_force_stop || s_status.state == PB_STATE_FAULT) interrupted = true;
         xSemaphoreGive(s_status_lock);
 
         if (!interrupted && !wait_until_or_stop(cycle_start, 400)) interrupted = true;
@@ -729,7 +735,12 @@ esp_err_t powerboard_control_resume(void)
 esp_err_t powerboard_control_stop(const char *reason)
 {
     xSemaphoreTake(s_status_lock, portMAX_DELAY);
-    stop_locked(reason);
+    if (s_status.state == PB_STATE_FAULT) {
+        /* Preserve the fault latch so the control task keeps sending Stop. */
+        s_force_stop = true;
+    } else {
+        stop_locked(reason);
+    }
     xSemaphoreGive(s_status_lock);
     if (s_control_task != NULL) xTaskNotifyGive(s_control_task);
     return ESP_OK;

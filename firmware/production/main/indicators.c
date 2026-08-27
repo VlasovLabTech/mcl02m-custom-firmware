@@ -19,6 +19,7 @@ static unsigned gear_to_leds(unsigned gear)
 static void indicators_task(void *arg)
 {
     (void)arg;
+    const TickType_t self_test_deadline = xTaskGetTickCount() + pdMS_TO_TICKS(1500);
     for (;;) {
         cooker_snapshot_t cooker;
         network_status_t network = {0};
@@ -27,7 +28,10 @@ static void indicators_task(void *arg)
         const uint32_t phase = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
 
         unsigned leds = 0;
-        if (cooker.state == COOK_STATE_READY && ui_controller_setpoint_editing()) {
+        if ((int32_t)(self_test_deadline - xTaskGetTickCount()) > 0) {
+            /* All nine white LEDs must be visibly confirmed after every boot. */
+            leds = 9;
+        } else if (cooker.state == COOK_STATE_READY && ui_controller_setpoint_editing()) {
             if ((phase % 1000U) < 700U) leds = gear_to_leds(cooker.selected_gear);
         } else if (cooker.state == COOK_STATE_PAUSED) {
             if ((phase % 2000U) < 1400U) leds = gear_to_leds(cooker.paused_gear);

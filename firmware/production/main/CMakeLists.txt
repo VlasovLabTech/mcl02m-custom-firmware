@@ -42,7 +42,8 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     MCL02M_POWER_TEST_BUILD=0
     MCL02M_MAX_RUN_MS=18000000U
     MCL02M_MAX_IGBT_C=80U
-    # Disable the lab-only bottom-temperature guard in production. The stock
-    # power MCU continues to enforce its native E05 thermal protection.
-    MCL02M_MAX_BOTTOM_C=0U
+    MCL02M_I2C_BAD_CYCLES_TO_FAULT=6U
+    # Separate interface-side emergency cutoff above the 190 C setpoint range.
+    # The stock power MCU continues to enforce its native E05 protection.
+    MCL02M_MAX_BOTTOM_C=210U
 )

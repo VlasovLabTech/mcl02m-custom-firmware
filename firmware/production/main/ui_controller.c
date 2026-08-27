@@ -78,6 +78,19 @@ static bool s_swallow_main;
 static bool s_swallow_timer;
 static volatile bool s_timer_editing;
 static view_t s_timer_return_view;
+static unsigned s_wake_selection;
+
+static void remember_primary_wake_selection(void)
+{
+    s_wake_selection = (s_view == VIEW_TEMPERATURE ||
+                        (s_view == VIEW_HOME && s_selection == 1U)) ? 1U : 0U;
+}
+
+static void restore_primary_wake_selection(void)
+{
+    s_selection = s_wake_selection;
+    s_view = VIEW_HOME;
+}
 
 static const char *tr(app_language_t language, const char *english,
                       const char *russian, const char *chinese)
@@ -811,6 +824,7 @@ static bool central_long(void)
         vTaskDelay(pdMS_TO_TICKS(700));
         esp_restart();
     } else if (s_view == VIEW_HOME) {
+        remember_primary_wake_selection();
         cooking_sleep();
         display_prod_clear_overlay();
         sound_play(SOUND_SLEEP);
@@ -848,14 +862,14 @@ static void input_event(const ui_input_event_t *event)
     if (input_status.state == COOK_STATE_SLEEP && event->type == UI_INPUT_MAIN_PRESSED) {
         cooking_wake();
         display_prod_activity();
-        s_view = VIEW_HOME;
+        restore_primary_wake_selection();
         s_swallow_main = true;
         return;
     }
     if (input_status.state == COOK_STATE_SLEEP && event->type == UI_INPUT_ENCODER) {
         cooking_wake();
         display_prod_activity();
-        s_view = VIEW_HOME;
+        restore_primary_wake_selection();
         s_encoder_guard_until_us = now + COOKER_ENCODER_WAKE_GUARD_MS * 1000LL;
         return;
     }
@@ -863,7 +877,7 @@ static void input_event(const ui_input_event_t *event)
         if (input_status.state == COOK_STATE_SLEEP) {
             cooking_wake();
             display_prod_activity();
-            s_view = VIEW_HOME;
+            restore_primary_wake_selection();
             sound_play(SOUND_UI_CLICK);
             return;
         }
@@ -903,7 +917,7 @@ static void input_event(const ui_input_event_t *event)
         if (input_status.state == COOK_STATE_SLEEP) {
             cooking_wake();
             display_prod_activity();
-            s_view = VIEW_HOME;
+            restore_primary_wake_selection();
             s_swallow_timer = true;
             return;
         }
@@ -945,6 +959,7 @@ static void ui_task(void *arg)
         }
         if ((status.state == COOK_STATE_IDLE || status.state == COOK_STATE_READY) &&
             now - s_last_input_us >= (int64_t)settings.sleep_minutes * 60 * 1000000LL) {
+            remember_primary_wake_selection();
             cooking_sleep();
             display_prod_clear_overlay();
             sound_play(SOUND_SLEEP);
