@@ -109,6 +109,16 @@ static bool state_can_energize(powerboard_state_t state)
            state == PB_STATE_NO_PAN || state == PB_STATE_HEARTBEAT_GAP;
 }
 
+static bool bottom_temperature_interface_safe(uint8_t temperature_c)
+{
+#if MCL02M_MAX_BOTTOM_C == 0U
+    (void)temperature_c;
+    return true;
+#else
+    return temperature_c < MCL02M_MAX_BOTTOM_C;
+#endif
+}
+
 const char *powerboard_state_name(powerboard_state_t state)
 {
     switch (state) {
@@ -258,7 +268,7 @@ static bool preflight_healthy_locked(void)
            s_status.registers[3] >= 0x41 && s_status.registers[3] < 0xf8 &&
            s_status.registers[4] >= 0x0b && s_status.registers[4] < 0xfc &&
            s_status.igbt_c < MCL02M_MAX_IGBT_C &&
-           s_status.bottom_c < MCL02M_MAX_BOTTOM_C;
+           bottom_temperature_interface_safe(s_status.bottom_c);
 }
 
 static esp_err_t startup_probe(void)
@@ -326,8 +336,10 @@ static void update_time_and_safety(int64_t now_us)
              s_status.igbt_c >= MCL02M_MAX_IGBT_C)) {
             fault_locked("IGBT LIMIT");
         } else if ((s_status.valid_mask & (1U << 4)) != 0 &&
-                   (s_status.registers[4] < 0x0b || s_status.registers[4] >= 0xfc ||
-                    s_status.bottom_c >= MCL02M_MAX_BOTTOM_C)) {
+                   (s_status.registers[4] < 0x0b || s_status.registers[4] >= 0xfc)) {
+            fault_locked("E08 BOTTOM SENSOR");
+        } else if ((s_status.valid_mask & (1U << 4)) != 0 &&
+                   !bottom_temperature_interface_safe(s_status.bottom_c)) {
             fault_locked("BOTTOM LIMIT");
         }
     }

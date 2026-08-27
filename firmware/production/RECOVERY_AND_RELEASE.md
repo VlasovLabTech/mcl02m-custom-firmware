@@ -2,8 +2,8 @@
 
 Этот документ описывает будущую процедуру, но **не разрешает запись сейчас**.
 
-Текущий reference app artifact: `build/mcl02m_custom.bin`, 877488 bytes,
-SHA-256 `045d50e56bb3c537b95a93df1bf9f2aa2b2762464b3c1d774a0d7a6e066a1bd4`.
+Текущий reference app artifact: `build/mcl02m_custom.bin`, 877472 bytes,
+SHA-256 `208d6539a5e4d85e8ee1e79c7c421a1cabe1402ef5b965fdda7bddc27d81eb86`.
 Чистая пересборка может иметь другой hash из-за compile metadata; для release
 нужно сохранить новый manifest и заново пройти все gates.
 
@@ -42,7 +42,8 @@ SHA-256 `045d50e56bb3c537b95a93df1bf9f2aa2b2762464b3c1d774a0d7a6e066a1bd4`.
 8. Only then short TEMPERATURE tests, starting at low target; HOLD must never
    exceed 35 and `HOLD SATURATED` must not raise it.
 9. Во время обычных supervised-тестов проверять правдоподобность NTC/IGBT
-   readings; не доводить плиту намеренно до interface guards 80/120 °C.
+   readings; не доводить плиту намеренно до IGBT interface guard 80 °C или
+   штатной E05 силовой платы.
 10. Проверить, что web-страница позволяет редактировать Presets, но не содержит
     и не принимает Start/Stop/Pause/setpoint/timer/delayed Start; reset/power
     loss должен забывать schedule и не восстанавливать нагрев.

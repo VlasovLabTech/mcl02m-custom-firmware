@@ -366,16 +366,17 @@ def main() -> int:
                                          display.find("vTaskDelay")] and
             "else if (sleep_clock)" in display,
             "sleep warning precedes Sleep and sleep2 overrides the clock for its first ten seconds")
-    require("#define COOKER_TEMP_MAX_C                175U" in config,
-            "temperature target is capped at 175 C")
+    require("#define COOKER_TEMP_MAX_C                190U" in config,
+            "temperature target is capped at 190 C")
     require("powerboard_control_status_json" in web and '\\"powerboard\\":%s' in web and
             "telemetry_dropped_count" in web,
             "web status exposes read-only power/I2C diagnostics")
     require("<img" not in web and "<script src" not in web and "https://" not in web,
             "web UI is self-contained and contains no pictures or external assets")
     require("#settings label{display:block" in web and web.count("class=stage") == 5 and
+            web.count("min=40 max=190") == 5 and
             all(f"id=ptime{i}" in web for i in range(1, 6)),
-            "web settings are one-per-line and Profiles expose five timed cells")
+            "web settings are one-per-line and Profiles expose five timed 40..190 C cells")
     require("network_prod_apply_timezone" in network and "tzset()" in network,
             "timezone changes are applied without requiring a reboot")
 
@@ -424,6 +425,15 @@ def main() -> int:
     require(all(code in power for code in ("E03 HIGH VOLT", "E04 LOW VOLT", "E05 BOTTOM",
                                             "E07 IGBT", "E08 SENSOR", "E10 CHANNEL", "E12 POWER")),
             "known persistent stock R20 groups retain their E-code numbers")
+    require("MCL02M_MAX_BOTTOM_C=0U" in
+            (MAIN / "CMakeLists.txt").read_text(encoding="utf-8") and
+            "bottom_temperature_interface_safe" in power and
+            "#if MCL02M_MAX_BOTTOM_C == 0U" in power,
+            "production disables the lab-only 120 C bottom guard while retaining stock E05")
+    require('fault_locked("E08 BOTTOM SENSOR")' in power and
+            power.find('fault_locked("E08 BOTTOM SENSOR")') <
+            power.find('fault_locked("BOTTOM LIMIT")'),
+            "disabling the production bottom-temperature limit retains NTC fault detection")
 
     actual: dict[str, tuple[int, int]] = {}
     with (ROOT / "partitions.csv").open(newline="", encoding="utf-8") as stream:

@@ -17,7 +17,7 @@
 #define COOKER_DEFAULT_OLED_TIMEOUT_S    180U
 #define COOKER_HOLD_SATURATED_MS         90000U
 #define COOKER_TEMP_MIN_C                40U
-#define COOKER_TEMP_MAX_C                175U
+#define COOKER_TEMP_MAX_C                190U
 #define COOKER_TEMP_STEP_C               1U
 #define COOKER_CONTROL_PERIOD_MS         100U
 #define COOKER_TEMP_UPDATE_MS            500U
@@ -29,9 +29,8 @@
 #define COOKER_IMAGE_SLEEP_WARNING_MS  10000U
 #define COOKER_IMAGE_SLEEP_MS          10000U
 
-/* Additional interface-side guards; the power MCU retains its own protection. */
+/* Additional interface-side guard; the power MCU retains its own protections. */
 #define COOKER_IGBT_LIMIT_C              80U
-#define COOKER_BOTTOM_SENSOR_LIMIT_C     120U
 
 #define COOKER_SETTINGS_SCHEMA           4U
 #define COOKER_PROFILE_COUNT             5U

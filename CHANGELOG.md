@@ -13,7 +13,9 @@
   guards, hard run limit, watchdog, and safe boot Stop.
 - Documented the panel hardware and the 0x2A power-board I²C protocol.
 - Added a self-contained trilingual HTML user manual.
+- Expanded the selectable temperature range from 40–175 °C to 40–190 °C and
+  removed the lab-only 120 °C bottom-sensor guard from production; the stock
+  power MCU's native E05 protection remains active.
 
-This remains a development release, but the current NTC readings and
-temperature-controller behavior were accepted by the owner after supervised
-real-use tests; no separate calibration step is currently planned.
+This remains a development release. Supervised cooking exposed and removed a
+lab-only production guard; high-power I²C reliability still needs diagnosis.

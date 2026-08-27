@@ -65,8 +65,8 @@ def run() -> None:
     assert temperature_step("PREHEAT", 100, 75) == ("PREHEAT", 77)
     assert temperature_step("PREHEAT", 100, 89) == ("PREHEAT", 56)
     assert temperature_step("PREHEAT", 100, 91)[1] <= 35
-    for measured in range(40, 176):
-        assert temperature_step("HOLD", 175, measured)[1] <= 35
+    for measured in range(40, 191):
+        assert temperature_step("HOLD", 190, measured)[1] <= 35
 
     at_limit_ms = 0
     saturated = False

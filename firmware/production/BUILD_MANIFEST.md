@@ -1,6 +1,6 @@
 # Reference offline build manifest
 
-Дата сборки: 2026-08-24
+Дата сборки: 2026-08-28
 ESP-IDF: 6.0.2
 Target: ESP32, Unicore
 Firmware: `0.2.4-dev`
@@ -12,14 +12,14 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 ## App image
 
 - File: `build/mcl02m_custom.bin`
-- Size: `877488` bytes (`0xD63B0`)
-- SHA-256: `045d50e56bb3c537b95a93df1bf9f2aa2b2762464b3c1d774a0d7a6e066a1bd4`
-- ESP image validation hash: `e562e5d50910c79916cf5fbd63521f708246fcb009081f2c415e090248a95796`
-- Stock OTA slot: `0x160000` bytes; image fits with `564304` bytes free.
+- Size: `877472` bytes (`0xD63A0`)
+- SHA-256: `208d6539a5e4d85e8ee1e79c7c421a1cabe1402ef5b965fdda7bddc27d81eb86`
+- ESP image validation hash: `a769864050953971b1fc08f66fa6cb0b9fe50bd6139afb4cb63f0648dc53795d`
+- Stock OTA slot: `0x160000` bytes; image fits with `564320` bytes free.
 
 ## Linked memory
 
-- Flash code: 627858 bytes
+- Flash code: 627838 bytes
 - Flash data: 144956 bytes
 - IRAM: 89047 / 131072 bytes (67.94%)
 - DRAM static: 36404 / 180736 bytes (20.14%)
