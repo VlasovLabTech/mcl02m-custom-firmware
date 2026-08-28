@@ -169,8 +169,9 @@ modified. See [Flashing and recovery](docs/FLASHING.md) before writing anything.
 
 ## Development status
 
-The current source version is `0.2.11-dev`; the development unit remains on
-`0.2.9-dev`. Supervised testing confirmed retained-session active zero, Pause/Resume
+The current source version is `0.2.11-dev`; the same image was written to the
+development unit's stock `ota_1` slot on 2026-08-28. Earlier supervised testing
+confirmed retained-session active zero, Pause/Resume
 without unwanted relay switching, Sleep/Wake, the I2C debug display, and temperature
 operation with water. A 125 °C empty-pan test then showed about 5 °C of first-heat
 overshoot while subsequent holding remained accurate. Source `0.2.10-dev` adds
@@ -180,7 +181,7 @@ transiently requesting gears 36…55. Source `0.2.11-dev` also adds a physical S
 screen for the firmware version. The deferred control-flow findings and proposed
 fix sequence are preserved in the
 [state-machine implementation plan](docs/STATE_MACHINE_IMPLEMENTATION_PLAN.md).
-The new source has not been flashed.
+The write was hash-verified; supervised validation of the new version is pending.
 
 This is an independent community project, not an official Xiaomi or Chunmi
 product. Use it at your own risk. Licensed under the [MIT License](LICENSE).

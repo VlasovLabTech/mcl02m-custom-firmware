@@ -40,9 +40,10 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 
 ## Development-unit deployment
 
-This `0.2.11-dev` artifact has not been flashed. The development unit remains on the
-previously authorized `0.2.9-dev` image in stock `ota_1`. Building and documenting
-this artifact did not access a serial port or write any device partition.
+This exact `0.2.11-dev` artifact was written to the development unit's stock `ota_1`
+slot at `0x170000` on 2026-08-28 after explicit owner authorization. Esptool verified
+the written data hash. No bootloader, partition table, NVS, `otadata`, `ota_0`, PHY
+or eFuse region was written.
 
 ESP-IDF prints a generic `idf.py flash` suggestion after building. Project procedure
 forbids that broad command on this cooker. A successful build is not authorization

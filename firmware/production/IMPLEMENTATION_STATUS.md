@@ -2,16 +2,16 @@
 
 Дата: 2026-08-28
 Версия исходников: `0.2.11-dev`
-Статус: the development unit remains on the reference `0.2.9-dev` app in stock
-`ota_1`. Supervised tests confirmed retained-session active zero, Pause/Resume
+Статус: the reference `0.2.11-dev` app was written to the development unit's
+stock `ota_1` slot on 2026-08-28 and the app-region data hash was verified. Earlier
+supervised tests confirmed retained-session active zero, Pause/Resume
 without unwanted relay switching, Sleep/Wake, I2C debug display, and temperature
 operation. At a 125 °C empty-pan setpoint, initial heating overshot by approximately
 5 °C and subsequent holding was accurate. Source `0.2.11-dev` includes adaptive initial
 braking, pause-safe output recomputation, and direct low/high topology crossing. Its
 physical Settings menu also exposes the compile-time firmware version on a dedicated
-two-line OLED screen. Its app image is built and checked offline but has not been
-flashed. The earlier one-time NVS refresh is complete and must not be repeated
-automatically.
+two-line OLED screen. Supervised validation of this exact build is pending. The
+earlier one-time NVS refresh is complete and must not be repeated automatically.
 
 ## Реализованный пользовательский контур
 

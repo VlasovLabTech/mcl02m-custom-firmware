@@ -544,9 +544,10 @@ Before any release or hardware write:
    power tests with a water load.
 
 The reference `0.2.11-dev` artifact identified in
-`firmware/production/BUILD_MANIFEST.md` is an offline build and has not been flashed.
-The development unit remains on the explicitly authorized `0.2.9-dev` image in the
-stock `ota_1` slot. This status is not permission for another flash operation.
+`firmware/production/BUILD_MANIFEST.md` was written to the development unit's stock
+`ota_1` slot on 2026-08-28 after explicit authorization. The app-region write was
+hash-verified; no bootloader, partition table, NVS, `otadata`, `ota_0`, PHY or eFuse
+region was written. This status is not permission for another flash operation.
 
 ## 13. Remaining uncertainties and optional characterization
 
