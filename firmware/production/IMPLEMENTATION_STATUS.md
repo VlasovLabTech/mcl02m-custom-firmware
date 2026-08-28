@@ -1,12 +1,13 @@
 # MCL02M custom firmware — implementation status
 
 Дата: 2026-08-28
-Версия исходников: `0.2.8-dev`
+Версия исходников: `0.2.9-dev`
 Статус: the `0.2.7-dev` app image is currently on the development unit's stock
 `ota_1` slot. Supervised testing confirmed retained-session active zero and
 Pause/Resume without unwanted relay switching, working Sleep/Wake, visible I2C debug,
-and acceptable 58 °C water regulation. Source `0.2.8-dev` contains the follow-up UI,
-diagnostic and controller changes and is awaiting an explicitly authorized flash.
+and a 58 °C water test that exposed a `58 → 55 °C` drop caused by the former
+three-degree restart hysteresis. Source `0.2.9-dev` removes that gap, contains the
+follow-up UI and diagnostic changes, and is awaiting an explicitly authorized flash.
 The earlier one-time NVS refresh is complete and must not be repeated automatically.
 
 ## Реализованный пользовательский контур
@@ -14,7 +15,7 @@ The earlier one-time NVS refresh is complete and must not be repeated automatica
 | Блок | Поведение |
 |---|---|
 | POWER | `0…99`; encoder slow `1`, fast `5`; вращение не запускает нагрев; gear 0 enters the active-zero session rather than full Stop |
-| TEMPERATURE | `40…190 °C`; Start above target enters active zero; heating resumes at target minus 3 °C; stronger PREHEAT thresholds are `56/77/99`, APPROACH uses `8 + 2 × error`, PI uses `4 + 2 × error + 0.08 × integral`, and APPROACH/HOLD remain capped at `35` |
+| TEMPERATURE | `40…190 °C`; Start at or above target enters active zero; output stays zero at/above target and PI resumes at the first whole degree below it; stronger PREHEAT thresholds are `56/77/99`, APPROACH uses `8 + 2 × error`, PI uses `4 + 2 × error + 0.08 × integral`, and APPROACH/HOLD remain capped at `35` |
 | HOLD SATURATED | gear `35` в течение 90 s при ошибке не менее 3 °C: orange, warning и сообщение; предел не повышается |
 | Start | только отдельным нажатием центра; силовой preflight и `STARTING` до `R26=02` |
 | Pause/Resume | short center enters the same active-zero command while preserving a distinct PAUSED state; timer freezes; Resume does not deliberately Stop/re-arm; 2 h continuous manual Pause performs full Stop |

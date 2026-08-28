@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.9-dev — 2026-08-28
+
+- Removed the three-degree temperature restart hysteresis after the 58 °C test
+  demonstrated the intended `58 → 55 °C` coast but the resulting regulation was too
+  loose. Temperature mode now remains in active zero at or above the setpoint and
+  lets the normal PI controller resume at the first whole degree below it.
+- Retained zero-power Start above the setpoint, the stronger `0.2.8-dev` controller
+  tuning and the gear-35 APPROACH/HOLD cap.
+
 ## 0.2.8-dev — 2026-08-28
 
 - Completed every serial LED-driver update with the final STB latch edge and added

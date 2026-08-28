@@ -86,11 +86,11 @@ def main() -> int:
     require("controller->last_gear == COOKER_HOLD_MAX_GEAR && error >= 3" in
             (MAIN / "temperature_ctrl.c").read_text(encoding="utf-8"),
             "HOLD SATURATED measures actual gear-35 dwell with at least 3 C undershoot")
-    require("if (error <= 1)" in (MAIN / "temperature_ctrl.c").read_text(encoding="utf-8") and
-            "if (error < 3)" in (MAIN / "temperature_ctrl.c").read_text(encoding="utf-8") and
+    require("if (error <= 0)" in (MAIN / "temperature_ctrl.c").read_text(encoding="utf-8") and
+            "heat_enabled" not in (MAIN / "temperature_ctrl.c").read_text(encoding="utf-8") and
             "s_active_zero" in engine and "apply_output_locked(gear)" in engine and
             '"ACTIVE ZERO"' in engine,
-            "temperature mode can wait in active zero and restart with hysteresis")
+            "temperature mode uses active zero at or above target and resumes one degree below")
     require("s_status.state != COOK_STATE_COOKING" in engine and
             "update_timer_locked" in engine,
             "cooking countdown freezes on Pause and NoPan")

@@ -3,7 +3,7 @@
 Build date: 2026-08-28
 ESP-IDF: 6.0.2
 Target: ESP32, Unicore
-Firmware: `0.2.8-dev`
+Firmware: `0.2.9-dev`
 
 The app header embeds compile metadata, so a clean rebuild may have a different
 SHA-256 while retaining the same source, layout, size and validation gates.
@@ -12,14 +12,14 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 ## App image
 
 - File: `build/mcl02m_custom.bin`
-- Size: `881888` bytes (`0xD74E0`)
-- SHA-256: `fec0d36de2b6892853127950dc0370deb614047ee299e74402bf68b78740724c`
-- ESP image validation hash: `098702166552ff721a282480c52293873662c15a197292e249369af9d590479d`
-- Stock OTA slot: `0x160000` bytes; image fits with `559904` bytes free.
+- Size: `881872` bytes (`0xD74D0`)
+- SHA-256: `911dd850765094c4dc9ae50334cf2f4d9754c18762b81ad28813943d30943d39`
+- ESP image validation hash: `365719e357950b6c876d2e1c472470ba72d54cce4a9e8b89b4563f4b008e3386`
+- Stock OTA slot: `0x160000` bytes; image fits with `559920` bytes free.
 
 ## Linked memory
 
-- Flash code: 630666 bytes
+- Flash code: 630646 bytes
 - Flash data: 146556 bytes
 - IRAM: 89047 / 131072 bytes (67.94%)
 - DRAM static: 36444 / 180736 bytes (20.16%)

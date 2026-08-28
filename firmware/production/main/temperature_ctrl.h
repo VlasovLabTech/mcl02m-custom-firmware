@@ -10,7 +10,6 @@ typedef struct {
     float integral;
     uint32_t at_limit_ms;
     bool saturated;
-    bool heat_enabled;
     uint8_t last_gear;
 } temperature_ctrl_t;
 

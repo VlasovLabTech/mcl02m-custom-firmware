@@ -27,26 +27,14 @@ uint8_t temperature_ctrl_update(temperature_ctrl_t *controller,
 
     if (controller->phase == TEMP_PHASE_OFF) controller->phase = TEMP_PHASE_PREHEAT;
 
-    /*
-     * Stop before the setpoint and wait for a three-degree restart margin. This
-     * gives the pan and glass time to release stored heat instead of driving a
-     * small positive gear through the setpoint.
-     */
-    if (error <= 1) {
+    /* At or above the setpoint, retain the session in active zero. */
+    if (error <= 0) {
         controller->phase = TEMP_PHASE_HOLD;
         controller->integral = 0;
         controller->at_limit_ms = 0;
         controller->saturated = false;
-        controller->heat_enabled = false;
         controller->last_gear = 0;
         return 0;
-    }
-    if (!controller->heat_enabled) {
-        if (error < 3) {
-            controller->last_gear = 0;
-            return 0;
-        }
-        controller->heat_enabled = true;
     }
 
     if (controller->phase == TEMP_PHASE_PREHEAT) {

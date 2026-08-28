@@ -15,6 +15,8 @@ class Timer:
 
 def temperature_step(phase: str, target: int, measured: int) -> tuple[str, int]:
     error = target - measured
+    if error <= 0:
+        return "HOLD", 0
     if phase == "PREHEAT" and error > 10:
         return phase, 99 if error >= 30 else 77 if error >= 18 else 56
     if phase == "PREHEAT":
@@ -91,6 +93,9 @@ def run() -> None:
     assert temperature_step("PREHEAT", 100, 75) == ("PREHEAT", 77)
     assert temperature_step("PREHEAT", 100, 89) == ("PREHEAT", 56)
     assert temperature_step("PREHEAT", 100, 91)[1] <= 35
+    assert temperature_step("HOLD", 58, 59) == ("HOLD", 0)
+    assert temperature_step("HOLD", 58, 58) == ("HOLD", 0)
+    assert temperature_step("HOLD", 58, 57) == ("HOLD", 6)
     for measured in range(40, 191):
         assert temperature_step("HOLD", 190, measured)[1] <= 35
 

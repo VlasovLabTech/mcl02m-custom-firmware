@@ -13,7 +13,7 @@ from a request to edit or build software.
 - Xiaomi device model: `chunmi.ihcooker.v2`.
 - Interface controller: Espressif `ESP-WROOM-32D` (classic ESP32).
 - Display: monochrome 64×48 OLED, page-major 384-byte framebuffer.
-- Current custom source version: `0.2.8-dev`.
+- Current custom source version: `0.2.9-dev`.
 - Framework: ESP-IDF.
 - Public repository language: English for technical documents; the device UI
   supports English, Russian, and Simplified Chinese.
@@ -328,10 +328,10 @@ PAUSED, NO_PAN, COMPLETE, FAULT
 - HOLD: PI capped at gear 35; base 4.0, proportional 2.0 and integral 0.08 per
   second. This restores the stronger previously tested tuning after the more
   conservative values underheated and wandered during a 58 °C water test.
-- At one degree below the target or warmer, output becomes a real zero-power
-  coast. Heating resumes only after cooling to three degrees below the target.
-  Starting TEMPERATURE while already above its target enters the same coast
-  state instead of rejecting Start.
+- At or above the target, output becomes a real zero-power coast. At the first
+  measured whole degree below the target, the ordinary PI calculation resumes;
+  there is no additional restart hysteresis. Starting TEMPERATURE while already
+  above its target enters the same coast state instead of rejecting Start.
 - If gear 35 remains saturated for 90 seconds while error is at least 3 °C,
   set `HOLD SATURATED`, show an orange warning, but do not raise the cap.
 - Production has a separate interface emergency cutoff at 210 °C, above the
@@ -521,7 +521,7 @@ Before any release or hardware write:
 8. After flashing, first perform a no-heat boot/UI/I²C soak, then supervised short
    power tests with a water load.
 
-The current offline-built `0.2.8-dev` artifact is identified in
+The current offline-built `0.2.9-dev` artifact is identified in
 `firmware/production/BUILD_MANIFEST.md`. This is not permission to flash.
 
 ## 13. Remaining uncertainties and optional characterization

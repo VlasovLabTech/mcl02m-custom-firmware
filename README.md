@@ -168,15 +168,17 @@ modified. See [Flashing and recovery](docs/FLASHING.md) before writing anything.
 
 ## Development status
 
-The current source version is `0.2.8-dev`. Version `0.2.7-dev` was physically tested:
+The current source version is `0.2.9-dev`. Version `0.2.7-dev` was physically tested:
 active zero and Pause/Resume retained the session without unwanted relay switching,
 Sleep/Wake worked, the I2C debug counter was visible, and a 58 °C water test regulated
-normally. Source `0.2.8-dev` restores stronger temperature tuning, holds the displayed
-I2C error peak for two seconds, makes the `T°C` editor value immediate, and completes
-the serial LED driver's final STB latch. All serial-driver LED channels were dark on
+but exposed a `58 → 55 °C` drop caused by the former three-degree restart hysteresis.
+Source `0.2.9-dev` resumes PI heating at the first degree below target, includes the
+stronger `0.2.8-dev` tuning, holds the displayed I2C error peak for two seconds, makes
+the `T°C` editor value immediate, and completes the serial LED driver's final STB
+latch. All serial-driver LED channels were dark on
 the development unit because of a pre-existing common hardware-path problem that the
 owner confirmed predates these firmware changes. The STB change is independent
-protocol hardening; `0.2.8-dev` still requires an explicitly authorized hardware test.
+protocol hardening; `0.2.9-dev` still requires an explicitly authorized hardware test.
 
 This is an independent community project, not an official Xiaomi or Chunmi
 product. Use it at your own risk. Licensed under the [MIT License](LICENSE).

@@ -46,8 +46,9 @@
 ## Важные ограничения dev-версии
 
 - Temperature setpoints are `40…190 °C`. Starting above the setpoint enters active
-  zero and resumes heating after a 3 °C hysteresis margin. PREHEAT, APPROACH and PI
-  use the stronger earlier tuning while the coast hysteresis and gear-35 cap remain.
+  zero. At or above the target the output remains zero; at the first whole degree
+  below target the ordinary PI controller resumes. PREHEAT, APPROACH and PI use the
+  stronger earlier tuning while the gear-35 APPROACH/HOLD cap remains.
 - Production keeps the interface-side 80 °C IGBT guard and uses a separate
   210 °C bottom emergency cutoff. The power MCU's native E05 remains active.
 - Interface-generated E09 now requires six consecutive bad 500-ms I²C cycles.
