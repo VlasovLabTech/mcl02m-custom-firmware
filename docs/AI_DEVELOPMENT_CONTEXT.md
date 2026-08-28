@@ -13,7 +13,7 @@ from a request to edit or build software.
 - Xiaomi device model: `chunmi.ihcooker.v2`.
 - Interface controller: Espressif `ESP-WROOM-32D` (classic ESP32).
 - Display: monochrome 64×48 OLED, page-major 384-byte framebuffer.
-- Current custom source version: `0.2.9-dev`.
+- Current custom source version: `0.2.10-dev`.
 - Framework: ESP-IDF.
 - Public repository language: English for technical documents; the device UI
   supports English, Russian, and Simplified Chinese.
@@ -219,7 +219,7 @@ an observed 2.13–3.63 s startup window. Direct A↔E transitions are allowed. 
 not add artificial Stop pulses between gear ranges unless new hardware evidence
 requires it.
 
-Custom `0.2.9-dev` repeats `W0D=81, W00=00, W0C=00` for POWER gear 0,
+Custom `0.2.10-dev` repeats `W0D=81, W00=00, W0C=00` for POWER gear 0,
 temperature coast, and manual Pause. This is distinct from full Stop. Supervised
 testing on the development unit confirmed retained-session active zero and
 Pause/Resume without unintended relay switching; normal relay operation remained
@@ -318,6 +318,10 @@ PAUSED, NO_PAN, COMPLETE, FAULT
 - Slow encoder movement changes by 1; fast movement changes by 5.
 - Turning the encoder never starts heat.
 - Gear ranges select topology automatically: 1–35 A1, 36–55 C1, 56–99 E1.
+- A ramp whose target is in the low or high range crosses directly between gears
+  35 and 56 instead of commanding the intermediate topology. Ten-gear heartbeat
+  steps remain inside each topology; explicitly selected POWER targets 36–55 still
+  use C1 normally.
 - Gear 0 enters active zero. Returning to a positive gear does not deliberately
   send a full Stop/re-arm sequence.
 
@@ -327,8 +331,12 @@ PAUSED, NO_PAN, COMPLETE, FAULT
 - Entering the T°C editor copies and clamps the current setpoint into editor-owned
   state before the first frame, so the screen immediately shows a valid `Sxx`
   value instead of reusing an asynchronous live-display value.
-- PREHEAT: gear 99 for error ≥30 °C, 77 for error ≥18 °C, otherwise 56;
-  transition to APPROACH at 10 °C below the target.
+- PREHEAT: gear 99 for error ≥30 °C, 77 for error ≥18 °C, otherwise 56.
+- The PREHEAT-to-APPROACH braking margin is adaptive. At 500-ms cadence, the
+  controller retains nine samples spanning four seconds and calculates
+  `clamp(10 °C + positive four-second rise, 10…20 °C)`. Targets from 170 °C
+  upward use at least 15 °C. The margin captured on APPROACH entry plus 5 °C is
+  the return threshold, preventing phase chatter as the rise rate falls.
 - APPROACH: `8 + 2 × error`, capped at gear 35.
 - HOLD: PI capped at gear 35; base 4.0, proportional 2.0 and integral 0.08 per
   second. This restores the stronger previously tested tuning after the more
@@ -337,6 +345,11 @@ PAUSED, NO_PAN, COMPLETE, FAULT
   measured whole degree below the target, the ordinary PI calculation resumes;
   there is no additional restart hysteresis. Starting TEMPERATURE while already
   above its target enters the same coast state instead of rejecting Start.
+- Manual Pause continues sampling the four-second temperature trend but freezes
+  PI state. Resume clears the integrator and timing, calculates a new output from
+  the current setpoint/temperature/trend, writes that target while still paused,
+  and only then resumes the retained session. It must never pulse the pre-Pause
+  gear first.
 - If gear 35 remains saturated for 90 seconds while error is at least 3 °C,
   set `HOLD SATURATED`, show an orange warning, but do not raise the cap.
 - Production has a separate interface emergency cutoff at 210 °C, above the
@@ -526,18 +539,18 @@ Before any release or hardware write:
 8. After flashing, first perform a no-heat boot/UI/I²C soak, then supervised short
    power tests with a water load.
 
-The reference `0.2.9-dev` artifact identified in
-`firmware/production/BUILD_MANIFEST.md` was explicitly authorized and flashed to
-the development unit's stock `ota_1` slot on 2026-08-28. Boot diagnostics confirmed
-that the expected image was selected and that normal power-board communication was
-available. This deployment record is not permission for another flash operation.
+The reference `0.2.10-dev` artifact identified in
+`firmware/production/BUILD_MANIFEST.md` is an offline build and has not been flashed.
+The development unit remains on the explicitly authorized `0.2.9-dev` image in the
+stock `ota_1` slot. This status is not permission for another flash operation.
 
 ## 13. Remaining uncertainties and optional characterization
 
-- The selectable range is 40–190 °C. Active-zero session retention has passed
-  supervised POWER, Pause/Resume, and 58 °C water checks. The `0.2.9-dev` change
-  that resumes PI control at the first whole degree below the setpoint still needs
-  a supervised temperature-regulation check.
+- The selectable range is 40–190 °C. Active-zero session retention and steady
+  temperature holding have passed supervised checks. A 125 °C empty-pan trial on
+  `0.2.9-dev` held accurately after an approximately 5 °C initial overshoot. The
+  adaptive braking, Pause recomputation, and direct topology crossing added in
+  unflashed `0.2.10-dev` still require supervised cookware characterization.
 - Production retains the 80 °C interface-side IGBT guard and uses 210 °C for
   the separate interface-side bottom cutoff; the power MCU's native E05 also
   remains active.

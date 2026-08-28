@@ -47,8 +47,14 @@
 
 - Temperature setpoints are `40…190 °C`. Starting above the setpoint enters active
   zero. At or above the target the output remains zero; at the first whole degree
-  below target the ordinary PI controller resumes. PREHEAT, APPROACH and PI use the
-  stronger earlier tuning while the gear-35 APPROACH/HOLD cap remains.
+  below target the ordinary PI controller resumes. Initial heating uses a four-second
+  trend: braking reserve is `clamp(10 °C + positive rise, 10…20 °C)`, with a 15 °C
+  minimum for targets of 170 °C and above and five-degree phase hysteresis. APPROACH
+  and HOLD remain capped at gear 35.
+- Temperature Pause keeps observing the NTC trend but freezes PI. Resume computes and
+  installs a fresh output before reactivating the retained power-board session.
+- Automatic low/high ramps cross directly between gears 35 and 56 without transiently
+  commanding the middle topology. Manual POWER gears 36…55 remain available.
 - Production keeps the interface-side 80 °C IGBT guard and uses a separate
   210 °C bottom emergency cutoff. The power MCU's native E05 remains active.
 - Interface-generated E09 now requires six consecutive bad 500-ms I²C cycles.

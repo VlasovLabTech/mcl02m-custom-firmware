@@ -116,8 +116,8 @@ static uint8_t igbt_temperature(uint8_t raw)
 static uint8_t topology_for_gear(uint8_t gear)
 {
     if (gear == 0) return 0x00;
-    if (gear <= 35) return 0xa1;
-    if (gear <= 55) return 0xc1;
+    if (gear <= MCL02M_LOW_TOPOLOGY_MAX_GEAR) return 0xa1;
+    if (gear < MCL02M_HIGH_TOPOLOGY_MIN_GEAR) return 0xc1;
     return 0xe1;
 }
 
@@ -496,6 +496,31 @@ static void update_status_feedback(void)
     xSemaphoreGive(s_status_lock);
 }
 
+static uint8_t next_ramped_gear(uint8_t current, uint8_t target)
+{
+    int candidate;
+    if (target > current) {
+        candidate = current + MCL02M_GEAR_STEP_PER_HEARTBEAT;
+        if (candidate > target) candidate = target;
+        if (target >= MCL02M_HIGH_TOPOLOGY_MIN_GEAR &&
+            current <= MCL02M_LOW_TOPOLOGY_MAX_GEAR &&
+            candidate > MCL02M_LOW_TOPOLOGY_MAX_GEAR &&
+            candidate < MCL02M_HIGH_TOPOLOGY_MIN_GEAR) {
+            candidate = MCL02M_HIGH_TOPOLOGY_MIN_GEAR;
+        }
+    } else {
+        candidate = current - (int)MCL02M_GEAR_STEP_PER_HEARTBEAT;
+        if (candidate < target) candidate = target;
+        if (target <= MCL02M_LOW_TOPOLOGY_MAX_GEAR &&
+            current >= MCL02M_HIGH_TOPOLOGY_MIN_GEAR &&
+            candidate > MCL02M_LOW_TOPOLOGY_MAX_GEAR &&
+            candidate < MCL02M_HIGH_TOPOLOGY_MIN_GEAR) {
+            candidate = MCL02M_LOW_TOPOLOGY_MAX_GEAR;
+        }
+    }
+    return (uint8_t)candidate;
+}
+
 static void advance_ramp(void)
 {
     xSemaphoreTake(s_status_lock, portMAX_DELAY);
@@ -504,18 +529,10 @@ static void advance_ramp(void)
         xSemaphoreGive(s_status_lock);
         return;
     }
-    int current = s_status.applied_gear;
-    const int target = s_status.target_gear;
-    int candidate;
-    if (target > current) {
-        candidate = current + MCL02M_GEAR_STEP_PER_HEARTBEAT;
-        if (candidate > target) candidate = target;
-    } else {
-        candidate = current - (int)MCL02M_GEAR_STEP_PER_HEARTBEAT;
-        if (candidate < target) candidate = target;
-    }
-    s_status.applied_gear = (uint8_t)candidate;
-    s_status.topology = topology_for_gear((uint8_t)candidate);
+    const uint8_t candidate = next_ramped_gear(s_status.applied_gear,
+                                                s_status.target_gear);
+    s_status.applied_gear = candidate;
+    s_status.topology = topology_for_gear(candidate);
     xSemaphoreGive(s_status_lock);
 }
 

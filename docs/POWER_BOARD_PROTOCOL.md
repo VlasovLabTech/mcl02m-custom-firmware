@@ -55,7 +55,7 @@ Stock Start sequence:
 0C <gear>
 ```
 
-Active-zero candidate used by custom `0.2.5-dev` for POWER 0, temperature coast,
+Active-zero command used by custom firmware for POWER 0, temperature coast,
 and manual Pause:
 
 ```text
@@ -67,14 +67,20 @@ and manual Pause:
 ```
 
 This sequence is distinct from full Stop and was recovered from stock-firmware
-static analysis. Its ability to retain the relay/session state without clicks
-must still be confirmed on hardware. The production driver exposes every write,
-the last command triple, active-zero transition counters, and state through UART
-telemetry and authenticated Wi-Fi status. The diagnostics are compile-time removable.
+static analysis. Supervised tests confirmed retained-session POWER 0 and
+Pause/Resume without unintended relay switching. The production driver exposes
+every write, the last command triple, active-zero transition counters, and state
+through UART telemetry and authenticated Wi-Fi status. The diagnostics are
+compile-time removable.
 
 Do not introduce a synthetic Stop between topology changes. The ESP sends the new
 nonzero command and the power MCU performs IGBT-off, relay sequencing, and
 deadtime internally. `R26=02` is the useful active-output acknowledgement.
+
+For a target in `1…35` or `56…99`, the ramp uses ten-gear steps inside the current
+topology and crosses the gap directly at `35 ↔ 56`. It does not transiently command
+the C1 range merely to reach A1 or E1. A manually requested target in `36…55`
+remains valid and uses C1 normally.
 
 ## Feedback
 

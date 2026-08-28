@@ -91,6 +91,12 @@ def main() -> int:
             "s_active_zero" in engine and "apply_output_locked(gear)" in engine and
             '"ACTIVE ZERO"' in engine,
             "temperature mode uses active zero at or above target and resumes one degree below")
+    require("#define COOKER_TEMP_TREND_WINDOW_MS      4000U" in config and
+            "COOKER_TEMP_BRAKE_BASE_C" in (MAIN / "temperature_ctrl.c").read_text(encoding="utf-8") and
+            "COOKER_TEMP_BRAKE_MAX_C" in (MAIN / "temperature_ctrl.c").read_text(encoding="utf-8") and
+            "COOKER_TEMP_HIGH_BRAKE_MIN_C" in (MAIN / "temperature_ctrl.c").read_text(encoding="utf-8") and
+            "approach_exit_error_c" in (MAIN / "temperature_ctrl.c").read_text(encoding="utf-8"),
+            "temperature PREHEAT uses a bounded four-second adaptive braking margin with hysteresis")
     require("s_status.state != COOK_STATE_COOKING" in engine and
             "update_timer_locked" in engine,
             "cooking countdown freezes on Pause and NoPan")
@@ -174,6 +180,16 @@ def main() -> int:
             'ESP_LOGI(TAG, "C,RESUME,%d"' in engine and
             'ESP_LOGI(TAG, "B,U,%lld"' in inputs,
             "Pause resumes only from a healthy retained session and logs every decision")
+    pause_branch = engine[engine.find("case INTENT_PAUSE_RESUME"):
+                          engine.find("case INTENT_SLEEP")]
+    require("temperature_ctrl_restart(&s_temperature);" in pause_branch and
+            "temperature_ctrl_update(" in pause_branch and
+            "apply_output_locked(resume_gear)" in pause_branch and
+            pause_branch.find("apply_output_locked(resume_gear)") <
+            pause_branch.find("powerboard_control_resume()") and
+            "s_last_temp_update_us = now;" in pause_branch and
+            "temperature_ctrl_observe(&s_temperature" in engine,
+            "temperature Pause keeps trend observations and precomputes a fresh output before Resume")
     require("MCL02M_COMPACT_UART_TELEMETRY=1" in cmake and
             "#if !MCL02M_COMPACT_UART_TELEMETRY" in telemetry and
             '"D,%s,%u,%u,%02X,%02X,%02X,%02X,"' in power and
@@ -503,6 +519,13 @@ def main() -> int:
             "power-board read selector remains 0x20..0x2f")
     require("vTaskDelayUntil(&next, pdMS_TO_TICKS(MCL02M_CONTROL_HEARTBEAT_MS))" in power,
             "verified 500-ms power heartbeat remains the sole pacing loop")
+    ramp = power[power.find("static uint8_t next_ramped_gear"):
+                 power.find("static void advance_ramp")]
+    require("MCL02M_LOW_TOPOLOGY_MAX_GEAR" in ramp and
+            "MCL02M_HIGH_TOPOLOGY_MIN_GEAR" in ramp and
+            "candidate = MCL02M_HIGH_TOPOLOGY_MIN_GEAR" in ramp and
+            "candidate = MCL02M_LOW_TOPOLOGY_MAX_GEAR" in ramp,
+            "automatic ramps cross directly between low and high topologies without 36..55")
     require("MCL02M_I2C_BAD_CYCLES_TO_FAULT=6U" in
             (MAIN / "CMakeLists.txt").read_text(encoding="utf-8") and
             "#define MCL02M_I2C_BAD_CYCLES_TO_FAULT 2U" in power_safety,

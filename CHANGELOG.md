@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.10-dev — 2026-08-28
+
+- Replaced the fixed ten-degree PREHEAT/APPROACH boundary with a bounded adaptive
+  braking margin. The controller adds the positive temperature rise observed over
+  four seconds to a 10 °C base, caps the result at 20 °C, and enforces at least
+  15 °C of braking reserve for targets from 170 °C upward.
+- Latched a five-degree phase hysteresis at APPROACH entry so the falling heat rate
+  cannot make PREHEAT and APPROACH chatter.
+- Made temperature Pause continue observing the NTC trend without integrating PI.
+  Resume now clears PI timing, calculates the current output, and updates the paused
+  power-board target before the retained session resumes, preventing an old-power
+  pulse after Pause.
+- Made the gear ramp cross directly between the low `1…35` and high `56…99`
+  topologies when the requested target lies outside the middle range. Automatic
+  temperature control no longer commands transient gears `36…55`; explicitly
+  selected manual POWER gears in that range remain supported.
+
 ## 0.2.9-dev — 2026-08-28
 
 - Removed the three-degree temperature restart hysteresis after the 58 °C test

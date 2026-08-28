@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 
-#define MCL02M_FIRMWARE_VERSION "0.2.9-dev"
+#define MCL02M_FIRMWARE_VERSION "0.2.10-dev"
 
 #define COOKER_MAX_GEAR                 99U
 #define COOKER_HOLD_MAX_GEAR            35U
@@ -22,6 +22,12 @@
 #define COOKER_TEMP_STEP_C               1U
 #define COOKER_CONTROL_PERIOD_MS         100U
 #define COOKER_TEMP_UPDATE_MS            500U
+#define COOKER_TEMP_TREND_WINDOW_MS      4000U
+#define COOKER_TEMP_BRAKE_BASE_C           10U
+#define COOKER_TEMP_BRAKE_MAX_C            20U
+#define COOKER_TEMP_HIGH_TARGET_C          170U
+#define COOKER_TEMP_HIGH_BRAKE_MIN_C        15U
+#define COOKER_TEMP_PHASE_HYSTERESIS_C       5U
 #define COOKER_IMAGE_CONFIRM_MS         1500U
 #define COOKER_IMAGE_WAKEUP_MS          3000U
 #define COOKER_IMAGE_TURN_ON_MS         5000U

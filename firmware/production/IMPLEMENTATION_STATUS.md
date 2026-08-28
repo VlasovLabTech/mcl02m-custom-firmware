@@ -1,27 +1,25 @@
 # MCL02M custom firmware — implementation status
 
 Дата: 2026-08-28
-Версия исходников: `0.2.9-dev`
-Статус: the reference `0.2.9-dev` app image is currently on the development unit's
-stock `ota_1` slot. It was flashed on 2026-08-28 with an app-only write at `0x170000`;
-the write verified successfully, the expected OTA slot booted, normal power-board
-communication was present, and a subsequent POWER command entered `HEATING` without
-an immediate fault. Earlier supervised testing confirmed retained-session active
-zero, Pause/Resume without unwanted relay switching, working Sleep/Wake, visible I2C
-debug, and a 58 °C water test. That test exposed the former `58 → 55 °C` restart gap;
-`0.2.9-dev` removes it, but this exact regulation change still needs a supervised
-temperature check. No backup was created and NVS was not erased during this update.
-The earlier one-time NVS refresh is complete and must not be repeated automatically.
+Версия исходников: `0.2.10-dev`
+Статус: the development unit remains on the reference `0.2.9-dev` app in stock
+`ota_1`. Supervised tests confirmed retained-session active zero, Pause/Resume
+without unwanted relay switching, Sleep/Wake, I2C debug display, and temperature
+operation. At a 125 °C empty-pan setpoint, initial heating overshot by approximately
+5 °C and subsequent holding was accurate. Source `0.2.10-dev` adds adaptive initial
+braking, pause-safe output recomputation, and direct low/high topology crossing. Its
+app image is built and checked offline but has not been flashed. The earlier one-time
+NVS refresh is complete and must not be repeated automatically.
 
 ## Реализованный пользовательский контур
 
 | Блок | Поведение |
 |---|---|
 | POWER | `0…99`; encoder slow `1`, fast `5`; вращение не запускает нагрев; gear 0 enters the active-zero session rather than full Stop |
-| TEMPERATURE | `40…190 °C`; entering T°C immediately copies and clamps the setpoint into editor-owned state, preventing a stale first `Sxx` frame; Start at or above target enters active zero; output stays zero at/above target and PI resumes at the first whole degree below it; stronger PREHEAT thresholds are `56/77/99`, APPROACH uses `8 + 2 × error`, PI uses `4 + 2 × error + 0.08 × integral`, and APPROACH/HOLD remain capped at `35` |
+| TEMPERATURE | `40…190 °C`; entering T°C immediately copies and clamps the setpoint into editor-owned state; PREHEAT uses `56/77/99`; braking reserve is `clamp(10 °C + positive four-second rise, 10…20 °C)`, with a 15 °C minimum from 170 °C and 5 °C phase hysteresis; APPROACH uses `8 + 2 × error`; PI uses `4 + 2 × error + 0.08 × integral`; APPROACH/HOLD remain capped at `35`; output is active zero at/above target and PI resumes one degree below |
 | HOLD SATURATED | gear `35` в течение 90 s при ошибке не менее 3 °C: orange, warning и сообщение; предел не повышается |
 | Start | только отдельным нажатием центра; силовой preflight и `STARTING` до `R26=02` |
-| Pause/Resume | short center enters the same active-zero command while preserving a distinct PAUSED state; timer freezes; Resume does not deliberately Stop/re-arm; 2 h continuous manual Pause performs full Stop |
+| Pause/Resume | short center enters active zero and freezes the timer; temperature trend sampling continues while PI is frozen; Resume clears PI timing, calculates and installs a current output before resuming the retained session, and never intentionally pulses the old gear or performs Stop/re-arm; 2 h continuous manual Pause performs full Stop |
 | Stop/Sleep | hold центра 1,5 s с немедленным срабатыванием и звуком — Stop/Back; следующий hold в Idle — Sleep; Cancel всегда Stop/Back |
 | Sleep | default 1 min Idle; wake returns to Home/Power, or Home/Temperature when Sleep began from Temperature; secondary menu selections are never restored; heartbeat and safety continue at zero output |
 | OLED | renderer использует полные `64×48` без отладочной рамки; десять 1-bit картинок показывают turn-on 5 s синхронно с boot-мелодией, wake 3 s, cooking 2,5 s, confirm/cancel 1,5 s, ready/no-pan/error до изменения состояния и две 10-s стадии Sleep; active timeout default 3 min; первое нажатие/вращение только будит; encoder guard 1,5 s |
@@ -50,8 +48,10 @@ The earlier one-time NVS refresh is complete and must not be repeated automatica
 - Active zero repeats the stock-derived candidate `W0D=81, W00=00, W0C=00` every
   500 ms. Full Stop remains `00/00/00` and is used for completion, Cancel, faults,
   Sleep paths and the two-hour manual-Pause timeout.
-- Gear изменяется максимум на 10 за один heartbeat; релейные паузы остаются во
-  владении силового MCU.
+- Gear changes by at most 10 per heartbeat inside a topology. When a target lies in
+  `1…35` or `56…99`, the boundary crossing is directly `35 ↔ 56`, avoiding transient
+  C1 commands and leaving relay sequencing with the power MCU. Explicit manual POWER
+  targets `36…55` remain valid.
 - E09 is generated locally after six consecutive bad 500-ms I²C cycles. A
   latched power-board fault retransmits the complete Stop sequence every 500 ms.
 - Start timeout, unknown power status, active `R26` after Stop, or a temperature
@@ -99,9 +99,9 @@ The earlier one-time NVS refresh is complete and must not be repeated automatica
 
 ## Оставшиеся ограничения и необязательная характеризация
 
-- Setpoint range is `40…190 °C`. Retained-session active zero has passed supervised
-  POWER and Pause/Resume checks. The revised `0.2.9-dev` temperature restart behavior
-  still needs a supervised cookware test.
+- Setpoint range is `40…190 °C`. Retained-session active zero and steady holding have
+  passed supervised checks. The adaptive braking, Pause recomputation, and topology
+  crossing in unflashed `0.2.10-dev` still need a supervised cookware test.
 - Production keeps the 80 °C interface IGBT guard and a separate 210 °C bottom
   emergency cutoff. The power MCU's native E05 remains active.
 - Полный перебор редких fault paths и длительный web/network soak могут быть

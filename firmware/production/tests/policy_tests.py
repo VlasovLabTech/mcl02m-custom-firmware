@@ -13,17 +13,37 @@ class Timer:
             self.remaining = max(0, self.remaining - seconds)
 
 
-def temperature_step(phase: str, target: int, measured: int) -> tuple[str, int]:
+def braking_margin(target: int, rise_4s: int) -> int:
+    margin = min(20, 10 + max(0, rise_4s))
+    return max(margin, 15) if target >= 170 else margin
+
+
+def temperature_step(
+    phase: str, target: int, measured: int, rise_4s: int = 0
+) -> tuple[str, int]:
     error = target - measured
+    margin = braking_margin(target, rise_4s)
     if error <= 0:
         return "HOLD", 0
-    if phase == "PREHEAT" and error > 10:
+    if phase == "PREHEAT" and error > margin:
         return phase, 99 if error >= 30 else 77 if error >= 18 else 56
     if phase == "PREHEAT":
         phase = "APPROACH"
     if phase == "APPROACH" and error > 2:
         return phase, min(35, 8 + error * 2)
     return "HOLD", max(0, min(35, round(4 + 2 * error)))
+
+
+def ramp_step(current: int, target: int) -> int:
+    if target > current:
+        candidate = min(target, current + 10)
+        if target >= 56 and current <= 35 and 35 < candidate < 56:
+            return 56
+        return candidate
+    candidate = max(target, current - 10)
+    if target <= 35 and current >= 56 and 35 < candidate < 56:
+        return 35
+    return candidate
 
 
 def profile_sequence(durations: list[int]) -> list[int]:
@@ -93,6 +113,12 @@ def run() -> None:
     assert temperature_step("PREHEAT", 100, 75) == ("PREHEAT", 77)
     assert temperature_step("PREHEAT", 100, 89) == ("PREHEAT", 56)
     assert temperature_step("PREHEAT", 100, 91)[1] <= 35
+    assert braking_margin(125, 5) == 15
+    assert temperature_step("PREHEAT", 125, 110, rise_4s=5) == ("APPROACH", 35)
+    assert braking_margin(125, 2) == 12
+    assert temperature_step("PREHEAT", 125, 110, rise_4s=2) == ("PREHEAT", 56)
+    assert braking_margin(190, 0) == 15
+    assert temperature_step("PREHEAT", 190, 175) == ("APPROACH", 35)
     assert temperature_step("HOLD", 58, 59) == ("HOLD", 0)
     assert temperature_step("HOLD", 58, 58) == ("HOLD", 0)
     assert temperature_step("HOLD", 58, 57) == ("HOLD", 6)
@@ -113,6 +139,12 @@ def run() -> None:
     assert (36 + 10) // 11 == 4
     assert (55 + 10) // 11 == 5
     assert (56 + 10) // 11 == 6
+    assert ramp_step(30, 99) == 56
+    assert ramp_step(35, 56) == 56
+    assert ramp_step(56, 35) == 35
+    assert ramp_step(57, 28) == 35
+    assert ramp_step(20, 45) == 30
+    assert ramp_step(60, 45) == 50
     assert profile_sequence([2400, 1500, 0, 300, 0]) == [1, 2, 4]
     assert profile_sequence([0, 0, 0, 0, 0]) == []
     assert active_zero_command("ACTIVE_ZERO") == (0x81, 0, 0)

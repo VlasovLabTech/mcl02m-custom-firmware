@@ -72,7 +72,10 @@ def main() -> int:
     require(macro_value(safety, "MCL02M_CONTROL_HEARTBEAT_MS") == 500,
             "logical power-board commands are emitted on a 500-ms heartbeat")
     require(macro_value(safety, "MCL02M_GEAR_STEP_PER_HEARTBEAT") == 10,
-            "gear ramp changes at most ten levels per heartbeat")
+            "gear ramp changes at most ten levels per heartbeat within one topology")
+    require(macro_value(safety, "MCL02M_LOW_TOPOLOGY_MAX_GEAR") == 35 and
+            macro_value(safety, "MCL02M_HIGH_TOPOLOGY_MIN_GEAR") == 56,
+            "low and high topology boundaries are explicit")
     require(macro_value(safety, "MCL02M_START_CONFIRM_TIMEOUT_MS") == 8_000,
             "R26 startup confirmation timeout is eight seconds")
     require(macro_value(safety, "MCL02M_R20_TRANSITION_MAX_SAMPLES") == 20,
@@ -112,10 +115,15 @@ def main() -> int:
             "s_status.target_gear = new_gear" in gear_body,
             "rapid gear requests only replace the pending target")
     ramp_body = function_body(control, "advance_ramp")
-    require("MCL02M_GEAR_STEP_PER_HEARTBEAT" in ramp_body and
+    require("next_ramped_gear" in ramp_body and
             "s_status.topology = topology_for_gear" in ramp_body and
             "s_force_stop" not in ramp_body,
             "gear/topology changes occur directly once per heartbeat without interface Stop")
+    ramp_step = function_body(control, "next_ramped_gear")
+    require("candidate = MCL02M_HIGH_TOPOLOGY_MIN_GEAR" in ramp_step and
+            "candidate = MCL02M_LOW_TOPOLOGY_MAX_GEAR" in ramp_step and
+            "MCL02M_GEAR_STEP_PER_HEARTBEAT" in ramp_step,
+            "ramps skip 36..55 only when crossing directly between low and high topologies")
     control_task = function_body(control, "control_task")
     require("vTaskDelayUntil(&next, pdMS_TO_TICKS(MCL02M_CONTROL_HEARTBEAT_MS))" in control_task,
             "control task is paced by the verified 500-ms stock heartbeat")

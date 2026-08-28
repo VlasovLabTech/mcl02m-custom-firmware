@@ -170,8 +170,13 @@ static cooker_fault_t map_power_fault(const powerboard_status_t *pb)
 static uint8_t initial_temperature_gear_locked(void)
 {
     temperature_ctrl_reset(&s_temperature);
-    return temperature_ctrl_update(&s_temperature, s_status.target_temperature_c,
-                                   s_status.bottom_c, COOKER_TEMP_UPDATE_MS);
+    temperature_ctrl_observe(&s_temperature, s_status.bottom_c);
+    const uint8_t gear = temperature_ctrl_update(&s_temperature,
+                                                  s_status.target_temperature_c,
+                                                  s_status.bottom_c,
+                                                  COOKER_TEMP_UPDATE_MS);
+    s_last_temp_update_us = esp_timer_get_time();
+    return gear;
 }
 
 static bool prepare_profile_stage_locked(unsigned start, bool running)
@@ -369,12 +374,14 @@ static void update_timer_locked(int64_t delta_us)
 static void update_temperature_locked(int64_t now_us)
 {
     if (control_mode_locked() != COOK_MODE_TEMPERATURE ||
-        s_status.state != COOK_STATE_COOKING ||
+        !state_active(s_status.state) ||
         !s_status.readings_valid || now_us - s_last_temp_update_us < COOKER_TEMP_UPDATE_MS * 1000LL)
         return;
     const uint32_t elapsed = s_last_temp_update_us == 0 ? COOKER_TEMP_UPDATE_MS :
                              (uint32_t)((now_us - s_last_temp_update_us) / 1000);
     s_last_temp_update_us = now_us;
+    temperature_ctrl_observe(&s_temperature, s_status.bottom_c);
+    if (s_status.state != COOK_STATE_COOKING) return;
     const uint8_t gear = temperature_ctrl_update(&s_temperature,
                                                   s_status.target_temperature_c,
                                                   s_status.bottom_c, elapsed);
@@ -505,6 +512,11 @@ static void handle_intent_locked(const intent_t *intent)
             if (pause_err == ESP_OK) {
                 if (pausing_no_pan && s_no_pan_announced) sound_stop();
                 if (pausing_no_pan) s_no_pan_announced = false;
+                if (control_mode_locked() == COOK_MODE_TEMPERATURE) {
+                    temperature_ctrl_restart(&s_temperature);
+                    s_status.hold_saturated = false;
+                    s_saturation_announced = false;
+                }
                 s_status.state = COOK_STATE_PAUSED;
                 s_status.active_zero = true;
                 s_manual_pause_since_us = now;
@@ -513,11 +525,26 @@ static void handle_intent_locked(const intent_t *intent)
                 emit_status("manual_pause");
             }
         } else if (s_status.state == COOK_STATE_PAUSED) {
-            const esp_err_t resume_err = powerboard_control_resume();
+            esp_err_t resume_err = ESP_OK;
+            if (control_mode_locked() == COOK_MODE_TEMPERATURE) {
+                if (!s_status.readings_valid) {
+                    resume_err = ESP_ERR_INVALID_STATE;
+                } else {
+                    temperature_ctrl_restart(&s_temperature);
+                    const uint8_t resume_gear = temperature_ctrl_update(
+                        &s_temperature, s_status.target_temperature_c,
+                        s_status.bottom_c, COOKER_TEMP_UPDATE_MS);
+                    s_status.temp_phase = s_temperature.phase;
+                    s_status.hold_saturated = s_temperature.saturated;
+                    resume_err = apply_output_locked(resume_gear);
+                }
+            }
+            if (resume_err == ESP_OK) resume_err = powerboard_control_resume();
 #if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
             ESP_LOGI(TAG, "C,RESUME,%d", resume_err);
 #endif
             if (resume_err == ESP_OK) {
+                s_last_temp_update_us = now;
                 s_manual_pause_since_us = 0;
                 s_status.pause_remaining_s = 0;
                 s_status.active_zero = s_active_zero;
