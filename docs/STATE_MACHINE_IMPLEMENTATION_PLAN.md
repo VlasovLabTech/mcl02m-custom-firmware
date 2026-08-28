@@ -1,7 +1,9 @@
 # State-Machine Audit and Deferred Implementation Plan
 
-Status: **deferred; no control-logic fixes from this document have been implemented yet**  
-Audit baseline: `0.2.10-dev`, commit `2b5784e` (`2026-08-28`)  
+Status: **deferred; no control-logic fixes from this document have been implemented yet**
+
+Audit baseline: `0.2.10-dev`, commit `2b5784e` (`2026-08-28`)
+
 Current source after the unrelated firmware-version UI addition: `0.2.11-dev`
 
 This document preserves the complete control-flow review so the findings can be
@@ -574,4 +576,3 @@ This plan is complete only when:
   supervision;
 - the changelog and development context identify which findings were actually fixed;
 - flashing remains a separate, explicit owner-authorized action.
-
