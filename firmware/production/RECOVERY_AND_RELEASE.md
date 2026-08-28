@@ -21,15 +21,13 @@ SHA-256 `9d4df0f3399fa7102ff6678a5dcbe5af48576edf4fce9bf646f43f7c5d8345cd`.
 6. Переключение `otadata` согласовывается отдельно и только подготовленной
    минимальной записью. Никакого erase всего flash.
 
-## Pending one-time NVS refresh
+## Completed one-time NVS refresh
 
-The owner requested one exceptional NVS refresh at the next explicitly authorized
-flash. Before erasing, read the current NVS partition at `0x9000` with length
-`0x4000`, verify the backup is exactly 16,384 bytes, and record its SHA-256. Then
-erase only `0x9000..0xCFFF` exactly once. This is not part of the application and
-must never become the default update flow; the firmware still contains no automatic
-NVS erase. The ignored local checklist `_local_private/NEXT_FLASH_ONCE.md` records
-the pending/completed state. No hardware operation has been performed yet.
+The exceptional NVS refresh requested by the owner was completed on 2026-08-28,
+immediately before flashing `0.2.5-dev` to stock `ota_1`. Only the NVS range
+`0x9000..0xCFFF` was erased. This operation must not be repeated during ordinary
+updates or automatically applied to another cooker; a new explicit owner request is
+required. The firmware contains no automatic NVS erase.
 
 ## Возврат
 

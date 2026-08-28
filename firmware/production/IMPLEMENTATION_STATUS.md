@@ -2,10 +2,11 @@
 
 Дата: 2026-08-28
 Версия исходников: `0.2.5-dev`
-Статус: new app image built and checked offline, but not flashed. The earlier
-`0.2.4-dev` image remains on the development unit. Bootloader, partition table,
-`otadata`, NVS, `ota_0`, eFuse and power-board firmware have not been changed by
-this revision. Active-zero relay retention requires supervised hardware validation.
+Статус: the `0.2.5-dev` app image was flashed to the development unit's stock
+`ota_1` slot on 2026-08-28. The explicitly requested one-time NVS refresh was also
+completed. Bootloader, partition table, `otadata`, `ota_0`, eFuse and power-board
+firmware were not changed. Active-zero relay retention still requires supervised
+hardware validation.
 
 ## Реализованный пользовательский контур
 
