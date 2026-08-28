@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.7-dev — 2026-08-28
+
+- Fixed manual Resume from active-zero Pause. Resume now validates a healthy retained
+  power-board session (`R20=0`, valid sensors and nonzero `R26`) instead of incorrectly
+  requiring the fully stopped `R26=0` state.
+- Added compact UART frames for main-button, encoder and touch input events, plus
+  Pause/Resume requests, results and explicit rejection diagnostics.
+- Counted manual Pause entries in the active-zero diagnostic counters.
+
 ## 0.2.6-dev — 2026-08-28
 
 - Fixed a false `STOP VERIFY` / `EPB` fault after entering manual Pause or another

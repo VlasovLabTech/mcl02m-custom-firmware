@@ -168,10 +168,12 @@ modified. See [Flashing and recovery](docs/FLASHING.md) before writing anything.
 
 ## Development status
 
-The current source version is `0.2.6-dev`. It fixes the false `STOP VERIFY` fault
-on retained active-zero/Pause sessions and replaces repetitive UART JSON with a
-compact but complete diagnostic frame. It has not yet been flashed or physically
-validated; active-zero relay retention must be checked under supervision.
+The current source version is `0.2.7-dev`. It fixes Resume from a retained
+active-zero/Pause session and adds compact input/action diagnostics without restoring
+repetitive UART JSON. Version `0.2.6-dev` was physically tested: Pause retained the
+session with `R20=0`, `R26=2` and no false `EPB`; its Resume gate was then found to
+incorrectly require the stopped `R26=0` state. Version `0.2.7-dev` has not yet been
+flashed or physically validated.
 
 This is an independent community project, not an official Xiaomi or Chunmi
 product. Use it at your own risk. Licensed under the [MIT License](LICENSE).

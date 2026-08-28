@@ -167,6 +167,13 @@ def main() -> int:
             "if (!state_can_energize(s_status.state) && r26_valid && r26 != 0)" not in power and
             "Preserve the first cause" in power,
             "active-zero and Pause retain the session without a false STOP VERIFY fault")
+    require("retained_session_healthy_locked" in power and
+            "s_status.registers[6] != 0" in power and
+            "!retained_session_healthy_locked()" in power and
+            'ESP_LOGW(TAG, "Z,REJECT,PAUSE' in power and
+            'ESP_LOGI(TAG, "C,RESUME,%d"' in engine and
+            'ESP_LOGI(TAG, "B,U,%lld"' in inputs,
+            "Pause resumes only from a healthy retained session and logs every decision")
     require("MCL02M_COMPACT_UART_TELEMETRY=1" in cmake and
             "#if !MCL02M_COMPACT_UART_TELEMETRY" in telemetry and
             '"D,%s,%u,%u,%02X,%02X,%02X,%02X,"' in power and

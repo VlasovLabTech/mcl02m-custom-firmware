@@ -59,7 +59,8 @@
 - Active-zero diagnostics are available as a compact fixed UART frame and through
   authenticated `/api/status`. The UART frame retains the full driver state, last
   `0D/00/0C` command, raw `R20…R27`, temperatures, fault and counters without JSON
-  key overhead. Short `Z/P/U/F/I` frames mark transitions and errors. Both
+  key overhead. Short `Z/P/U/F/I` frames mark transitions and errors; `B/E/T/C`
+  frames record button, encoder, touch and Pause/Resume decisions. Both
   active-zero switches are compile-time definitions for quick removal after
   supervised validation.
   The fixed `D` field order is: state, target/applied gear, topology, last commands,

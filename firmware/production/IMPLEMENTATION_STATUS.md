@@ -1,12 +1,13 @@
 # MCL02M custom firmware — implementation status
 
 Дата: 2026-08-28
-Версия исходников: `0.2.6-dev`
-Статус: the `0.2.5-dev` app image is currently on the development unit's stock
-`ota_1` slot. The `0.2.6-dev` source fixes the false Pause/active-zero `EPB` and is
-awaiting an explicitly authorized flash. The earlier one-time NVS refresh is complete
-and must not be repeated automatically. Active-zero relay retention still requires
-supervised hardware validation.
+Версия исходников: `0.2.7-dev`
+Статус: the `0.2.6-dev` app image is currently on the development unit's stock
+`ota_1` slot. A supervised test confirmed that Pause retained the session with
+`R20=0`, `R26=2` and no false `EPB`, then exposed an incorrect Resume requirement for
+the stopped `R26=0` state. Source `0.2.7-dev` fixes that Resume gate and is awaiting an
+explicitly authorized flash. The earlier one-time NVS refresh is complete and must
+not be repeated automatically.
 
 ## Реализованный пользовательский контур
 
@@ -32,7 +33,7 @@ supervised hardware validation.
 | NoPan | три последовательных отсчёта по 500 ms; отдельный `nopan.png`, orange blink, обязательный цикл `мелодия 2,74 s → тишина 3 s` даже при `SOUND OFF`, timer freeze, окно возврата 60 s, затем E02 fault; возврат/Stop/Pause немедленно прерывает цикл |
 | Stock E-groups | известные устойчивые raw-группы сохраняют E03/E04/E05/E07/E08/E10/E12; communication — E09; неизвестные остаются generic |
 | I²C debug | Temporary persisted setting, OFF by default; overlays consecutive bad cycles `0…6` in small text at OLED `x=0, y=10`, including the E09 picture; one clean cycle resets it to zero |
-| Active-zero debug | Compile-time removable compact UART frames retain full state, `R20…R27`, last `0D/00/0C`, temperatures, faults and counters; authenticated Wi-Fi keeps the readable JSON snapshot |
+| Active-zero debug | Compile-time removable compact UART frames retain full state, `R20…R27`, last `0D/00/0C`, temperatures, faults and counters, plus input and Pause/Resume decisions; authenticated Wi-Fi keeps the readable JSON snapshot |
 
 ## Силовой и safety-контур
 

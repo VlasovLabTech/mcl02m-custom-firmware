@@ -5,6 +5,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -15,6 +16,14 @@
 #include "sound.h"
 #include "telemetry.h"
 #include "temperature_ctrl.h"
+
+#ifndef MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+#define MCL02M_ACTIVE_ZERO_DIAGNOSTICS 0
+#endif
+
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+static const char *TAG = "cookdbg";
+#endif
 
 typedef enum {
     INTENT_SET_MODE,
@@ -482,11 +491,18 @@ static void handle_intent_locked(const intent_t *intent)
         else if (s_status.state == COOK_STATE_COMPLETE) s_status.state = COOK_STATE_IDLE;
         break;
     case INTENT_PAUSE_RESUME:
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+        ESP_LOGI(TAG, "C,PR,%s", cooking_state_name(s_status.state));
+#endif
         if (s_status.state == COOK_STATE_COOKING || s_status.state == COOK_STATE_STARTING ||
             s_status.state == COOK_STATE_NO_PAN) {
             const bool pausing_no_pan = s_status.state == COOK_STATE_NO_PAN;
             s_status.paused_gear = s_status.applied_gear;
-            if (powerboard_control_pause() == ESP_OK) {
+            const esp_err_t pause_err = powerboard_control_pause();
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+            ESP_LOGI(TAG, "C,PAUSE,%d", pause_err);
+#endif
+            if (pause_err == ESP_OK) {
                 if (pausing_no_pan && s_no_pan_announced) sound_stop();
                 if (pausing_no_pan) s_no_pan_announced = false;
                 s_status.state = COOK_STATE_PAUSED;
@@ -497,7 +513,11 @@ static void handle_intent_locked(const intent_t *intent)
                 emit_status("manual_pause");
             }
         } else if (s_status.state == COOK_STATE_PAUSED) {
-            if (powerboard_control_resume() == ESP_OK) {
+            const esp_err_t resume_err = powerboard_control_resume();
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+            ESP_LOGI(TAG, "C,RESUME,%d", resume_err);
+#endif
+            if (resume_err == ESP_OK) {
                 s_manual_pause_since_us = 0;
                 s_status.pause_remaining_s = 0;
                 s_status.active_zero = s_active_zero;

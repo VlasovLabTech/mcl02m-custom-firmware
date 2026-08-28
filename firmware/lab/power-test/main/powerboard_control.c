@@ -325,6 +325,18 @@ static bool preflight_healthy_locked(void)
            bottom_temperature_interface_safe(s_status.bottom_c);
 }
 
+static bool retained_session_healthy_locked(void)
+{
+    const uint16_t needed = (1U << 0) | (1U << 2) | (1U << 3) |
+                            (1U << 4) | (1U << 6);
+    return (s_status.valid_mask & needed) == needed &&
+           s_status.registers[0] == 0 && s_status.registers[6] != 0 &&
+           s_status.registers[3] >= 0x41 && s_status.registers[3] < 0xf8 &&
+           s_status.registers[4] >= 0x0b && s_status.registers[4] < 0xfc &&
+           s_status.igbt_c < MCL02M_MAX_IGBT_C &&
+           bottom_temperature_interface_safe(s_status.bottom_c);
+}
+
 static esp_err_t startup_probe(void)
 {
     static const uint8_t order[] = {0x25, 0x28, 0x29, 0x24, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f};
@@ -856,6 +868,7 @@ esp_err_t powerboard_control_pause(void)
     s_status.state = PB_STATE_PAUSED;
     s_status.applied_gear = 0;
     s_start_confirm_deadline_us = 0;
+    ++s_status.active_zero_entries;
     xSemaphoreGive(s_status_lock);
     if (s_control_task != NULL) xTaskNotifyGive(s_control_task);
 #if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
@@ -872,7 +885,13 @@ esp_err_t powerboard_control_resume(void)
     xSemaphoreTake(s_status_lock, portMAX_DELAY);
     const int64_t now = esp_timer_get_time();
     if (s_status.state != PB_STATE_PAUSED || s_run_deadline_us <= now ||
-        !preflight_healthy_locked()) {
+        !retained_session_healthy_locked()) {
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+        ESP_LOGW(TAG, "Z,REJECT,PAUSE,%s,%02X,%02X,%04X,%u",
+                 powerboard_state_name(s_status.state), s_status.registers[0],
+                 s_status.registers[6], s_status.valid_mask,
+                 s_run_deadline_us > now ? 1U : 0U);
+#endif
         xSemaphoreGive(s_status_lock);
         return ESP_ERR_INVALID_STATE;
     }

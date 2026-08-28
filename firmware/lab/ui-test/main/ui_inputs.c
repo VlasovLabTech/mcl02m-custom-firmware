@@ -17,6 +17,10 @@
 
 #define UI_MAIN_LONG_PRESS_MS 1500U
 
+#ifndef MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+#define MCL02M_ACTIVE_ZERO_DIAGNOSTICS 0
+#endif
+
 static const char *TAG = "ui_inputs";
 static i2c_master_bus_handle_t s_touch_bus;
 static i2c_master_dev_handle_t s_touch_dev;
@@ -271,6 +275,9 @@ static void input_task(void *arg)
                 post_event(UI_INPUT_MAIN_PRESSED, 1, 0, now_us / 1000);
                 telemetry_emitf("{\"t_ms\":%lld,\"type\":\"main_button\","
                                 "\"state\":\"pressed\",\"raw\":0}", now_us / 1000);
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+                ESP_LOGI(TAG, "B,D");
+#endif
             } else {
                 const int64_t held_ms = button_pressed_at_us == 0 ? 0 :
                                         (now_us - button_pressed_at_us) / 1000;
@@ -279,6 +286,9 @@ static void input_task(void *arg)
                 telemetry_emitf("{\"t_ms\":%lld,\"type\":\"main_button\","
                                 "\"state\":\"released\",\"raw\":1,"
                                 "\"duration_ms\":%lld}", now_us / 1000, held_ms);
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+                ESP_LOGI(TAG, "B,U,%lld", held_ms);
+#endif
                 button_pressed_at_us = 0;
             }
         }
@@ -289,6 +299,9 @@ static void input_task(void *arg)
             telemetry_emitf("{\"t_ms\":%lld,\"type\":\"main_button\","
                             "\"state\":\"long\",\"duration_ms\":%u}",
                             now_us / 1000, UI_MAIN_LONG_PRESS_MS);
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+            ESP_LOGI(TAG, "B,L,%u", UI_MAIN_LONG_PRESS_MS);
+#endif
         }
 
         uint8_t encoder_now;
@@ -315,6 +328,10 @@ static void input_task(void *arg)
                                 detent, encoder_position,
                                 detent < 0 ? "right" : "left",
                                 encoder_invalid_transitions);
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+                ESP_LOGI(TAG, "E,%d,%d,%u", detent, encoder_position,
+                         encoder_invalid_transitions);
+#endif
             }
         }
 
@@ -350,6 +367,10 @@ static void input_task(void *arg)
                                     "\"transport\":\"%s\",\"state\":\"%s\","
                                     "\"raw\":%u}", now_us / 1000,
                                     touch_transport_name(), touch_name(touch_stable), touch_raw);
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+                    ESP_LOGI(TAG, "T,%s,%s,%02X", touch_transport_name(),
+                             touch_name(touch_stable), touch_raw);
+#endif
                 }
             } else if (!(uart && err == ESP_ERR_NOT_FOUND)) {
                 touch_error_count++;
