@@ -54,6 +54,13 @@ static void led_begin_command(uint8_t command)
     led_send_byte(command);
 }
 
+static void led_end_command(void)
+{
+    esp_rom_delay_us(5);
+    gpio_set_level(PIN_LED_STB, 1);
+    esp_rom_delay_us(5);
+}
+
 static void led_write(unsigned logical_address, const uint8_t *data, size_t count)
 {
     led_begin_command(0x00);
@@ -65,6 +72,8 @@ static void led_write(unsigned logical_address, const uint8_t *data, size_t coun
         address = (address + 2U) & 0xffU;
     }
     led_begin_command(0x8f);
+    /* The final STB rising edge latches display-on and the RAM contents. */
+    led_end_command();
 }
 
 static void led_apply_shadow(void)

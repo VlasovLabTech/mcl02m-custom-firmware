@@ -205,6 +205,11 @@ def main() -> int:
             "unidentified GPIO32 remains LOW")
     require("self_test_deadline" in indicators and "leds = 9;" in indicators,
             "all nine white LEDs run a visible boot self-test")
+    require("static void led_end_command(void)" in outputs and
+            "led_begin_command(0x8f);" in outputs and
+            "led_end_command();" in outputs and
+            'ESP_LOGI(TAG, "L,%u,%u,%u,%u,%d,%d"' in indicators,
+            "serial LED transactions latch the final command and changed outputs are logged compactly")
     require("cooker.state == COOK_STATE_FAULT" in display and
             "urgent_screen && s_timer_editing" in ui and
             "if (urgent_screen) s_temperature_edit_deadline_us = 0;" in ui and
@@ -226,9 +231,15 @@ def main() -> int:
             "temporary I2C counter display is an opt-in persisted physical setting")
     require("pb->consecutive_bad_cycles > COOKER_I2C_DEBUG_MAX" in engine and
             "s_status.i2c_bad_cycles" in engine and
-            "ui_oled_overlay_debug_counter(cooker.i2c_bad_cycles)" in display and
+            "i2c_debug_display_value(cooker.i2c_bad_cycles, now)" in display and
+            "COOKER_I2C_DEBUG_HOLD_MS" in display and
+            "#define COOKER_I2C_DEBUG_HOLD_MS       2000U" in config and
             "oled_draw_scaled_text(text, 0, 10, 1, 1)" in outputs,
-            "I2C debug counter is clamped to six and overlaid at row 2, x=0")
+            "I2C debug counter resets internally but holds its displayed peak for two seconds")
+    require("s_temperature_edit_value" in ui and
+            "display_prod_set_temperature_edit_overlay(s_temperature_edit_value" in ui and
+            "cooking_set_temperature(s_temperature_edit_value);" in ui,
+            "temperature editor owns a clamped immediate setpoint instead of showing an asynchronous stale value")
     cjk_codepoints = {
         ord(char) for char in ui + display if 0x3400 <= ord(char) <= 0x9FFF
     }

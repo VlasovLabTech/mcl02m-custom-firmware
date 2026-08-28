@@ -13,7 +13,7 @@ from a request to edit or build software.
 - Xiaomi device model: `chunmi.ihcooker.v2`.
 - Interface controller: Espressif `ESP-WROOM-32D` (classic ESP32).
 - Display: monochrome 64×48 OLED, page-major 384-byte framebuffer.
-- Current custom source version: `0.2.5-dev`.
+- Current custom source version: `0.2.8-dev`.
 - Framework: ESP-IDF.
 - Public repository language: English for technical documents; the device UI
   supports English, Russian, and Simplified Chinese.
@@ -322,11 +322,12 @@ PAUSED, NO_PAN, COMPLETE, FAULT
 ### TEMPERATURE
 
 - Setpoint range: 40–190 °C, 1 °C steps.
-- PREHEAT: gear 99 for error ≥45 °C, 77 for error ≥30 °C, otherwise 56;
-  transition to APPROACH at 20 °C below the target.
-- APPROACH: `4 + error`, capped at gear 35, so stored heat is handled earlier.
-- HOLD: conservative PI capped at gear 35; base 2.0, proportional 1.25 and
-  integral 0.04 per second.
+- PREHEAT: gear 99 for error ≥30 °C, 77 for error ≥18 °C, otherwise 56;
+  transition to APPROACH at 10 °C below the target.
+- APPROACH: `8 + 2 × error`, capped at gear 35.
+- HOLD: PI capped at gear 35; base 4.0, proportional 2.0 and integral 0.08 per
+  second. This restores the stronger previously tested tuning after the more
+  conservative values underheated and wandered during a 58 °C water test.
 - At one degree below the target or warmer, output becomes a real zero-power
   coast. Heating resumes only after cooling to three degrees below the target.
   Starting TEMPERATURE while already above its target enters the same coast
@@ -423,7 +424,9 @@ center → left → right to reduce OLED burn-in.
 - Full-screen art is monochrome and exactly 64×48 (`384` packed bytes).
 - The optional I²C debug counter is drawn as one small digit at `x=0, y=10`
   over the current frame. It deliberately may overlap normal content and also
-  remains visible on the E09 fault picture.
+  remains visible on the E09 fault picture. A clean power-board cycle resets the
+  internal consecutive count immediately, but the largest displayed digit is held
+  for at least two seconds after the last nonzero sample.
 - The error artwork's lower-right source label and separator are cleared during
   generation. The actual three-character fault code is rendered at 2× scale in
   the reserved `x=30…63`, `y=30…47` corner.
@@ -518,7 +521,7 @@ Before any release or hardware write:
 8. After flashing, first perform a no-heat boot/UI/I²C soak, then supervised short
    power tests with a water load.
 
-The current offline-built `0.2.5-dev` artifact is identified in
+The current offline-built `0.2.8-dev` artifact is identified in
 `firmware/production/BUILD_MANIFEST.md`. This is not permission to flash.
 
 ## 13. Remaining uncertainties and optional characterization
@@ -533,8 +536,11 @@ The current offline-built `0.2.5-dev` artifact is identified in
   logs individual read errors, and retransmits the complete Stop sequence on
   every heartbeat while the fault remains latched. Wiring, pull-ups, supply
   integrity, and EMI coupling still need physical inspection if E09 recurs.
-- The nine white LEDs run a 1.5-second all-on test after boot. If that test is
-  absent on hardware, investigate the LED driver, flex, supply and GPIO path.
+- The nine white LEDs run a 1.5-second all-on test after boot. Serial transactions
+  end with an explicit STB latch and changed output requests use compact `L` UART
+  frames. The development unit's all-channel outage predates the current firmware
+  changes and is treated as a hardware fault; inspect the common LED driver, flex,
+  supply and STB/CLK/DATA path.
 - Long-duration soak of web/network tasks while heating.
 - Exercise every stable and transient power-board error path.
 - Optionally trace GPIO32 physically; it is not a functional blocker.

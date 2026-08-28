@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 
-#define MCL02M_FIRMWARE_VERSION "0.2.7-dev"
+#define MCL02M_FIRMWARE_VERSION "0.2.8-dev"
 
 #define COOKER_MAX_GEAR                 99U
 #define COOKER_HOLD_MAX_GEAR            35U
@@ -35,5 +35,6 @@
 
 #define COOKER_SETTINGS_SCHEMA           5U
 #define COOKER_I2C_DEBUG_MAX             6U
+#define COOKER_I2C_DEBUG_HOLD_MS       2000U
 #define COOKER_PROFILE_COUNT             5U
 #define COOKER_PROFILE_STAGE_COUNT       5U

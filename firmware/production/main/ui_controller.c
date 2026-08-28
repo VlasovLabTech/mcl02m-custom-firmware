@@ -61,6 +61,7 @@ static unsigned s_wifi_selection;
 static int s_setting_value;
 static uint32_t s_timer_mmss;
 static uint32_t s_timer_hours;
+static unsigned s_temperature_edit_value = 100U;
 static unsigned s_start_in_minutes = 10;
 static unsigned s_start_in_hours;
 static unsigned s_start_at_hour;
@@ -257,7 +258,7 @@ static void render(void)
         return;
     }
     case VIEW_TEMPERATURE: {
-        display_prod_set_temperature_edit_overlay(status.target_temperature_c,
+        display_prod_set_temperature_edit_overlay(s_temperature_edit_value,
                                                   status.bottom_c,
                                                   status.readings_valid);
         return;
@@ -607,14 +608,17 @@ static void encoder_event(const ui_input_event_t *event)
     switch (s_view) {
     case VIEW_HOME: s_selection = (unsigned)clamp((int)s_selection + (step > 0 ? 1 : -1), 0, HOME_ITEMS - 1); break;
     case VIEW_POWER: cooking_set_power(clamp((int)status.selected_gear + step, 0, 99)); break;
-    case VIEW_TEMPERATURE:
-        cooking_set_temperature(clamp((int)status.target_temperature_c + step,
-                                      COOKER_TEMP_MIN_C, COOKER_TEMP_MAX_C));
+    case VIEW_TEMPERATURE: {
+        s_temperature_edit_value = (unsigned)clamp((int)s_temperature_edit_value + step,
+                                                   COOKER_TEMP_MIN_C,
+                                                   COOKER_TEMP_MAX_C);
+        cooking_set_temperature(s_temperature_edit_value);
         if (status.state == COOK_STATE_STARTING || status.state == COOK_STATE_COOKING ||
             status.state == COOK_STATE_PAUSED)
             s_temperature_edit_deadline_us = esp_timer_get_time() +
                                              TEMPERATURE_EDIT_TIMEOUT_US;
         break;
+    }
     case VIEW_SETTINGS: s_setting = (unsigned)clamp((int)s_setting + (step > 0 ? 1 : -1), 0, SETTING_ITEMS - 1); break;
     case VIEW_SETTING_VALUE:
         if (s_setting == 0)
@@ -684,7 +688,13 @@ static void central_short(void)
     switch (s_view) {
     case VIEW_HOME:
         if (s_selection == 0) { cooking_set_mode(COOK_MODE_POWER); s_view = VIEW_POWER; }
-        else if (s_selection == 1) { cooking_set_mode(COOK_MODE_TEMPERATURE); s_view = VIEW_TEMPERATURE; }
+        else if (s_selection == 1) {
+            s_temperature_edit_value = (unsigned)clamp(status.target_temperature_c,
+                                                       COOKER_TEMP_MIN_C,
+                                                       COOKER_TEMP_MAX_C);
+            cooking_set_mode(COOK_MODE_TEMPERATURE);
+            s_view = VIEW_TEMPERATURE;
+        }
         else if (s_selection == 2) s_view = VIEW_PROFILES;
         else if (s_selection == 3) s_view = VIEW_READINGS;
         else if (s_selection == 4) { s_start_selection = 0; s_view = VIEW_START_MENU; }

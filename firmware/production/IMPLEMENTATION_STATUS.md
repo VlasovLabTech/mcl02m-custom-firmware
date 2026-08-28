@@ -1,20 +1,20 @@
 # MCL02M custom firmware — implementation status
 
 Дата: 2026-08-28
-Версия исходников: `0.2.7-dev`
-Статус: the `0.2.6-dev` app image is currently on the development unit's stock
-`ota_1` slot. A supervised test confirmed that Pause retained the session with
-`R20=0`, `R26=2` and no false `EPB`, then exposed an incorrect Resume requirement for
-the stopped `R26=0` state. Source `0.2.7-dev` fixes that Resume gate and is awaiting an
-explicitly authorized flash. The earlier one-time NVS refresh is complete and must
-not be repeated automatically.
+Версия исходников: `0.2.8-dev`
+Статус: the `0.2.7-dev` app image is currently on the development unit's stock
+`ota_1` slot. Supervised testing confirmed retained-session active zero and
+Pause/Resume without unwanted relay switching, working Sleep/Wake, visible I2C debug,
+and acceptable 58 °C water regulation. Source `0.2.8-dev` contains the follow-up UI,
+diagnostic and controller changes and is awaiting an explicitly authorized flash.
+The earlier one-time NVS refresh is complete and must not be repeated automatically.
 
 ## Реализованный пользовательский контур
 
 | Блок | Поведение |
 |---|---|
 | POWER | `0…99`; encoder slow `1`, fast `5`; вращение не запускает нагрев; gear 0 enters the active-zero session rather than full Stop |
-| TEMPERATURE | `40…190 °C`; Start above target enters active zero; heating resumes at target minus 3 °C; PREHEAT `56/77/99`, APPROACH/HOLD are capped at `35` and tuned for earlier coast |
+| TEMPERATURE | `40…190 °C`; Start above target enters active zero; heating resumes at target minus 3 °C; stronger PREHEAT thresholds are `56/77/99`, APPROACH uses `8 + 2 × error`, PI uses `4 + 2 × error + 0.08 × integral`, and APPROACH/HOLD remain capped at `35` |
 | HOLD SATURATED | gear `35` в течение 90 s при ошибке не менее 3 °C: orange, warning и сообщение; предел не повышается |
 | Start | только отдельным нажатием центра; силовой preflight и `STARTING` до `R26=02` |
 | Pause/Resume | short center enters the same active-zero command while preserving a distinct PAUSED state; timer freezes; Resume does not deliberately Stop/re-arm; 2 h continuous manual Pause performs full Stop |
@@ -32,8 +32,9 @@ not be repeated automatically.
 | Critical | Stop + latched `error.png` с фактическим E-кодом; один мотив 2,5 s проигрывается дважды на burst, всего 3 bursts с паузами 4 s; ACK немедленно вызывает `sound_stop()`; Sleep запрещён до ACK |
 | NoPan | три последовательных отсчёта по 500 ms; отдельный `nopan.png`, orange blink, обязательный цикл `мелодия 2,74 s → тишина 3 s` даже при `SOUND OFF`, timer freeze, окно возврата 60 s, затем E02 fault; возврат/Stop/Pause немедленно прерывает цикл |
 | Stock E-groups | известные устойчивые raw-группы сохраняют E03/E04/E05/E07/E08/E10/E12; communication — E09; неизвестные остаются generic |
-| I²C debug | Temporary persisted setting, OFF by default; overlays consecutive bad cycles `0…6` in small text at OLED `x=0, y=10`, including the E09 picture; one clean cycle resets it to zero |
+| I²C debug | Temporary persisted setting, OFF by default; overlays consecutive bad cycles `0…6` in small text at OLED `x=0, y=10`, including the E09 picture; one clean cycle resets the internal count immediately while the maximum displayed digit is held for at least 2 s |
 | Active-zero debug | Compile-time removable compact UART frames retain full state, `R20…R27`, last `0D/00/0C`, temperatures, faults and counters, plus input and Pause/Resume decisions; authenticated Wi-Fi keeps the readable JSON snapshot |
+| LED debug | Changed white/orange/blue/timer requests emit compact `L` frames; serial-driver transactions explicitly latch their final `0x8F` command with STB. The development unit's all-channel LED outage predates these firmware changes and is tracked as a hardware fault. |
 
 ## Силовой и safety-контур
 

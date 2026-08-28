@@ -45,9 +45,9 @@
 
 ## Важные ограничения dev-версии
 
-- Temperature setpoints are `40…190 °C`. Starting above the setpoint now enters
-  active zero and resumes heating after a 3 °C hysteresis margin.
-  PREHEAT/APPROACH/HOLD were retuned to reduce stored-heat overshoot.
+- Temperature setpoints are `40…190 °C`. Starting above the setpoint enters active
+  zero and resumes heating after a 3 °C hysteresis margin. PREHEAT, APPROACH and PI
+  use the stronger earlier tuning while the coast hysteresis and gear-35 cap remain.
 - Production keeps the interface-side 80 °C IGBT guard and uses a separate
   210 °C bottom emergency cutoff. The power MCU's native E05 remains active.
 - Interface-generated E09 now requires six consecutive bad 500-ms I²C cycles.
@@ -55,7 +55,8 @@
   retransmitted every heartbeat.
 - Temporary `Settings → Show → I2C Errors` is OFF by default. When enabled it
   overlays the current consecutive-bad-cycle count `0…6` at OLED `x=0, y=10`,
-  including over the E09 picture. A clean cycle resets the displayed value to 0.
+  including over the E09 picture. A clean cycle resets the control counter
+  immediately, while the highest displayed digit remains visible for at least 2 s.
 - Active-zero diagnostics are available as a compact fixed UART frame and through
   authenticated `/api/status`. The UART frame retains the full driver state, last
   `0D/00/0C` command, raw `R20…R27`, temperatures, fault and counters without JSON
@@ -68,8 +69,12 @@
   timers, cycle/error/active-zero counters, stop/heartbeat/active-zero flags, fault.
 - Fault handling never writes runtime or LED state to NVS. Only explicit settings,
   profile, Wi-Fi, admin, and physical Factory actions use the custom namespace.
-- All nine white power LEDs run a 1.5-second all-on boot test. If this test is
-  not visible, inspect the panel LED driver, flex cable, supply and GPIO path.
+- All nine white power LEDs run a 1.5-second all-on boot test. Serial LED writes end
+  with an explicit STB latch and changed white/orange/blue/timer requests emit one
+  compact `L` frame. If the test remains invisible while the log requests nine LEDs,
+  inspect the common panel-driver supply, connector, flex and STB/CLK/DATA path.
+  The development unit's all-channel LED outage is recorded as a pre-existing
+  hardware problem, not a regression caused by the current firmware changes.
 - GPIO32 не имеет подтверждённого эффекта и всегда оставлен LOW.
 - Ventilator полностью принадлежит силовой плате, custom ESP им не управляет.
 - HTTP предназначен для доверенной локальной сети и не содержит управления

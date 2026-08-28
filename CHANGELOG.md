@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.8-dev — 2026-08-28
+
+- Completed every serial LED-driver update with the final STB latch edge and added
+  a compact change-only `L` diagnostic frame for the white, orange, blue and timer
+  outputs. This independent protocol hardening is not presented as the cause of the
+  LED outage: the owner confirmed that the shared-channel hardware problem predates
+  the current firmware changes.
+- Kept the I2C bad-cycle counter's internal clean-cycle reset immediate while holding
+  the highest displayed digit for at least two seconds.
+- Made the temperature editor own and render its clamped setpoint immediately, so
+  entering `T°C` cannot briefly reuse an asynchronous stale display value.
+- Restored the previously tested stronger PREHEAT, APPROACH and PI tuning while
+  preserving active-zero coast, the three-degree restart hysteresis and gear-35 cap.
+
 ## 0.2.7-dev — 2026-08-28
 
 - Fixed manual Resume from active-zero Pause. Resume now validates a healthy retained

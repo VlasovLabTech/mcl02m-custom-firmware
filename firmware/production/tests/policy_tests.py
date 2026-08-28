@@ -44,6 +44,19 @@ def manual_pause_state(elapsed_s: int) -> str:
     return "STOPPED" if elapsed_s >= 2 * 60 * 60 else "PAUSED"
 
 
+def i2c_display_step(peak: int, hold_until_ms: int, current: int,
+                     now_ms: int) -> tuple[int, int, int]:
+    """Mirror the display-only peak hold; the engine's current count is untouched."""
+    current = min(current, 6)
+    if current > 0:
+        peak = max(peak, current)
+        hold_until_ms = now_ms + 2_000
+    elif hold_until_ms and now_ms >= hold_until_ms:
+        peak = 0
+        hold_until_ms = 0
+    return peak, hold_until_ms, max(current, peak)
+
+
 def picture_policy(
     state: str,
     *,
@@ -102,6 +115,16 @@ def run() -> None:
     assert active_zero_command("STOPPED") == (0, 0, 0)
     assert manual_pause_state(2 * 60 * 60 - 1) == "PAUSED"
     assert manual_pause_state(2 * 60 * 60) == "STOPPED"
+    peak, deadline, shown = i2c_display_step(0, 0, 3, 100)
+    assert (peak, deadline, shown) == (3, 2_100, 3)
+    peak, deadline, shown = i2c_display_step(peak, deadline, 0, 600)
+    assert (peak, deadline, shown) == (3, 2_100, 3)
+    peak, deadline, shown = i2c_display_step(peak, deadline, 0, 2_099)
+    assert shown == 3
+    peak, deadline, shown = i2c_display_step(peak, deadline, 0, 2_100)
+    assert (peak, deadline, shown) == (0, 0, 0)
+    peak, deadline, shown = i2c_display_step(0, 0, 9, 3_000)
+    assert (peak, deadline, shown) == (6, 5_000, 6)
     # A zero-power profile cell is still an ordinary timed cell, not manual Pause.
     assert profile_sequence([3 * 60 * 60, 60, 0, 0, 0]) == [1, 2]
     assert picture_policy("IDLE", idle_ms=49_999) is None

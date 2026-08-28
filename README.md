@@ -168,12 +168,15 @@ modified. See [Flashing and recovery](docs/FLASHING.md) before writing anything.
 
 ## Development status
 
-The current source version is `0.2.7-dev`. It fixes Resume from a retained
-active-zero/Pause session and adds compact input/action diagnostics without restoring
-repetitive UART JSON. Version `0.2.6-dev` was physically tested: Pause retained the
-session with `R20=0`, `R26=2` and no false `EPB`; its Resume gate was then found to
-incorrectly require the stopped `R26=0` state. Version `0.2.7-dev` has not yet been
-flashed or physically validated.
+The current source version is `0.2.8-dev`. Version `0.2.7-dev` was physically tested:
+active zero and Pause/Resume retained the session without unwanted relay switching,
+Sleep/Wake worked, the I2C debug counter was visible, and a 58 °C water test regulated
+normally. Source `0.2.8-dev` restores stronger temperature tuning, holds the displayed
+I2C error peak for two seconds, makes the `T°C` editor value immediate, and completes
+the serial LED driver's final STB latch. All serial-driver LED channels were dark on
+the development unit because of a pre-existing common hardware-path problem that the
+owner confirmed predates these firmware changes. The STB change is independent
+protocol hardening; `0.2.8-dev` still requires an explicitly authorized hardware test.
 
 This is an independent community project, not an official Xiaomi or Chunmi
 product. Use it at your own risk. Licensed under the [MIT License](LICENSE).

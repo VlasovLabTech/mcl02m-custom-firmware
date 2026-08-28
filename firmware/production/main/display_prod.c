@@ -4,6 +4,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "app_config.h"
 #include "cooking_engine.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -53,6 +54,8 @@ static int64_t s_transient_deadline_us;
 static cook_state_t s_previous_state;
 static bool s_previous_state_valid;
 static bool s_awake;
+static unsigned s_i2c_debug_peak;
+static int64_t s_i2c_debug_hold_until_us;
 
 _Static_assert(OLED_ASSET_FRAME_BYTES == UI_OLED_BITMAP_BYTES,
                "OLED asset and driver frame sizes must match");
@@ -60,6 +63,21 @@ _Static_assert(OLED_ASSET_FRAME_BYTES == UI_OLED_BITMAP_BYTES,
 static bool active_picture_state(cook_state_t state)
 {
     return state == COOK_STATE_STARTING || state == COOK_STATE_COOKING;
+}
+
+static unsigned i2c_debug_display_value(unsigned current, int64_t now_us)
+{
+    if (current > COOKER_I2C_DEBUG_MAX) current = COOKER_I2C_DEBUG_MAX;
+    if (current > 0) {
+        if (current > s_i2c_debug_peak) s_i2c_debug_peak = current;
+        s_i2c_debug_hold_until_us = now_us +
+            (int64_t)COOKER_I2C_DEBUG_HOLD_MS * 1000LL;
+    } else if (s_i2c_debug_hold_until_us != 0 &&
+               now_us >= s_i2c_debug_hold_until_us) {
+        s_i2c_debug_peak = 0;
+        s_i2c_debug_hold_until_us = 0;
+    }
+    return current > s_i2c_debug_peak ? current : s_i2c_debug_peak;
 }
 
 static void set_transient_locked(transient_image_t image, uint32_t duration_ms,
@@ -418,8 +436,13 @@ static void display_task(void *arg)
                 for (unsigned i = 0; i < UI_OLED_TEXT_LINES; ++i) pointers[i] = lines[i];
                 ui_oled_show_text(pointers);
             }
-            if (settings.show_i2c_debug)
-                ui_oled_overlay_debug_counter(cooker.i2c_bad_cycles);
+            if (settings.show_i2c_debug) {
+                ui_oled_overlay_debug_counter(
+                    i2c_debug_display_value(cooker.i2c_bad_cycles, now));
+            } else {
+                s_i2c_debug_peak = 0;
+                s_i2c_debug_hold_until_us = 0;
+            }
         }
         vTaskDelay(pdMS_TO_TICKS(250));
     }

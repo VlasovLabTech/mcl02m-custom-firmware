@@ -50,34 +50,34 @@ uint8_t temperature_ctrl_update(temperature_ctrl_t *controller,
     }
 
     if (controller->phase == TEMP_PHASE_PREHEAT) {
-        if (error <= 20) {
+        if (error <= 10) {
             controller->phase = TEMP_PHASE_APPROACH;
             controller->integral = 0;
         } else {
-            controller->last_gear = error >= 45 ? 99 : (error >= 30 ? 77 : 56);
+            controller->last_gear = error >= 30 ? 99 : (error >= 18 ? 77 : 56);
             return controller->last_gear;
         }
     }
 
     if (controller->phase == TEMP_PHASE_APPROACH) {
-        if (error <= 4) {
+        if (error <= 2) {
             controller->phase = TEMP_PHASE_HOLD;
             controller->integral = 0;
-        } else if (error >= 28) {
+        } else if (error >= 14) {
             controller->phase = TEMP_PHASE_PREHEAT;
             controller->last_gear = 56;
             return controller->last_gear;
         } else {
-            /* Reduce energy early while the pan and glass still carry heat. */
-            controller->last_gear = clamp_gear(4 + error, COOKER_HOLD_MAX_GEAR);
+            /* Restore the proven stronger approach while remaining below gear 36. */
+            controller->last_gear = clamp_gear(8 + error * 2, COOKER_HOLD_MAX_GEAR);
             return controller->last_gear;
         }
     }
 
-    /* Conservative PI, deliberately capped below the first topology change. */
+    /* Stronger PI level, still capped below the first topology change. */
     const float dt = elapsed_ms / 1000.0f;
     const float candidate_integral = controller->integral + error * dt;
-    float output = 2.0f + 1.25f * error + 0.04f * candidate_integral;
+    float output = 4.0f + 2.0f * error + 0.08f * candidate_integral;
     if (output > COOKER_HOLD_MAX_GEAR) {
         output = COOKER_HOLD_MAX_GEAR;
     } else {
