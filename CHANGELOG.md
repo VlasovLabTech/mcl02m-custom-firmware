@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.11-dev — 2026-08-28
+
+- Added `SETTINGS → FIRMWARE → VERSION`. The screen displays the compile-time
+  firmware version as two small right-aligned lines centered vertically on the OLED.
+- Preserved the complete state-machine audit as a deferred, test-driven
+  implementation plan. This release does not claim to implement those control-flow
+  recommendations.
+
 ## 0.2.10-dev — 2026-08-28
 
 - Replaced the fixed ten-degree PREHEAT/APPROACH boundary with a bounded adaptive

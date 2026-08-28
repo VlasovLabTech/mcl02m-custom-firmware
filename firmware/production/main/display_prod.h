@@ -20,4 +20,5 @@ void display_prod_set_temperature_edit_overlay(unsigned setpoint_c, unsigned cur
 void display_prod_set_time_editor_overlay(const char *title, const char *value,
                                           const char *footer);
 void display_prod_set_info_overlay(unsigned voltage_v, unsigned ntc_c, unsigned igbt_c, bool valid);
+void display_prod_set_version_overlay(const char *title, const char *version);
 void display_prod_clear_overlay(void);

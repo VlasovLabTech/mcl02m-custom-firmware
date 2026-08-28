@@ -20,7 +20,10 @@
 
 #define LINE_BYTES 32
 #define HOME_ITEMS 7
-#define SETTING_ITEMS 12
+#define SETTING_ITEMS 13
+#define SETTING_WIFI_INDEX 10U
+#define SETTING_FIRMWARE_VERSION_INDEX 11U
+#define SETTING_FACTORY_INDEX 12U
 #define WIFI_ITEMS 4
 #define EDITOR_TIMEOUT_US (10LL * 1000000LL)
 #define TEMPERATURE_EDIT_TIMEOUT_US (2LL * 1000000LL)
@@ -48,6 +51,7 @@ typedef enum {
     VIEW_WIFI_STATUS,
     VIEW_WIFI_SETUP,
     VIEW_WIFI_PASSWORD,
+    VIEW_FIRMWARE_VERSION,
     VIEW_FACTORY_CONFIRM,
     VIEW_CLOCK_HOURS,
     VIEW_CLOCK_MINUTES,
@@ -127,15 +131,18 @@ static const char *setting_name(unsigned item, app_language_t language)
 {
     static const char *en[SETTING_ITEMS] = {
         "LANGUAGE", "SOUND", "SHOW", "SHOW", "SHOW", "SHOW",
-        "SLEEP MIN", "OLED TIME", "TIMEZONE", "SHOW", "WI-FI", "FACTORY"
+        "SLEEP MIN", "OLED TIME", "TIMEZONE", "SHOW", "WI-FI", "FIRMWARE",
+        "FACTORY"
     };
     static const char *ru[SETTING_ITEMS] = {
         "ЯЗЫК", "ЗВУК", "ПОКАЗАТЬ", "ПОКАЗАТЬ", "ПОКАЗАТЬ", "ПОКАЗАТЬ",
-        "СОН МИН", "ЭКРАН ВР", "ЧАС ПОЯС", "ПОКАЗАТЬ", "WI-FI", "ЗАВОДСКИЕ"
+        "СОН МИН", "ЭКРАН ВР", "ЧАС ПОЯС", "ПОКАЗАТЬ", "WI-FI", "ПРОШИВКА",
+        "ЗАВОДСКИЕ"
     };
     static const char *zh[SETTING_ITEMS] = {
         "语言", "声音", "显示", "显示", "显示", "显示",
-        "休眠分钟", "屏幕时间", "时区", "显示", "WI-FI", "恢复出厂"
+        "休眠分钟", "屏幕时间", "时区", "显示", "WI-FI", "FIRMWARE",
+        "恢复出厂"
     };
     if (item >= SETTING_ITEMS) return "?";
     if (language == LANG_RU) return ru[item];
@@ -151,6 +158,8 @@ static const char *setting_name_second(unsigned item, app_language_t language)
     case 4: return tr(language, "TIMER SCREEN", "ТАЙМЕР", "定时屏幕");
     case 5: return tr(language, "SLEEP CLOCK", "ЧАСЫ В СНЕ", "休眠时钟");
     case 9: return "I2C ERRORS";
+    case SETTING_FIRMWARE_VERSION_INDEX:
+        return tr(language, "VERSION", "ВЕРСИЯ", "VERSION");
     default: return "";
     }
 }
@@ -463,6 +472,11 @@ static void render(void)
         snprintf(l2, sizeof(l2), "%s", network_prod_setup_password());
         snprintf(l4, sizeof(l4), "192.168.4.1");
         break;
+    case VIEW_FIRMWARE_VERSION:
+        display_prod_set_version_overlay(
+            tr(lang, "FIRMWARE", "ПРОШИВКА", "FIRMWARE"),
+            MCL02M_FIRMWARE_VERSION);
+        return;
     case VIEW_FACTORY_CONFIRM:
         snprintf(l0, sizeof(l0), "%s", tr(lang, "FACTORY", "СБРОС", "恢复出厂"));
         snprintf(l1, sizeof(l1), "%s", tr(lang, "RESET ALL", "ВСЕ НАСТР", "重置全部"));
@@ -723,8 +737,14 @@ static void central_short(void)
         cooking_start();
         break;
     case VIEW_SETTINGS:
-        if (s_setting == 10) { s_wifi_selection = 0; s_view = VIEW_WIFI_MENU; }
-        else if (s_setting == 11) s_view = VIEW_FACTORY_CONFIRM;
+        if (s_setting == SETTING_WIFI_INDEX) {
+            s_wifi_selection = 0;
+            s_view = VIEW_WIFI_MENU;
+        } else if (s_setting == SETTING_FIRMWARE_VERSION_INDEX) {
+            s_view = VIEW_FIRMWARE_VERSION;
+        } else if (s_setting == SETTING_FACTORY_INDEX) {
+            s_view = VIEW_FACTORY_CONFIRM;
+        }
         else open_setting_value();
         break;
     case VIEW_SETTING_VALUE: save_setting(); break;
@@ -792,6 +812,9 @@ static void central_short(void)
     case VIEW_WIFI_SETUP:
     case VIEW_WIFI_PASSWORD:
         s_view = VIEW_WIFI_MENU;
+        break;
+    case VIEW_FIRMWARE_VERSION:
+        s_view = VIEW_SETTINGS;
         break;
     case VIEW_FACTORY_CONFIRM:
         sound_play(SOUND_WARNING);

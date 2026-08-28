@@ -22,6 +22,7 @@ typedef enum {
     OVERLAY_TEMPERATURE_EDIT,
     OVERLAY_TIME_EDITOR,
     OVERLAY_INFO,
+    OVERLAY_VERSION,
 } overlay_kind_t;
 
 typedef enum {
@@ -377,6 +378,8 @@ static void display_task(void *arg)
                 ui_oled_show_time_editor(overlay_a, overlay_b, overlay_c);
             } else if (effective_overlay && overlay_kind == OVERLAY_INFO) {
                 ui_oled_show_info(overlay_value, overlay_ntc, overlay_igbt, overlay_valid);
+            } else if (effective_overlay && overlay_kind == OVERLAY_VERSION) {
+                ui_oled_show_version(overlay_a, overlay_b);
             } else if (timer_only_due) {
                 char timer[16];
                 const bool timer_seconds = format_timer_compact(cooker.timer_remaining_s, timer);
@@ -596,6 +599,20 @@ void display_prod_set_info_overlay(unsigned voltage_v, unsigned ntc_c, unsigned 
     s_overlay_valid = valid;
     s_overlay_a[0] = '\0';
     s_overlay_b[0] = '\0';
+    s_overlay_c[0] = '\0';
+    s_overlay_d[0] = '\0';
+    s_overlay_degree = false;
+    s_overlay = true;
+    xSemaphoreGive(s_lock);
+}
+
+void display_prod_set_version_overlay(const char *title, const char *version)
+{
+    if (title == NULL || version == NULL) return;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_overlay_kind = OVERLAY_VERSION;
+    strlcpy(s_overlay_a, title, sizeof(s_overlay_a));
+    strlcpy(s_overlay_b, version, sizeof(s_overlay_b));
     s_overlay_c[0] = '\0';
     s_overlay_d[0] = '\0';
     s_overlay_degree = false;

@@ -1,15 +1,17 @@
 # MCL02M custom firmware — implementation status
 
 Дата: 2026-08-28
-Версия исходников: `0.2.10-dev`
+Версия исходников: `0.2.11-dev`
 Статус: the development unit remains on the reference `0.2.9-dev` app in stock
 `ota_1`. Supervised tests confirmed retained-session active zero, Pause/Resume
 without unwanted relay switching, Sleep/Wake, I2C debug display, and temperature
 operation. At a 125 °C empty-pan setpoint, initial heating overshot by approximately
-5 °C and subsequent holding was accurate. Source `0.2.10-dev` adds adaptive initial
+5 °C and subsequent holding was accurate. Source `0.2.11-dev` includes adaptive initial
 braking, pause-safe output recomputation, and direct low/high topology crossing. Its
-app image is built and checked offline but has not been flashed. The earlier one-time
-NVS refresh is complete and must not be repeated automatically.
+physical Settings menu also exposes the compile-time firmware version on a dedicated
+two-line OLED screen. Its app image is built and checked offline but has not been
+flashed. The earlier one-time NVS refresh is complete and must not be repeated
+automatically.
 
 ## Реализованный пользовательский контур
 
@@ -101,7 +103,7 @@ NVS refresh is complete and must not be repeated automatically.
 
 - Setpoint range is `40…190 °C`. Retained-session active zero and steady holding have
   passed supervised checks. The adaptive braking, Pause recomputation, and topology
-  crossing in unflashed `0.2.10-dev` still need a supervised cookware test.
+  crossing in unflashed `0.2.11-dev` still need a supervised cookware test.
 - Production keeps the 80 °C interface IGBT guard and a separate 210 °C bottom
   emergency cutoff. The power MCU's native E05 remains active.
 - Полный перебор редких fault paths и длительный web/network soak могут быть

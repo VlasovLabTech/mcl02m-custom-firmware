@@ -830,6 +830,14 @@ static void oled_make_info(unsigned voltage_v, unsigned ntc_c, unsigned igbt_c, 
     oled_draw_info_line(32, "IGBT", igbt_c, "°C", valid);
 }
 
+static void oled_make_version(const char *title, const char *version)
+{
+    memset(s_oled_frame, 0, sizeof(s_oled_frame));
+    /* Two 7-pixel rows plus a 3-pixel gap form a centered 17-pixel block. */
+    oled_draw_right(title, 15, 1, 1);
+    oled_draw_right(version, 25, 1, 1);
+}
+
 static void oled_make_sleep_clock(const char *text, unsigned y, unsigned alignment)
 {
     memset(s_oled_frame, 0, sizeof(s_oled_frame));
@@ -1274,6 +1282,20 @@ esp_err_t ui_oled_show_info(unsigned voltage_v, unsigned ntc_c, unsigned igbt_c,
     esp_err_t err = oled_init_once();
     if (err == ESP_OK) {
         oled_make_info(voltage_v, ntc_c, igbt_c, valid);
+        err = oled_flush();
+    }
+    xSemaphoreGive(s_lock);
+    return err;
+}
+
+esp_err_t ui_oled_show_version(const char *title, const char *version)
+{
+    if (title == NULL || *title == '\0' || version == NULL || *version == '\0')
+        return ESP_ERR_INVALID_ARG;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    esp_err_t err = oled_init_once();
+    if (err == ESP_OK) {
+        oled_make_version(title, version);
         err = oled_flush();
     }
     xSemaphoreGive(s_lock);

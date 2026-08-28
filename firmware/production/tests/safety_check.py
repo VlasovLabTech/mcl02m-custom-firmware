@@ -233,11 +233,21 @@ def main() -> int:
             "fault/live screens cannot be hidden behind a menu overlay")
     require("TIMER_SCREEN_ALWAYS" in display and "ui_oled_show_timer" in display,
             "TIMER SCREEN setting supports movable countdown or full OLED off")
-    require("#define SETTING_ITEMS 12" in ui and
+    require("#define SETTING_ITEMS 13" in ui and
             ui.count('"SHOW"') >= 4 and ui.count('"ПОКАЗАТЬ"') >= 4 and
             all(label in ui for label in ('"LIVE DATA"', '"IGBT T°C"',
                                           '"TIMER SCREEN"', '"SLEEP CLOCK"')),
             "Settings 3-6 use SHOW plus a descriptive second line")
+    require("#define SETTING_FIRMWARE_VERSION_INDEX 11U" in ui and
+            "#define SETTING_FACTORY_INDEX 12U" in ui and
+            "VIEW_FIRMWARE_VERSION" in ui and
+            "display_prod_set_version_overlay" in ui and
+            "MCL02M_FIRMWARE_VERSION" in ui and
+            "OVERLAY_VERSION" in display and
+            "ui_oled_show_version(overlay_a, overlay_b)" in display and
+            "oled_draw_right(title, 15, 1, 1);" in outputs and
+            "oled_draw_right(version, 25, 1, 1);" in outputs,
+            "physical Settings exposes a two-line, vertically centered, right-aligned firmware version screen")
     require("show_i2c_debug" in settings and
             "s_settings.show_i2c_debug = 0;" in settings and
             "if (stored.schema <= 4U) s_settings.show_i2c_debug = 0;" in settings and

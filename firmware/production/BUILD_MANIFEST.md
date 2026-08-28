@@ -3,7 +3,7 @@
 Build date: 2026-08-28
 ESP-IDF: 6.0.2
 Target: ESP32, Unicore
-Firmware: `0.2.10-dev`
+Firmware: `0.2.11-dev`
 
 The app header embeds compile metadata, so a clean rebuild may have a different
 SHA-256 while retaining the same source, layout, size and validation gates.
@@ -12,15 +12,15 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 ## App image
 
 - File: `build/mcl02m_custom.bin`
-- Size: `882272` bytes (`0xD7660`)
-- SHA-256: `d44f5ef1d1fd861982acb776597dc3cbdcdc3adab2c1877e5effb4269f5b83cd`
-- ESP image validation hash: `8847a37ba55f4cf08ab465247ffa233e37aabe86b557d02a604c02326fdfad56`
-- Stock OTA slot: `0x160000` bytes; image fits with `559520` bytes free.
+- Size: `882656` bytes (`0xD77E0`)
+- SHA-256: `bbd1300366631d644adb5959a00735c7972945a396370c5c1c3212dd3a76d6d1`
+- ESP image validation hash: `d0e98d0e809317da6c3042071e6ee01bcdba83f1e1ff828959777bb03899b8b1`
+- Stock OTA slot: `0x160000` bytes; image fits with `559136` bytes free.
 
 ## Linked memory
 
-- Flash code: 631042 bytes
-- Flash data: 146556 bytes
+- Flash code: 631386 bytes
+- Flash data: 146604 bytes
 - IRAM: 89047 / 131072 bytes (67.94%)
 - DRAM static: 36460 / 180736 bytes (20.17%)
 - RTC slow: 64 / 8192 bytes
@@ -40,7 +40,7 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 
 ## Development-unit deployment
 
-This `0.2.10-dev` artifact has not been flashed. The development unit remains on the
+This `0.2.11-dev` artifact has not been flashed. The development unit remains on the
 previously authorized `0.2.9-dev` image in stock `ota_1`. Building and documenting
 this artifact did not access a serial port or write any device partition.
 
