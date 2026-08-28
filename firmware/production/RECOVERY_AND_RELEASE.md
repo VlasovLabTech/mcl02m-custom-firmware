@@ -2,8 +2,8 @@
 
 Этот документ описывает будущую процедуру, но **не разрешает запись сейчас**.
 
-Текущий reference app artifact: `build/mcl02m_custom.bin`, 879824 bytes,
-SHA-256 `9d4df0f3399fa7102ff6678a5dcbe5af48576edf4fce9bf646f43f7c5d8345cd`.
+Текущий reference app artifact: `build/mcl02m_custom.bin`, 880896 bytes,
+SHA-256 `f41d228aa0b87d7ec6147fa3576646d1628ba8c33aa958c5ee9a110479882bf5`.
 Чистая пересборка может иметь другой hash из-за compile metadata; для release
 нужно сохранить новый manifest и заново пройти все gates.
 

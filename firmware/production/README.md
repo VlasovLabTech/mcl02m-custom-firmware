@@ -56,10 +56,15 @@
 - Temporary `Settings → Show → I2C Errors` is OFF by default. When enabled it
   overlays the current consecutive-bad-cycle count `0…6` at OLED `x=0, y=10`,
   including over the E09 picture. A clean cycle resets the displayed value to 0.
-- Active-zero diagnostics are available in UART telemetry and authenticated
-  `/api/status`: current driver state, last `0D/00/0C` command and entry/resume
-  counters. Both active-zero switches are compile-time definitions for quick
-  removal after supervised validation.
+- Active-zero diagnostics are available as a compact fixed UART frame and through
+  authenticated `/api/status`. The UART frame retains the full driver state, last
+  `0D/00/0C` command, raw `R20…R27`, temperatures, fault and counters without JSON
+  key overhead. Short `Z/P/U/F/I` frames mark transitions and errors. Both
+  active-zero switches are compile-time definitions for quick removal after
+  supervised validation.
+  The fixed `D` field order is: state, target/applied gear, topology, last commands,
+  `R20…R27`, valid mask, temperatures, run/remaining/arm/start-confirm/heartbeat-gap
+  timers, cycle/error/active-zero counters, stop/heartbeat/active-zero flags, fault.
 - Fault handling never writes runtime or LED state to NVS. Only explicit settings,
   profile, Wi-Fi, admin, and physical Factory actions use the custom namespace.
 - All nine white power LEDs run a 1.5-second all-on boot test. If this test is

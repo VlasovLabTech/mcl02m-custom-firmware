@@ -9,11 +9,17 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
+#ifndef MCL02M_COMPACT_UART_TELEMETRY
+#define MCL02M_COMPACT_UART_TELEMETRY 0
+#endif
+
 typedef struct {
     char text[TELEMETRY_MESSAGE_MAX];
 } telemetry_message_t;
 
+#if !MCL02M_COMPACT_UART_TELEMETRY
 static const char *TAG = "telemetry";
+#endif
 static QueueHandle_t s_queue;
 static telemetry_sink_t s_sink;
 static void *s_sink_ctx;
@@ -30,7 +36,9 @@ static void telemetry_task(void *arg)
             continue;
         }
 
+#if !MCL02M_COMPACT_UART_TELEMETRY
         ESP_LOGI(TAG, "%s", message.text);
+#endif
 
         telemetry_sink_t sink;
         void *ctx;

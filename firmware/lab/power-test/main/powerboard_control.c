@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "driver/i2c_master.h"
+#include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_task_wdt.h"
 #include "freertos/FreeRTOS.h"
@@ -30,6 +31,8 @@
 
 #define PB_ACTIVE_ZERO_0D 0x81U
 
+static const char *TAG = "pbdbg";
+
 static i2c_master_bus_handle_t s_bus;
 static i2c_master_dev_handle_t s_device;
 static SemaphoreHandle_t s_bus_lock;
@@ -45,6 +48,11 @@ static int64_t s_heartbeat_gap_deadline_us;
 static unsigned s_no_pan_samples;
 static unsigned s_unknown_status_samples;
 static unsigned s_stop_active_samples;
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+static bool s_feedback_reported;
+static uint8_t s_reported_r20;
+static uint8_t s_reported_r26;
+#endif
 
 /* Exact tables extracted from stock ESP32 firmware 2.2.0_0016. */
 static const uint8_t s_bottom_ntc_lut_0b_fb[] = {
@@ -207,6 +215,9 @@ static esp_err_t write_register(uint8_t reg, uint8_t value)
     telemetry_emitf("{\"t_ms\":%lld,\"type\":\"pb_write\",\"reg\":%u,"
                     "\"value\":%u,\"checksum\":%u,\"err\":%d}",
                     esp_timer_get_time() / 1000, reg, value, frame[2], err);
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+    if (err != ESP_OK) ESP_LOGW(TAG, "I,W,%02X,%02X,%d", reg, value, err);
+#endif
     return err;
 }
 
@@ -251,22 +262,38 @@ static esp_err_t read_and_store(uint8_t reg)
         telemetry_emitf("{\"t_ms\":%lld,\"type\":\"pb_read_error\","
                         "\"reg\":%u,\"err\":%d}",
                         esp_timer_get_time() / 1000, reg, err);
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+        ESP_LOGW(TAG, "I,R,%02X,%d", reg, err);
+#endif
     }
     return err;
 }
 
 static void fault_locked(const char *reason)
 {
+    if (s_status.state == PB_STATE_FAULT) {
+        /* Preserve the first cause; later safety observations must not hide it. */
+        s_force_stop = true;
+        return;
+    }
+    const powerboard_state_t previous_state = s_status.state;
+    const char *fault_reason = reason == NULL ? "FAULT" : reason;
     s_status.state = PB_STATE_FAULT;
     s_status.target_gear = 0;
     s_status.applied_gear = 0;
     s_status.topology = 0;
-    strlcpy(s_status.fault, reason == NULL ? "FAULT" : reason, sizeof(s_status.fault));
+    strlcpy(s_status.fault, fault_reason, sizeof(s_status.fault));
     s_run_deadline_us = 0;
     s_arm_deadline_us = 0;
     s_start_confirm_deadline_us = 0;
     s_heartbeat_gap_deadline_us = 0;
     s_force_stop = true;
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+    ESP_LOGW(TAG, "F,%s,%02X,%02X,%02X,%02X,%02X,%s",
+             powerboard_state_name(previous_state), s_status.registers[0],
+             s_status.registers[6], s_status.last_command_0d,
+             s_status.last_command_00, s_status.last_command_0c, fault_reason);
+#endif
 }
 
 static void stop_locked(const char *reason)
@@ -381,6 +408,19 @@ static void update_status_feedback(void)
     const uint8_t r20 = s_status.registers[0];
     const uint8_t r26 = s_status.registers[6];
 
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+    if ((r20_valid || r26_valid) &&
+        (!s_feedback_reported || r20 != s_reported_r20 || r26 != s_reported_r26)) {
+        ESP_LOGI(TAG, "P,%s,%02X,%02X,%02X,%02X,%02X",
+                 powerboard_state_name(s_status.state), r20, r26,
+                 s_status.last_command_0d, s_status.last_command_00,
+                 s_status.last_command_0c);
+        s_feedback_reported = true;
+        s_reported_r20 = r20;
+        s_reported_r26 = r26;
+    }
+#endif
+
     if (r20_valid && r20 == 0x02 &&
         (s_status.state == PB_STATE_HEATING || s_status.state == PB_STATE_STARTING)) {
         if (++s_no_pan_samples >= MCL02M_NO_PAN_SAMPLES) {
@@ -408,7 +448,13 @@ static void update_status_feedback(void)
             fault_locked("POWER TRANSITION");
         }
     } else if (r20_valid && r20 != 0 && r20 != 0x02) {
-        if (++s_unknown_status_samples >= MCL02M_UNKNOWN_STATUS_SAMPLES_TO_FAULT &&
+        const unsigned unknown_sample = ++s_unknown_status_samples;
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+        ESP_LOGW(TAG, "U,%s,%02X,%02X,%u/%u",
+                 powerboard_state_name(s_status.state), r20, r26,
+                 unknown_sample, MCL02M_UNKNOWN_STATUS_SAMPLES_TO_FAULT);
+#endif
+        if (unknown_sample >= MCL02M_UNKNOWN_STATUS_SAMPLES_TO_FAULT &&
             state_session_open(s_status.state)) {
             const char *fault = "POWER STATUS";
             if (r20 == 0x0b) fault = "E03 HIGH VOLT";
@@ -429,7 +475,7 @@ static void update_status_feedback(void)
         s_status.heartbeat_gap_observed_stop = true;
     }
 
-    if (!state_can_energize(s_status.state) && r26_valid && r26 != 0) {
+    if (!state_session_open(s_status.state) && r26_valid && r26 != 0) {
         if (++s_stop_active_samples >= 4) fault_locked("STOP VERIFY");
     } else {
         s_stop_active_samples = 0;
@@ -463,6 +509,27 @@ static void advance_ramp(void)
 
 static void emit_status(void)
 {
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+    powerboard_status_t s;
+    powerboard_control_get_status(&s);
+    ESP_LOGI(TAG,
+             "D,%s,%u,%u,%02X,%02X,%02X,%02X,"
+             "%02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X,"
+             "%04X,%u,%u,%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ","
+             "%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ","
+             "%" PRIu32 ",%u,%u,%u,%s",
+             powerboard_state_name(s.state), s.target_gear, s.applied_gear, s.topology,
+             s.last_command_0d, s.last_command_00, s.last_command_0c,
+             s.registers[0], s.registers[1], s.registers[2], s.registers[3],
+             s.registers[4], s.registers[5], s.registers[6], s.registers[7],
+             s.valid_mask, s.igbt_c, s.bottom_c, s.run_elapsed_ms,
+             s.run_remaining_ms, s.arm_remaining_ms, s.start_confirm_remaining_ms,
+             s.heartbeat_gap_remaining_ms, s.completed_cycles, s.bad_cycles,
+             s.consecutive_bad_cycles, s.active_zero_entries, s.active_zero_resumes,
+             s.stop_verified ? 1U : 0U,
+             s.heartbeat_gap_observed_stop ? 1U : 0U,
+             MCL02M_ACTIVE_ZERO_ENABLED ? 1U : 0U, s.fault);
+#endif
     char json[768];
     powerboard_control_status_json(json, sizeof(json));
     telemetry_emit(json);
@@ -720,6 +787,7 @@ esp_err_t powerboard_control_start(unsigned gear, unsigned duration_ms)
         telemetry_emitf("{\"t_ms\":%lld,\"type\":\"active_zero_enter\","
                         "\"source\":\"start\",\"cmd_0d\":%u}",
                         esp_timer_get_time() / 1000, PB_ACTIVE_ZERO_0D);
+        ESP_LOGI(TAG, "Z,IN,START,81,00,00");
     }
 #endif
     return ESP_OK;
@@ -767,10 +835,12 @@ esp_err_t powerboard_control_set_gear(unsigned gear)
                         "\"source\":\"set_gear\",\"from\":\"%s\",\"cmd_0d\":%u}",
                         esp_timer_get_time() / 1000, powerboard_state_name(previous),
                         PB_ACTIVE_ZERO_0D);
+        ESP_LOGI(TAG, "Z,IN,GEAR,81,00,00");
     } else if (gear != 0 && previous == PB_STATE_ACTIVE_ZERO) {
         telemetry_emitf("{\"t_ms\":%lld,\"type\":\"active_zero_resume\","
                         "\"gear\":%u,\"topology\":%u}",
                         esp_timer_get_time() / 1000, gear, topology_for_gear(new_gear));
+        ESP_LOGI(TAG, "Z,OUT,GEAR,%02X,01,%02X", topology_for_gear(new_gear), new_gear);
     }
 #endif
     return ESP_OK;
@@ -792,6 +862,7 @@ esp_err_t powerboard_control_pause(void)
     telemetry_emitf("{\"t_ms\":%lld,\"type\":\"active_zero_enter\","
                     "\"source\":\"manual_pause\",\"cmd_0d\":%u}",
                     esp_timer_get_time() / 1000, PB_ACTIVE_ZERO_0D);
+    ESP_LOGI(TAG, "Z,IN,PAUSE,81,00,00");
 #endif
     return ESP_OK;
 }
@@ -820,6 +891,7 @@ esp_err_t powerboard_control_resume(void)
     telemetry_emitf("{\"t_ms\":%lld,\"type\":\"active_zero_resume\","
                     "\"source\":\"manual_pause\",\"gear\":%u,\"topology\":%u}",
                     esp_timer_get_time() / 1000, resumed_gear, resumed_topology);
+    ESP_LOGI(TAG, "Z,OUT,PAUSE,%02X,01,%02X", resumed_topology, resumed_gear);
 #endif
     return ESP_OK;
 }

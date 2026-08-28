@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.6-dev — 2026-08-28
+
+- Fixed a false `STOP VERIFY` / `EPB` fault after entering manual Pause or another
+  active-zero state. Retained sessions are no longer checked as fully stopped.
+- Preserved the first latched power-board fault so a later safety observation cannot
+  hide the original cause.
+- Replaced repetitive UART JSON with a fixed compact diagnostic frame containing
+  the complete power-board state, commands, `R20…R27`, temperatures, counters and
+  fault reason. Short transition/error frames remain enabled for live diagnosis.
+- Kept the full human-readable JSON snapshot available through authenticated Wi-Fi.
+
 ## 0.2.5-dev — 2026-08-28
 
 - Added the experimental stock-derived active-zero command (`0x81/0x00/0x00`)

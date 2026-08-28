@@ -168,10 +168,9 @@ modified. See [Flashing and recovery](docs/FLASHING.md) before writing anything.
 
 ## Development status
 
-The current source version is `0.2.5-dev`. It has been built and passed offline
-policy/safety/image/localization checks. This revision adds an experimental
-stock-derived active-zero command for POWER 0, temperature coast, and Pause,
-plus a two-hour manual-Pause timeout. It has not yet been flashed or physically
+The current source version is `0.2.6-dev`. It fixes the false `STOP VERIFY` fault
+on retained active-zero/Pause sessions and replaces repetitive UART JSON with a
+compact but complete diagnostic frame. It has not yet been flashed or physically
 validated; active-zero relay retention must be checked under supervision.
 
 This is an independent community project, not an official Xiaomi or Chunmi

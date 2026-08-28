@@ -48,6 +48,7 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     # fallback after the first supervised hardware validation.
     MCL02M_ACTIVE_ZERO_ENABLED=1
     MCL02M_ACTIVE_ZERO_DIAGNOSTICS=1
+    MCL02M_COMPACT_UART_TELEMETRY=1
     # Separate interface-side emergency cutoff above the 190 C setpoint range.
     # The stock power MCU continues to enforce its native E05 protection.
     MCL02M_MAX_BOTTOM_C=210U

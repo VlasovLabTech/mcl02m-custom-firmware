@@ -1,12 +1,12 @@
 # MCL02M custom firmware — implementation status
 
 Дата: 2026-08-28
-Версия исходников: `0.2.5-dev`
-Статус: the `0.2.5-dev` app image was flashed to the development unit's stock
-`ota_1` slot on 2026-08-28. The explicitly requested one-time NVS refresh was also
-completed. Bootloader, partition table, `otadata`, `ota_0`, eFuse and power-board
-firmware were not changed. Active-zero relay retention still requires supervised
-hardware validation.
+Версия исходников: `0.2.6-dev`
+Статус: the `0.2.5-dev` app image is currently on the development unit's stock
+`ota_1` slot. The `0.2.6-dev` source fixes the false Pause/active-zero `EPB` and is
+awaiting an explicitly authorized flash. The earlier one-time NVS refresh is complete
+and must not be repeated automatically. Active-zero relay retention still requires
+supervised hardware validation.
 
 ## Реализованный пользовательский контур
 
@@ -32,7 +32,7 @@ hardware validation.
 | NoPan | три последовательных отсчёта по 500 ms; отдельный `nopan.png`, orange blink, обязательный цикл `мелодия 2,74 s → тишина 3 s` даже при `SOUND OFF`, timer freeze, окно возврата 60 s, затем E02 fault; возврат/Stop/Pause немедленно прерывает цикл |
 | Stock E-groups | известные устойчивые raw-группы сохраняют E03/E04/E05/E07/E08/E10/E12; communication — E09; неизвестные остаются generic |
 | I²C debug | Temporary persisted setting, OFF by default; overlays consecutive bad cycles `0…6` in small text at OLED `x=0, y=10`, including the E09 picture; one clean cycle resets it to zero |
-| Active-zero debug | Compile-time removable UART and authenticated Wi-Fi diagnostics expose state, last `0D/00/0C` frame, entry/resume counters and manual-Pause time remaining |
+| Active-zero debug | Compile-time removable compact UART frames retain full state, `R20…R27`, last `0D/00/0C`, temperatures, faults and counters; authenticated Wi-Fi keeps the readable JSON snapshot |
 
 ## Силовой и safety-контур
 

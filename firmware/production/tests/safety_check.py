@@ -55,6 +55,7 @@ def main() -> int:
     settings = (MAIN / "settings.c").read_text(encoding="utf-8")
     power = (SHARED_POWER / "powerboard_control.c").read_text(encoding="utf-8")
     power_safety = (SHARED_POWER / "safety.h").read_text(encoding="utf-8")
+    telemetry = (SHARED_UI / "telemetry.c").read_text(encoding="utf-8")
     inputs = (SHARED_UI / "ui_inputs.c").read_text(encoding="utf-8")
     outputs = (SHARED_UI / "ui_outputs.c").read_text(encoding="utf-8")
     output_header = (SHARED_UI / "ui_outputs.h").read_text(encoding="utf-8")
@@ -162,6 +163,20 @@ def main() -> int:
             "if (gear > MCL02M_MAX_GEAR)" in power and
             'normal_stop_locked("GEAR ZERO", false)' not in engine,
             "POWER and temperature gear zero use the diagnostic active-zero session command")
+    require("if (!state_session_open(s_status.state) && r26_valid && r26 != 0)" in power and
+            "if (!state_can_energize(s_status.state) && r26_valid && r26 != 0)" not in power and
+            "Preserve the first cause" in power,
+            "active-zero and Pause retain the session without a false STOP VERIFY fault")
+    require("MCL02M_COMPACT_UART_TELEMETRY=1" in cmake and
+            "#if !MCL02M_COMPACT_UART_TELEMETRY" in telemetry and
+            '"D,%s,%u,%u,%02X,%02X,%02X,%02X,"' in power and
+            'ESP_LOGW(TAG, "F,%s,%02X,%02X,%02X,%02X,%02X,%s"' in power and
+            'ESP_LOGW(TAG, "I,R,%02X,%d"' in power and
+            "s.registers[5]" in power and "s.active_zero_resumes" in power and
+            "s.arm_remaining_ms" in power and "s.start_confirm_remaining_ms" in power and
+            "s.heartbeat_gap_remaining_ms" in power and
+            "s.heartbeat_gap_observed_stop" in power,
+            "UART diagnostics use complete compact frames instead of periodic JSON")
     require("#define COOKER_MANUAL_PAUSE_TIMEOUT_MS   (2U * 60U * 60U * 1000U)" in config and
             "update_manual_pause_timeout_locked" in engine and
             'normal_stop_locked("PAUSE TIMEOUT", false)' in engine and
