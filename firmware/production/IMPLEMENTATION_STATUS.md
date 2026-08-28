@@ -2,12 +2,15 @@
 
 Дата: 2026-08-28
 Версия исходников: `0.2.9-dev`
-Статус: the `0.2.7-dev` app image is currently on the development unit's stock
-`ota_1` slot. Supervised testing confirmed retained-session active zero and
-Pause/Resume without unwanted relay switching, working Sleep/Wake, visible I2C debug,
-and a 58 °C water test that exposed a `58 → 55 °C` drop caused by the former
-three-degree restart hysteresis. Source `0.2.9-dev` removes that gap, contains the
-follow-up UI and diagnostic changes, and is awaiting an explicitly authorized flash.
+Статус: the reference `0.2.9-dev` app image is currently on the development unit's
+stock `ota_1` slot. It was flashed on 2026-08-28 with an app-only write at `0x170000`;
+the write verified successfully, the expected OTA slot booted, normal power-board
+communication was present, and a subsequent POWER command entered `HEATING` without
+an immediate fault. Earlier supervised testing confirmed retained-session active
+zero, Pause/Resume without unwanted relay switching, working Sleep/Wake, visible I2C
+debug, and a 58 °C water test. That test exposed the former `58 → 55 °C` restart gap;
+`0.2.9-dev` removes it, but this exact regulation change still needs a supervised
+temperature check. No backup was created and NVS was not erased during this update.
 The earlier one-time NVS refresh is complete and must not be repeated automatically.
 
 ## Реализованный пользовательский контур
@@ -15,7 +18,7 @@ The earlier one-time NVS refresh is complete and must not be repeated automatica
 | Блок | Поведение |
 |---|---|
 | POWER | `0…99`; encoder slow `1`, fast `5`; вращение не запускает нагрев; gear 0 enters the active-zero session rather than full Stop |
-| TEMPERATURE | `40…190 °C`; Start at or above target enters active zero; output stays zero at/above target and PI resumes at the first whole degree below it; stronger PREHEAT thresholds are `56/77/99`, APPROACH uses `8 + 2 × error`, PI uses `4 + 2 × error + 0.08 × integral`, and APPROACH/HOLD remain capped at `35` |
+| TEMPERATURE | `40…190 °C`; entering T°C immediately copies and clamps the setpoint into editor-owned state, preventing a stale first `Sxx` frame; Start at or above target enters active zero; output stays zero at/above target and PI resumes at the first whole degree below it; stronger PREHEAT thresholds are `56/77/99`, APPROACH uses `8 + 2 × error`, PI uses `4 + 2 × error + 0.08 × integral`, and APPROACH/HOLD remain capped at `35` |
 | HOLD SATURATED | gear `35` в течение 90 s при ошибке не менее 3 °C: orange, warning и сообщение; предел не повышается |
 | Start | только отдельным нажатием центра; силовой preflight и `STARTING` до `R26=02` |
 | Pause/Resume | short center enters the same active-zero command while preserving a distinct PAUSED state; timer freezes; Resume does not deliberately Stop/re-arm; 2 h continuous manual Pause performs full Stop |
@@ -35,7 +38,6 @@ The earlier one-time NVS refresh is complete and must not be repeated automatica
 | Stock E-groups | известные устойчивые raw-группы сохраняют E03/E04/E05/E07/E08/E10/E12; communication — E09; неизвестные остаются generic |
 | I²C debug | Temporary persisted setting, OFF by default; overlays consecutive bad cycles `0…6` in small text at OLED `x=0, y=10`, including the E09 picture; one clean cycle resets the internal count immediately while the maximum displayed digit is held for at least 2 s |
 | Active-zero debug | Compile-time removable compact UART frames retain full state, `R20…R27`, last `0D/00/0C`, temperatures, faults and counters, plus input and Pause/Resume decisions; authenticated Wi-Fi keeps the readable JSON snapshot |
-| LED debug | Changed white/orange/blue/timer requests emit compact `L` frames; serial-driver transactions explicitly latch their final `0x8F` command with STB. The development unit's all-channel LED outage predates these firmware changes and is tracked as a hardware fault. |
 
 ## Силовой и safety-контур
 
@@ -58,8 +60,8 @@ The earlier one-time NVS refresh is complete and must not be repeated automatica
 - High-priority power-control task зарегистрирован в 5-s Task Watchdog с panic/reset;
   после reset boot снова начинается с Stop.
 - Вентилятором интерфейсная ESP32 не управляет.
-- Fault handlers and LED runtime state never write NVS. Only `settings.c` persists
-  explicit settings/profile/Wi-Fi/admin changes; the application never erases NVS
+- Fault handlers never write NVS. Only `settings.c` persists explicit
+  settings/profile/Wi-Fi/admin changes; the application never erases NVS
   automatically.
 
 ## Wi-Fi и web
@@ -97,8 +99,9 @@ The earlier one-time NVS refresh is complete and must not be repeated automatica
 
 ## Оставшиеся ограничения и необязательная характеризация
 
-- Setpoint range is `40…190 °C`. The revised PREHEAT/APPROACH/HOLD controller
-  and active-zero command still need supervised cookware/relay characterization.
+- Setpoint range is `40…190 °C`. Retained-session active zero has passed supervised
+  POWER and Pause/Resume checks. The revised `0.2.9-dev` temperature restart behavior
+  still needs a supervised cookware test.
 - Production keeps the 80 °C interface IGBT guard and a separate 210 °C bottom
   emergency cutoff. The power MCU's native E05 remains active.
 - Полный перебор редких fault paths и длительный web/network soak могут быть

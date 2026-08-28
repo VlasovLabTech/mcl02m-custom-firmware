@@ -219,13 +219,15 @@ an observed 2.13–3.63 s startup window. Direct A↔E transitions are allowed. 
 not add artificial Stop pulses between gear ranges unless new hardware evidence
 requires it.
 
-Custom `0.2.5-dev` repeats `W0D=81, W00=00, W0C=00` for POWER gear 0,
-temperature coast, and manual Pause. This is distinct from full Stop and is based
-on stock static analysis; relay retention still requires supervised hardware
-confirmation. UART telemetry logs every write and transition, while authenticated
-Wi-Fi status exposes the state, last triple, counters, and Pause time remaining.
-`MCL02M_ACTIVE_ZERO_ENABLED` and `MCL02M_ACTIVE_ZERO_DIAGNOSTICS` can disable the
-behavior/extra events at compile time.
+Custom `0.2.9-dev` repeats `W0D=81, W00=00, W0C=00` for POWER gear 0,
+temperature coast, and manual Pause. This is distinct from full Stop. Supervised
+testing on the development unit confirmed retained-session active zero and
+Pause/Resume without unintended relay switching; normal relay operation remained
+limited to actual Start and Stop transitions. UART telemetry logs every write and
+transition, while authenticated Wi-Fi status exposes the state, last triple,
+counters, and Pause time remaining. `MCL02M_ACTIVE_ZERO_ENABLED` and
+`MCL02M_ACTIVE_ZERO_DIAGNOSTICS` can disable the behavior/extra events at compile
+time.
 
 ### Feedback registers
 
@@ -322,6 +324,9 @@ PAUSED, NO_PAN, COMPLETE, FAULT
 ### TEMPERATURE
 
 - Setpoint range: 40–190 °C, 1 °C steps.
+- Entering the T°C editor copies and clamps the current setpoint into editor-owned
+  state before the first frame, so the screen immediately shows a valid `Sxx`
+  value instead of reusing an asynchronous live-display value.
 - PREHEAT: gear 99 for error ≥30 °C, 77 for error ≥18 °C, otherwise 56;
   transition to APPROACH at 10 °C below the target.
 - APPROACH: `8 + 2 × error`, capped at gear 35.
@@ -521,13 +526,18 @@ Before any release or hardware write:
 8. After flashing, first perform a no-heat boot/UI/I²C soak, then supervised short
    power tests with a water load.
 
-The current offline-built `0.2.9-dev` artifact is identified in
-`firmware/production/BUILD_MANIFEST.md`. This is not permission to flash.
+The reference `0.2.9-dev` artifact identified in
+`firmware/production/BUILD_MANIFEST.md` was explicitly authorized and flashed to
+the development unit's stock `ota_1` slot on 2026-08-28. Boot diagnostics confirmed
+that the expected image was selected and that normal power-board communication was
+available. This deployment record is not permission for another flash operation.
 
 ## 13. Remaining uncertainties and optional characterization
 
-- The selectable range is 40–190 °C. The revised controller and stock-derived
-  active-zero relay/session behavior must still be characterized under supervision.
+- The selectable range is 40–190 °C. Active-zero session retention has passed
+  supervised POWER, Pause/Resume, and 58 °C water checks. The `0.2.9-dev` change
+  that resumes PI control at the first whole degree below the setpoint still needs
+  a supervised temperature-regulation check.
 - Production retains the 80 °C interface-side IGBT guard and uses 210 °C for
   the separate interface-side bottom cutoff; the power MCU's native E05 also
   remains active.
@@ -536,11 +546,6 @@ The current offline-built `0.2.9-dev` artifact is identified in
   logs individual read errors, and retransmits the complete Stop sequence on
   every heartbeat while the fault remains latched. Wiring, pull-ups, supply
   integrity, and EMI coupling still need physical inspection if E09 recurs.
-- The nine white LEDs run a 1.5-second all-on test after boot. Serial transactions
-  end with an explicit STB latch and changed output requests use compact `L` UART
-  frames. The development unit's all-channel outage predates the current firmware
-  changes and is treated as a hardware fault; inspect the common LED driver, flex,
-  supply and STB/CLK/DATA path.
 - Long-duration soak of web/network tasks while heating.
 - Exercise every stable and transient power-board error path.
 - Optionally trace GPIO32 physically; it is not a functional blocker.

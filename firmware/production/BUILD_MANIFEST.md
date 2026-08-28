@@ -38,6 +38,15 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 - Recovery dump: 16 MiB, SHA-256
   `e7d3ef41f6b5802558698589d5f3a6467d89e6838e8efa3bb040ffe4048bcc8e`.
 
+## Development-unit deployment
+
+This exact app image was explicitly authorized and written to the stock `ota_1`
+slot at `0x170000` on 2026-08-28. The write hash verified, OTA slot 1 selected the
+expected `0.2.9-dev` image, and startup diagnostics showed normal power-board
+communication. The operation did not erase NVS or write the bootloader, partition
+table, `otadata`, `ota_0`, PHY data, or eFuse. No backup was requested or created for
+this update. This record does not authorize reuse of the operation on another unit.
+
 ESP-IDF prints a generic `idf.py flash` suggestion after building. Project procedure
 forbids that broad command on this cooker. A successful build is not authorization
 to write the device.
