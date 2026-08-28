@@ -26,9 +26,7 @@ static const char *TAG = "cookdbg";
 #endif
 
 typedef enum {
-    INTENT_SET_MODE,
-    INTENT_SET_POWER,
-    INTENT_SET_TEMP,
+    INTENT_START,
     INTENT_STOP,
     INTENT_PAUSE_RESUME,
     INTENT_SLEEP,
@@ -121,6 +119,12 @@ static bool state_schedulable(cook_state_t state)
            state == COOK_STATE_READY || state == COOK_STATE_COMPLETE;
 }
 
+static bool state_configurable(cook_state_t state)
+{
+    return state == COOK_STATE_SLEEP || state == COOK_STATE_IDLE ||
+           state == COOK_STATE_READY || state == COOK_STATE_COMPLETE;
+}
+
 static void emit_status(const char *event)
 {
     telemetry_emitf("{\"t_ms\":%lld,\"type\":\"cooking\",\"event\":\"%s\","
@@ -205,8 +209,7 @@ static bool prepare_profile_stage_locked(unsigned start, bool running)
 
 static esp_err_t select_profile_locked(unsigned index)
 {
-    if (index >= COOKER_PROFILE_COUNT || state_active(s_status.state) ||
-        s_status.state == COOK_STATE_FAULT)
+    if (index >= COOKER_PROFILE_COUNT || !state_configurable(s_status.state))
         return ESP_ERR_INVALID_STATE;
     cooker_profile_t profiles[COOKER_PROFILE_COUNT];
     settings_profiles_get(profiles);
@@ -236,10 +239,14 @@ static esp_err_t begin_run_locked(void)
         gear = initial_temperature_gear_locked();
     if (gear > COOKER_MAX_GEAR) return ESP_ERR_INVALID_ARG;
 
+    bool armed = false;
     esp_err_t err = powerboard_control_arm(COOKER_POWERBOARD_ARM_MS);
-    if (err == ESP_OK)
+    if (err == ESP_OK) {
+        armed = true;
         err = powerboard_control_start(gear, COOKER_HARD_RUN_LIMIT_MS);
+    }
     if (err != ESP_OK) {
+        if (armed) powerboard_control_stop("START ROLLBACK");
         if (s_status.mode == COOK_MODE_PROFILE) s_status.timer_enabled = false;
         return err;
     }
@@ -319,6 +326,67 @@ static esp_err_t apply_output_locked(uint8_t gear)
         }
     }
     return err;
+}
+
+static esp_err_t set_mode_locked(cook_mode_t mode)
+{
+    if (mode < COOK_MODE_POWER || mode > COOK_MODE_TEMPERATURE)
+        return ESP_ERR_INVALID_ARG;
+    if (!state_configurable(s_status.state)) return ESP_ERR_INVALID_STATE;
+    s_status.mode = mode;
+    s_profile_selected = false;
+    s_status.state = COOK_STATE_READY;
+    return ESP_OK;
+}
+
+static esp_err_t set_power_locked(uint8_t gear)
+{
+    if (s_status.state == COOK_STATE_DELAYED || s_status.state == COOK_STATE_FAULT)
+        return ESP_ERR_INVALID_STATE;
+    if (state_active(s_status.state) && s_status.mode != COOK_MODE_POWER)
+        return ESP_ERR_INVALID_STATE;
+
+    const uint8_t previous = s_status.selected_gear;
+    s_status.selected_gear = gear;
+    if (s_status.mode == COOK_MODE_POWER && state_active(s_status.state)) {
+        const esp_err_t err = apply_output_locked(gear);
+        if (err != ESP_OK) {
+            s_status.selected_gear = previous;
+            return err;
+        }
+        if (s_status.state == COOK_STATE_PAUSED) s_status.paused_gear = gear;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t set_temperature_locked(uint16_t temperature_c)
+{
+    if (s_status.state == COOK_STATE_DELAYED || s_status.state == COOK_STATE_FAULT)
+        return ESP_ERR_INVALID_STATE;
+    if (state_active(s_status.state) && control_mode_locked() != COOK_MODE_TEMPERATURE)
+        return ESP_ERR_INVALID_STATE;
+
+    s_status.target_temperature_c = temperature_c;
+    if (s_status.state != COOK_STATE_STARTING && s_status.state != COOK_STATE_COOKING)
+        return ESP_OK;
+
+    uint8_t gear = 0;
+    if (s_status.readings_valid) {
+        gear = temperature_ctrl_update(&s_temperature, s_status.target_temperature_c,
+                                       s_status.bottom_c, COOKER_TEMP_UPDATE_MS);
+        s_status.temp_phase = s_temperature.phase;
+        s_status.hold_saturated = s_temperature.saturated;
+        if (!s_status.hold_saturated) s_saturation_announced = false;
+    }
+    const esp_err_t err = apply_output_locked(gear);
+    if (err != ESP_OK) {
+        set_fault_locked(FAULT_POWER_STATUS, "TEMP UPDATE FAILED");
+        return err;
+    }
+    s_last_temp_update_us = esp_timer_get_time();
+    emit_status(s_status.readings_valid ? "temperature_target_applied" :
+                                         "temperature_target_safe_zero");
+    return ESP_OK;
 }
 
 static void update_manual_pause_timeout_locked(int64_t now_us)
@@ -469,29 +537,16 @@ static void handle_intent_locked(const intent_t *intent)
 {
     const int64_t now = esp_timer_get_time();
     switch (intent->type) {
-    case INTENT_SET_MODE:
-        if (!state_active(s_status.state) && s_status.state != COOK_STATE_FAULT) {
-            s_status.mode = (cook_mode_t)intent->value;
-            if (s_status.mode != COOK_MODE_PROFILE) s_profile_selected = false;
-            s_status.state = COOK_STATE_READY;
+    case INTENT_START: {
+        const esp_err_t err = s_status.state == COOK_STATE_DELAYED ?
+                              ESP_ERR_INVALID_STATE : begin_run_locked();
+        if (err != ESP_OK && s_status.state != COOK_STATE_FAULT) {
+            strlcpy(s_status.detail, "START BLOCKED", sizeof(s_status.detail));
+            sound_play(SOUND_WARNING);
+            emit_status("start_blocked");
         }
         break;
-    case INTENT_SET_POWER:
-        if (intent->value >= 0 && intent->value <= COOKER_MAX_GEAR) {
-            s_status.selected_gear = (uint8_t)intent->value;
-            if (s_status.mode == COOK_MODE_POWER &&
-                (s_status.state == COOK_STATE_COOKING || s_status.state == COOK_STATE_STARTING ||
-                 s_status.state == COOK_STATE_NO_PAN || s_status.state == COOK_STATE_PAUSED) &&
-                apply_output_locked((uint8_t)intent->value) == ESP_OK) {
-                if (s_status.state == COOK_STATE_PAUSED)
-                    s_status.paused_gear = (uint8_t)intent->value;
-            }
-        }
-        break;
-    case INTENT_SET_TEMP:
-        if (intent->value >= COOKER_TEMP_MIN_C && intent->value <= COOKER_TEMP_MAX_C)
-            s_status.target_temperature_c = (uint16_t)intent->value;
-        break;
+    }
     case INTENT_STOP:
         if (state_active(s_status.state) || s_status.state == COOK_STATE_DELAYED)
             normal_stop_locked(intent->reason, false);
@@ -511,7 +566,10 @@ static void handle_intent_locked(const intent_t *intent)
 #endif
             if (pause_err == ESP_OK) {
                 if (pausing_no_pan && s_no_pan_announced) sound_stop();
-                if (pausing_no_pan) s_no_pan_announced = false;
+                if (pausing_no_pan) {
+                    s_no_pan_announced = false;
+                    s_no_pan_since_us = 0;
+                }
                 if (control_mode_locked() == COOK_MODE_TEMPERATURE) {
                     temperature_ctrl_restart(&s_temperature);
                     s_status.hold_saturated = false;
@@ -762,14 +820,32 @@ size_t cooking_engine_status_json(char *output, size_t output_size)
 
 esp_err_t cooking_set_mode(cook_mode_t mode)
 {
-    return mode <= COOK_MODE_TEMPERATURE ?
-           post(INTENT_SET_MODE, mode, false, NULL) : ESP_ERR_INVALID_ARG;
+    if (mode < COOK_MODE_POWER || mode > COOK_MODE_TEMPERATURE)
+        return ESP_ERR_INVALID_ARG;
+    if (s_lock == NULL) return ESP_ERR_INVALID_STATE;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    const esp_err_t err = set_mode_locked(mode);
+    xSemaphoreGive(s_lock);
+    return err;
 }
-esp_err_t cooking_set_power(unsigned gear) { return gear <= 99 ? post(INTENT_SET_POWER, gear, false, NULL) : ESP_ERR_INVALID_ARG; }
+esp_err_t cooking_set_power(unsigned gear)
+{
+    if (gear > COOKER_MAX_GEAR) return ESP_ERR_INVALID_ARG;
+    if (s_lock == NULL) return ESP_ERR_INVALID_STATE;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    const esp_err_t err = set_power_locked((uint8_t)gear);
+    xSemaphoreGive(s_lock);
+    return err;
+}
 esp_err_t cooking_set_temperature(unsigned temperature_c)
 {
-    return temperature_c >= COOKER_TEMP_MIN_C && temperature_c <= COOKER_TEMP_MAX_C ?
-           post(INTENT_SET_TEMP, temperature_c, false, NULL) : ESP_ERR_INVALID_ARG;
+    if (temperature_c < COOKER_TEMP_MIN_C || temperature_c > COOKER_TEMP_MAX_C)
+        return ESP_ERR_INVALID_ARG;
+    if (s_lock == NULL) return ESP_ERR_INVALID_STATE;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    const esp_err_t err = set_temperature_locked((uint16_t)temperature_c);
+    xSemaphoreGive(s_lock);
+    return err;
 }
 esp_err_t cooking_profile_select(unsigned index)
 {
@@ -781,16 +857,7 @@ esp_err_t cooking_profile_select(unsigned index)
 }
 esp_err_t cooking_start(void)
 {
-    if (s_lock == NULL) return ESP_ERR_INVALID_STATE;
-    xSemaphoreTake(s_lock, portMAX_DELAY);
-    const esp_err_t err = begin_run_locked();
-    if (err != ESP_OK && s_status.state != COOK_STATE_FAULT) {
-        strlcpy(s_status.detail, "START BLOCKED", sizeof(s_status.detail));
-        sound_play(SOUND_WARNING);
-        emit_status("start_blocked");
-    }
-    xSemaphoreGive(s_lock);
-    return err;
+    return post(INTENT_START, 0, false, NULL);
 }
 esp_err_t cooking_stop(const char *reason) { return post(INTENT_STOP, 0, false, reason == NULL ? "USER STOP" : reason); }
 esp_err_t cooking_pause_resume(void) { return post(INTENT_PAUSE_RESUME, 0, false, NULL); }

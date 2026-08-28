@@ -3,7 +3,7 @@
 Build date: 2026-08-28
 ESP-IDF: 6.0.2
 Target: ESP32, Unicore
-Firmware: `0.2.11-dev`
+Firmware: `0.2.12-dev`
 
 The app header embeds compile metadata, so a clean rebuild may have a different
 SHA-256 while retaining the same source, layout, size and validation gates.
@@ -12,15 +12,15 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 ## App image
 
 - File: `build/mcl02m_custom.bin`
-- Size: `882656` bytes (`0xD77E0`)
-- SHA-256: `bbd1300366631d644adb5959a00735c7972945a396370c5c1c3212dd3a76d6d1`
-- ESP image validation hash: `d0e98d0e809317da6c3042071e6ee01bcdba83f1e1ff828959777bb03899b8b1`
-- Stock OTA slot: `0x160000` bytes; image fits with `559136` bytes free.
+- Size: `882960` bytes (`0xD7910`)
+- SHA-256: `9c71617fe27957a99aca8ae57884985f8ca689219e00cadb4a1aa6afeaba1edf`
+- ESP image validation hash: `03b81007015059311248d977f289739618d7b93bb1566c3dbbb91989a31899ae`
+- Stock OTA slot: `0x160000` bytes; image fits with `558832` bytes free.
 
 ## Linked memory
 
-- Flash code: 631386 bytes
-- Flash data: 146604 bytes
+- Flash code: 631582 bytes
+- Flash data: 146700 bytes
 - IRAM: 89047 / 131072 bytes (67.94%)
 - DRAM static: 36460 / 180736 bytes (20.17%)
 - RTC slow: 64 / 8192 bytes
@@ -40,10 +40,9 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 
 ## Development-unit deployment
 
-This exact `0.2.11-dev` artifact was written to the development unit's stock `ota_1`
-slot at `0x170000` on 2026-08-28 after explicit owner authorization. Esptool verified
-the written data hash. No bootloader, partition table, NVS, `otadata`, `ota_0`, PHY
-or eFuse region was written.
+This `0.2.12-dev` artifact has not been flashed. The development unit remains on the
+hash-verified `0.2.11-dev` image in stock `ota_1`. Building and documenting this
+artifact did not write any device partition.
 
 ESP-IDF prints a generic `idf.py flash` suggestion after building. Project procedure
 forbids that broad command on this cooker. A successful build is not authorization

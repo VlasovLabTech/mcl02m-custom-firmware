@@ -66,6 +66,36 @@ def manual_pause_state(elapsed_s: int) -> str:
     return "STOPPED" if elapsed_s >= 2 * 60 * 60 else "PAUSED"
 
 
+def configure_mode(state: str) -> tuple[str, bool]:
+    configurable = {"SLEEP", "IDLE", "READY", "COMPLETE"}
+    return ("READY", True) if state in configurable else (state, False)
+
+
+def start_transaction(arm_ok: bool, start_ok: bool) -> tuple[bool, bool]:
+    """Return run_started and whether an armed-session rollback Stop is required."""
+    if not arm_ok:
+        return False, False
+    if not start_ok:
+        return False, True
+    return True, False
+
+
+def pause_no_pan_context(no_pan_elapsed_s: int) -> tuple[str, int]:
+    """Manual Pause starts a fresh NoPan window after a later Resume."""
+    assert no_pan_elapsed_s >= 0
+    return "PAUSED", 0
+
+
+def changed_temperature_output(
+    state: str, target: int, measured: int, readings_valid: bool
+) -> int | None:
+    if state not in {"STARTING", "COOKING"}:
+        return None
+    if not readings_valid:
+        return 0
+    return temperature_step("PREHEAT", target, measured)[1]
+
+
 def i2c_display_step(peak: int, hold_until_ms: int, current: int,
                      now_ms: int) -> tuple[int, int, int]:
     """Mirror the display-only peak hold; the engine's current count is untouched."""
@@ -152,6 +182,19 @@ def run() -> None:
     assert active_zero_command("STOPPED") == (0, 0, 0)
     assert manual_pause_state(2 * 60 * 60 - 1) == "PAUSED"
     assert manual_pause_state(2 * 60 * 60) == "STOPPED"
+    assert configure_mode("IDLE") == ("READY", True)
+    assert configure_mode("READY") == ("READY", True)
+    assert configure_mode("DELAYED") == ("DELAYED", False)
+    assert configure_mode("STARTING") == ("STARTING", False)
+    assert configure_mode("FAULT") == ("FAULT", False)
+    assert start_transaction(False, False) == (False, False)
+    assert start_transaction(True, False) == (False, True)
+    assert start_transaction(True, True) == (True, False)
+    assert pause_no_pan_context(59) == ("PAUSED", 0)
+    assert changed_temperature_output("STARTING", 125, 130, True) == 0
+    assert changed_temperature_output("STARTING", 125, 100, True) == 77
+    assert changed_temperature_output("STARTING", 125, 100, False) == 0
+    assert changed_temperature_output("PAUSED", 125, 100, True) is None
     peak, deadline, shown = i2c_display_step(0, 0, 3, 100)
     assert (peak, deadline, shown) == (3, 2_100, 3)
     peak, deadline, shown = i2c_display_step(peak, deadline, 0, 600)

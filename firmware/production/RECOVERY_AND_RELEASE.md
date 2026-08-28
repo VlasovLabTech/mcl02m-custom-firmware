@@ -2,11 +2,10 @@
 
 Этот документ описывает будущую процедуру, но **не разрешает запись сейчас**.
 
-Current reference app artifact: `build/mcl02m_custom.bin`, 882656 bytes,
-SHA-256 `bbd1300366631d644adb5959a00735c7972945a396370c5c1c3212dd3a76d6d1`.
-This exact `0.2.11-dev` artifact was written to the development unit's stock `ota_1`
-slot at `0x170000` on 2026-08-28 after explicit authorization; esptool verified the
-written data hash. No other partition was written.
+Current reference app artifact: `build/mcl02m_custom.bin` (`0.2.12-dev`). Its exact
+size and SHA-256 are recorded in `BUILD_MANIFEST.md`. This artifact has not been
+flashed. The development unit remains on the hash-verified `0.2.11-dev` image written
+to stock `ota_1` at `0x170000` on 2026-08-28. No other partition was written.
 Чистая пересборка может иметь другой hash из-за compile metadata; для release
 нужно сохранить новый manifest и заново пройти все gates.
 

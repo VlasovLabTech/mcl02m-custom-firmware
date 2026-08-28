@@ -701,13 +701,20 @@ static void central_short(void)
     }
     switch (s_view) {
     case VIEW_HOME:
-        if (s_selection == 0) { cooking_set_mode(COOK_MODE_POWER); s_view = VIEW_POWER; }
+        if (s_selection == 0) {
+            if (cooking_set_mode(COOK_MODE_POWER) == ESP_OK)
+                s_view = VIEW_POWER;
+            else
+                sound_play(SOUND_WARNING);
+        }
         else if (s_selection == 1) {
             s_temperature_edit_value = (unsigned)clamp(status.target_temperature_c,
                                                        COOKER_TEMP_MIN_C,
                                                        COOKER_TEMP_MAX_C);
-            cooking_set_mode(COOK_MODE_TEMPERATURE);
-            s_view = VIEW_TEMPERATURE;
+            if (cooking_set_mode(COOK_MODE_TEMPERATURE) == ESP_OK)
+                s_view = VIEW_TEMPERATURE;
+            else
+                sound_play(SOUND_WARNING);
         }
         else if (s_selection == 2) s_view = VIEW_PROFILES;
         else if (s_selection == 3) s_view = VIEW_READINGS;
@@ -734,7 +741,7 @@ static void central_short(void)
         break;
     case VIEW_POWER:
     case VIEW_TEMPERATURE:
-        cooking_start();
+        if (cooking_start() != ESP_OK) sound_play(SOUND_WARNING);
         break;
     case VIEW_SETTINGS:
         if (s_setting == SETTING_WIFI_INDEX) {

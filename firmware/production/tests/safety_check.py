@@ -217,6 +217,35 @@ def main() -> int:
     require("state_schedulable" in engine and
             "if (!state_schedulable(snapshot.state)) return ESP_ERR_INVALID_STATE" in engine,
             "delayed Start cannot overwrite an active cooking state")
+    require("INTENT_SET_MODE" not in engine and "INTENT_SET_POWER" not in engine and
+            "INTENT_SET_TEMP" not in engine and
+            "INTENT_START" in engine and
+            "static esp_err_t set_mode_locked" in engine and
+            "static esp_err_t set_power_locked" in engine and
+            "static esp_err_t set_temperature_locked" in engine and
+            "xSemaphoreTake(s_lock, portMAX_DELAY);" in
+            engine[engine.find("esp_err_t cooking_set_mode"):
+                   engine.find("esp_err_t cooking_profile_select")],
+            "return post(INTENT_START, 0, false, NULL);" in engine and
+            "mode, power and temperature changes complete before queued Start")
+    require("static bool state_configurable" in engine and
+            "state == COOK_STATE_READY || state == COOK_STATE_COMPLETE" in engine and
+            "if (!state_configurable(s_status.state)) return ESP_ERR_INVALID_STATE;" in engine and
+            "!state_configurable(s_status.state)" in engine and
+            "cooking_set_mode(COOK_MODE_POWER) == ESP_OK" in ui and
+            "cooking_set_mode(COOK_MODE_TEMPERATURE) == ESP_OK" in ui,
+            "mode and profile changes cannot destroy an active delayed Start")
+    require("bool armed = false;" in engine and
+            "if (armed) powerboard_control_stop(\"START ROLLBACK\");" in engine,
+            "a failed Start after Arm explicitly rolls the power board back to Stop")
+    require("if (pausing_no_pan) {" in pause_branch and
+            "s_no_pan_since_us = 0;" in pause_branch,
+            "Pause from NoPan starts a fresh NoPan timeout window after Resume")
+    require("s_status.state != COOK_STATE_STARTING &&" in engine and
+            "s_status.state != COOK_STATE_COOKING" in engine and
+            "temperature_target_safe_zero" in engine and
+            "set_fault_locked(FAULT_POWER_STATUS, \"TEMP UPDATE FAILED\")" in engine,
+            "temperature changes during Start apply immediately or force safe zero/fault")
     require("ui_direct_output_set(PIN_UI_DIRECT_1, 0)" in indicators,
             "unidentified GPIO32 remains LOW")
     require("self_test_deadline" in indicators and "leds = 9;" in indicators,

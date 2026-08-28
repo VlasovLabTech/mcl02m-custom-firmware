@@ -13,7 +13,7 @@ from a request to edit or build software.
 - Xiaomi device model: `chunmi.ihcooker.v2`.
 - Interface controller: Espressif `ESP-WROOM-32D` (classic ESP32).
 - Display: monochrome 64×48 OLED, page-major 384-byte framebuffer.
-- Current custom source version: `0.2.11-dev`.
+- Current custom source version: `0.2.12-dev`.
 - Framework: ESP-IDF.
 - Public repository language: English for technical documents; the device UI
   supports English, Russian, and Simplified Chinese.
@@ -543,19 +543,19 @@ Before any release or hardware write:
 8. After flashing, first perform a no-heat boot/UI/I²C soak, then supervised short
    power tests with a water load.
 
-The reference `0.2.11-dev` artifact identified in
-`firmware/production/BUILD_MANIFEST.md` was written to the development unit's stock
-`ota_1` slot on 2026-08-28 after explicit authorization. The app-region write was
-hash-verified; no bootloader, partition table, NVS, `otadata`, `ota_0`, PHY or eFuse
-region was written. This status is not permission for another flash operation.
+The reference `0.2.12-dev` artifact identified in
+`firmware/production/BUILD_MANIFEST.md` is an offline build and has not been flashed.
+The development unit remains on hash-verified `0.2.11-dev` in stock `ota_1`; that
+write did not touch the bootloader, partition table, NVS, `otadata`, `ota_0`, PHY or
+eFuse. This status is not permission for another flash operation.
 
 ## 13. Remaining uncertainties and optional characterization
 
 - The selectable range is 40–190 °C. Active-zero session retention and steady
   temperature holding have passed supervised checks. A 125 °C empty-pan trial on
   `0.2.9-dev` held accurately after an approximately 5 °C initial overshoot. The
-  adaptive braking, Pause recomputation, and direct topology crossing added in
-  unflashed `0.2.11-dev` still require supervised cookware characterization.
+  adaptive braking, Pause recomputation, and direct topology crossing present in the
+  deployed `0.2.11-dev` still require supervised cookware characterization.
 - Production retains the 80 °C interface-side IGBT guard and uses 210 °C for
   the separate interface-side bottom cutoff; the power MCU's native E05 also
   remains active.

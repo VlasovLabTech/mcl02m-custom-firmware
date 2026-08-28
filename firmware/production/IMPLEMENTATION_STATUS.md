@@ -1,17 +1,19 @@
 # MCL02M custom firmware — implementation status
 
 Дата: 2026-08-28
-Версия исходников: `0.2.11-dev`
-Статус: the reference `0.2.11-dev` app was written to the development unit's
-stock `ota_1` slot on 2026-08-28 and the app-region data hash was verified. Earlier
+Версия исходников: `0.2.12-dev`
+Статус: the development unit remains on the hash-verified `0.2.11-dev` app
+written to stock `ota_1` on 2026-08-28. Unflashed source `0.2.12-dev` fixes the first
+five bounded state-integrity findings. Earlier
 supervised tests confirmed retained-session active zero, Pause/Resume
 without unwanted relay switching, Sleep/Wake, I2C debug display, and temperature
 operation. At a 125 °C empty-pan setpoint, initial heating overshot by approximately
-5 °C and subsequent holding was accurate. Source `0.2.11-dev` includes adaptive initial
+5 °C and subsequent holding was accurate. The source includes adaptive initial
 braking, pause-safe output recomputation, and direct low/high topology crossing. Its
 physical Settings menu also exposes the compile-time firmware version on a dedicated
-two-line OLED screen. Supervised validation of this exact build is pending. The
-earlier one-time NVS refresh is complete and must not be repeated automatically.
+two-line OLED screen. The `0.2.12-dev` image is built and checked offline but has not
+been flashed. The earlier one-time NVS refresh is complete and must not be repeated
+automatically.
 
 ## Реализованный пользовательский контур
 
@@ -103,7 +105,7 @@ earlier one-time NVS refresh is complete and must not be repeated automatically.
 
 - Setpoint range is `40…190 °C`. Retained-session active zero and steady holding have
   passed supervised checks. The adaptive braking, Pause recomputation, and topology
-  crossing in unflashed `0.2.11-dev` still need a supervised cookware test.
+  crossing in deployed `0.2.11-dev` still need a supervised cookware test.
 - Production keeps the 80 °C interface IGBT guard and a separate 210 °C bottom
   emergency cutoff. The power MCU's native E05 remains active.
 - Полный перебор редких fault paths и длительный web/network soak могут быть

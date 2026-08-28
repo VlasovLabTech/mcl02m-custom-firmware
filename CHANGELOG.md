@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.12-dev — 2026-08-28
+
+- Eliminated the Set-to-Start ordering race: mode, POWER and temperature edits now
+  complete under the cooking-state lock, while Start joins the ordered intent queue.
+- Protected an active delayed Start from mode, profile, POWER and temperature
+  mutation. Rejected physical mode selections remain on the current screen and play
+  the warning sound.
+- Added an explicit Stop rollback when Arm succeeds but the following Start request
+  fails.
+- Reset the elapsed NoPan window when manual Pause is entered from NoPan, so a later
+  Resume receives a fresh 60-second cookware-return window.
+- Applied temperature target changes immediately during STARTING/COOKING. Missing
+  sensor data selects retained-session active zero; a failed safe-output update
+  latches a fault and requests Stop.
+- Added executable policy cases and static contract gates for all five transitions.
+
 ## 0.2.11-dev — 2026-08-28
 
 - Added `SETTINGS → FIRMWARE → VERSION`. The screen displays the compile-time

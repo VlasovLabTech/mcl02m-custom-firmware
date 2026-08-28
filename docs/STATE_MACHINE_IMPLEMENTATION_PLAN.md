@@ -1,10 +1,11 @@
 # State-Machine Audit and Deferred Implementation Plan
 
-Status: **deferred; no control-logic fixes from this document have been implemented yet**
+Status: **in progress; the first bounded fix batch is implemented, while the remaining findings are deferred**
 
 Audit baseline: `0.2.10-dev`, commit `2b5784e` (`2026-08-28`)
 
-Current source after the unrelated firmware-version UI addition: `0.2.11-dev`
+Current source: `0.2.12-dev`; the first five bounded findings below are implemented
+and checked offline but have not been flashed
 
 This document preserves the complete control-flow review so the findings can be
 discussed, prioritized, and implemented later without relying on chat history. It is
@@ -173,6 +174,10 @@ Acceptance tests:
 
 ### H1. Queued Set operations can race with synchronous Start
 
+Implementation status: **fixed in unflashed `0.2.12-dev`**. Mode, POWER and
+temperature changes are now synchronous under the cooking lock; Start is serialized
+through the intent queue after those changes.
+
 `cooking_set_mode()`, `cooking_set_power()` and `cooking_set_temperature()` post
 asynchronous intents. `cooking_start()` bypasses that queue and calls
 `begin_run_locked()` synchronously. A fast sequence such as selecting T°C, turning the
@@ -204,6 +209,10 @@ Recommended change:
 - Apply the topology/ramp rule to the resumed output.
 
 ### H3. A temperature change during `STARTING` is applied late
+
+Implementation status: **fixed in unflashed `0.2.12-dev`**. A changed target now
+recomputes and applies output immediately in STARTING/COOKING. Invalid readings force
+active zero, and failure to request the safe output latches a fault and Stop.
 
 The target field changes immediately, but `update_temperature_locked()` observes and
 returns without applying output until the cooking state becomes `COOKING`. A user can
@@ -264,6 +273,9 @@ Recommended change:
 
 ### M1. Mode/profile selection can silently break a delayed Start
 
+Implementation status: **fixed in unflashed `0.2.12-dev`**. Mode, profile, POWER and
+temperature mutation are rejected while the schedule remains in `DELAYED`.
+
 `INTENT_SET_MODE` is accepted in `DELAYED` because that state is not classified as
 active. It changes the cooking state to `READY` but does not consistently clear the
 delayed fields. Profile selection has the same conceptual problem. The schedule
@@ -277,6 +289,10 @@ Recommended change:
 - Never leave `delayed_start == true` outside a valid delayed-transition context.
 
 ### M2. Pausing from NoPan retains the old NoPan timestamp
+
+Implementation status: **fixed in unflashed `0.2.12-dev`**. The selected policy is
+to reset the elapsed NoPan window on entering manual Pause; a later Resume starts a
+fresh 60-second window if the pan is missing again.
 
 The Pause path stops the NoPan sound, but it does not clearly reset
 `s_no_pan_since_us`. After Resume, a still-missing pan can inherit the previous elapsed
@@ -302,6 +318,11 @@ Recommended change:
 - Make repeated short presses idempotent rather than queueing contradictory toggles.
 
 ### M4. Partial Start failure can temporarily leave the lower layer armed
+
+Implementation status: **fixed in unflashed `0.2.12-dev`**. If Arm succeeds and the
+following Start call fails, the cooking layer explicitly requests `START ROLLBACK`
+Stop before reporting Start blocked. Physical Stop confirmation remains part of the
+separate C1 work.
 
 `begin_run_locked()` calls Arm and then Start. If Arm succeeds but Start fails, the
 function returns an error without explicitly disarming. The lower layer eventually
@@ -532,9 +553,10 @@ not a replacement for a supervised cookware test.
 
 ### Phase 3 — Serialize commands and transitions
 
-- [ ] Replace mixed asynchronous Set/synchronous Start behavior.
+- [x] Replace mixed asynchronous Set/synchronous Start behavior (`0.2.12-dev`).
 - [ ] Add explicit completion results and UI feedback.
-- [ ] Make Arm+Start atomic with cleanup.
+- [x] Add explicit Arm+Start failure cleanup (`0.2.12-dev`); full confirmed Stop is
+  tracked separately by C1.
 - [ ] Introduce pending confirmation for Start, active zero, Pause and Resume.
 
 ### Phase 4 — Repair edge-state context
