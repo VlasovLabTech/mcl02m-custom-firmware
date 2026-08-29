@@ -681,27 +681,70 @@ static const char *retained_session_issue_locked(void)
 
 static esp_err_t startup_probe(void)
 {
-    static const uint8_t order[] = {0x25, 0x28, 0x29, 0x24, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f};
-    esp_err_t aggregate = ESP_OK;
-    for (size_t i = 0; i < sizeof(order); ++i) {
+    static const uint8_t required[] = {0x25, 0x28, 0x29, 0x24, 0x2a, 0x2b};
+    static const uint8_t service[] = {0x2c, 0x2d, 0x2e, 0x2f};
+    esp_err_t required_result = ESP_OK;
+    uint16_t required_valid_mask = 0;
+    uint16_t service_valid_mask = 0;
+    uint8_t service_failures = 0;
+
+    for (size_t i = 0; i < sizeof(required); ++i) {
         esp_err_t err = ESP_FAIL;
         for (unsigned attempt = 0; attempt < 5; ++attempt) {
-            err = read_and_store(order[i]);
+            err = read_and_store(required[i]);
             if (err == ESP_OK) break;
         }
         esp_task_wdt_reset();
-        if (aggregate == ESP_OK && err != ESP_OK) aggregate = err;
+        if (err == ESP_OK) {
+            required_valid_mask |= (uint16_t)(1U << (required[i] - 0x20U));
+        } else if (required_result == ESP_OK) {
+            required_result = err;
+        }
     }
+    for (size_t i = 0; i < sizeof(service); ++i) {
+        esp_err_t err = ESP_FAIL;
+        for (unsigned attempt = 0; attempt < 5; ++attempt) {
+            err = read_and_store(service[i]);
+            if (err == ESP_OK) break;
+        }
+        esp_task_wdt_reset();
+        if (err == ESP_OK) {
+            service_valid_mask |= (uint16_t)(1U << (service[i] - 0x20U));
+        } else {
+            ++service_failures;
+        }
+    }
+
+    xSemaphoreTake(s_status_lock, portMAX_DELAY);
+    s_status.startup_required_valid_mask = required_valid_mask;
+    s_status.startup_service_valid_mask = service_valid_mask;
+    s_status.startup_service_failures = service_failures;
+    s_status.startup_required_ok = required_result == ESP_OK;
+    xSemaphoreGive(s_status_lock);
+
     powerboard_status_t status;
     powerboard_control_get_status(&status);
     telemetry_emitf("{\"t_ms\":%lld,\"type\":\"pb_startup\",\"r25\":%u,"
                     "\"r28\":%u,\"r29\":%u,\"r2a\":%u,\"r2b\":%u,"
-                    "\"r2c\":%u,\"r2d\":%u,\"r2e\":%u,\"r2f\":%u,\"err\":%d}",
+                    "\"r2c\":%u,\"r2d\":%u,\"r2e\":%u,\"r2f\":%u,"
+                    "\"required_mask\":%u,\"service_mask\":%u,"
+                    "\"service_failures\":%u,\"err\":%d}",
                     esp_timer_get_time() / 1000,
                     status.registers[5], status.registers[8], status.registers[9],
                     status.registers[10], status.registers[11], status.registers[12],
-                    status.registers[13], status.registers[14], status.registers[15], aggregate);
-    return aggregate;
+                    status.registers[13], status.registers[14], status.registers[15],
+                    required_valid_mask, service_valid_mask, service_failures,
+                    required_result);
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+    ESP_LOGI(TAG,
+             "B,%04X,%04X,%u,%02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X",
+             required_valid_mask, service_valid_mask, service_failures,
+             status.registers[5], status.registers[8], status.registers[9],
+             status.registers[4], status.registers[10], status.registers[11],
+             status.registers[12], status.registers[13], status.registers[14],
+             status.registers[15]);
+#endif
+    return required_result;
 }
 
 static bool wait_until_or_stop(TickType_t cycle_start, unsigned offset_ms)
@@ -1365,8 +1408,12 @@ size_t powerboard_control_status_json(char *output, size_t output_size)
         "\"gear_target\":%u,\"gear_applied\":%u,\"topology\":%u,"
         "\"cmd_0d\":%u,\"cmd_00\":%u,\"cmd_0c\":%u,"
         "\"r20\":%u,\"r21\":%u,\"r22\":%u,\"r23\":%u,\"r24\":%u,"
-        "\"r26\":%u,\"r27\":%u,\"r28\":%u,\"igbt_c\":%u,\"bottom_c\":%u,"
-        "\"valid_mask\":%u,\"run_ms\":%" PRIu32 ",\"remaining_ms\":%" PRIu32 ","
+        "\"r25\":%u,\"r26\":%u,\"r27\":%u,\"r28\":%u,\"r29\":%u,"
+        "\"r2a\":%u,\"r2b\":%u,\"r2c\":%u,\"r2d\":%u,\"r2e\":%u,\"r2f\":%u,"
+        "\"igbt_c\":%u,\"bottom_c\":%u,\"valid_mask\":%u,"
+        "\"startup_required_mask\":%u,\"startup_service_mask\":%u,"
+        "\"startup_required_ok\":%s,\"startup_service_failures\":%u,"
+        "\"run_ms\":%" PRIu32 ",\"remaining_ms\":%" PRIu32 ","
         "\"arm_ms\":%" PRIu32 ",\"start_confirm_ms\":%" PRIu32 ","
         "\"stop_elapsed_ms\":%" PRIu32 ",\"stop_confirm_ms\":%" PRIu32 ","
         "\"stop_generation\":%" PRIu32 ",\"stop_confirm_samples\":%u,"
@@ -1408,9 +1455,13 @@ size_t powerboard_control_status_json(char *output, size_t output_size)
         s.target_gear, s.applied_gear, s.topology,
         s.last_command_0d, s.last_command_00, s.last_command_0c,
         s.registers[0], s.registers[1], s.registers[2], s.registers[3],
-        s.registers[4], s.registers[6], s.registers[7], s.registers[8],
-        s.igbt_c, s.bottom_c,
-        s.valid_mask, s.run_elapsed_ms, s.run_remaining_ms, s.arm_remaining_ms,
+        s.registers[4], s.registers[5], s.registers[6], s.registers[7],
+        s.registers[8], s.registers[9], s.registers[10], s.registers[11],
+        s.registers[12], s.registers[13], s.registers[14], s.registers[15],
+        s.igbt_c, s.bottom_c, s.valid_mask,
+        s.startup_required_valid_mask, s.startup_service_valid_mask,
+        s.startup_required_ok ? "true" : "false", s.startup_service_failures,
+        s.run_elapsed_ms, s.run_remaining_ms, s.arm_remaining_ms,
         s.start_confirm_remaining_ms, s.stop_elapsed_ms,
         s.stop_confirm_remaining_ms, s.stop_generation, s.stop_confirm_samples,
         s.stop_verified ? "true" : "false",

@@ -69,6 +69,10 @@ typedef struct {
     uint8_t last_command_0c;
     uint8_t registers[16];
     uint16_t valid_mask;
+    uint16_t startup_required_valid_mask;
+    uint16_t startup_service_valid_mask;
+    uint8_t startup_service_failures;
+    bool startup_required_ok;
     uint8_t igbt_c;
     uint8_t bottom_c;
     uint32_t run_elapsed_ms;

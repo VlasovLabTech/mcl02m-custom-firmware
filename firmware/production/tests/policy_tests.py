@@ -614,6 +614,20 @@ def profile_sequence(durations: list[int]) -> list[int]:
     return [index + 1 for index, duration in enumerate(durations) if duration > 0]
 
 
+def startup_probe_outcome(
+    required_reads: tuple[bool, ...], service_reads: tuple[bool, ...]
+) -> tuple[bool, int]:
+    """Only capability/safety reads gate boot; R2C-R2F are diagnostics."""
+    return all(required_reads), sum(not result for result in service_reads)
+
+
+def profile_timer_action(*, remaining_s: int, transition_pending: bool) -> str:
+    """A completed cell waits until the preceding output transaction settles."""
+    if transition_pending:
+        return "WAIT"
+    return "ADVANCE" if remaining_s == 0 else "COUNT"
+
+
 def active_zero_command(state: str) -> tuple[int, int, int]:
     """Model the retained-session command used by zero output and manual Pause."""
     if state in {"ACTIVE_ZERO", "PAUSED"}:
@@ -1133,6 +1147,11 @@ def run() -> None:
     assert retained_resume_first_gear(35) == 35
     assert profile_sequence([2400, 1500, 0, 300, 0]) == [1, 2, 4]
     assert profile_sequence([0, 0, 0, 0, 0]) == []
+    assert startup_probe_outcome((True,) * 6, (True, False, True, False)) == (True, 2)
+    assert startup_probe_outcome((True, True, False, True, True, True), (True,) * 4) == (False, 0)
+    assert profile_timer_action(remaining_s=0, transition_pending=True) == "WAIT"
+    assert profile_timer_action(remaining_s=0, transition_pending=False) == "ADVANCE"
+    assert profile_timer_action(remaining_s=1, transition_pending=False) == "COUNT"
     assert active_zero_command("ACTIVE_ZERO") == (0x81, 0, 0)
     assert active_zero_command("PAUSED") == (0x81, 0, 0)
     assert active_zero_command("STOPPED") == (0, 0, 0)

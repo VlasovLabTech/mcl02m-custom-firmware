@@ -21,7 +21,8 @@ API предназначен только для web-страницы самой
 
 - firmware version;
 - cooking state/mode/fault, selected/applied gear, temperature, timer/schedule;
-- raw power-board `R20…R27`, I²C cycle/error counters, topology, Stop/start
+- raw power-board `R20…R2F`, separate required/service startup masks and service
+  failure count, I²C cycle/error counters, topology, Stop/start
   confirmation, active-zero state, last `0D/00/0C` command, transition counters,
   manual-Pause time remaining, and the immutable first-cause Start/EST incident
   (`R20/R26/R28`, valid mask, requested/transmitted command, counters and timestamp);

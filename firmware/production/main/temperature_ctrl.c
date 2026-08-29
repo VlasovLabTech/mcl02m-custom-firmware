@@ -64,6 +64,16 @@ void temperature_ctrl_restart(temperature_ctrl_t *controller)
     controller->target_valid = false;
 }
 
+void temperature_ctrl_reset_trend(temperature_ctrl_t *controller)
+{
+    if (controller == NULL) return;
+    memset(controller->trend_samples, 0, sizeof(controller->trend_samples));
+    controller->trend_next = 0;
+    controller->trend_count = 0;
+    controller->rise_4s_c = 0;
+    controller->braking_margin_c = COOKER_TEMP_BRAKE_BASE_C;
+}
+
 void temperature_ctrl_observe(temperature_ctrl_t *controller, uint8_t measured_c)
 {
     if (controller == NULL) return;

@@ -74,6 +74,19 @@ int main(void)
     assert(c.integral == 0 && c.trend_count == history_count);
     assert(temperature_ctrl_update(&c, 125, 124, 500) == 6);
 
+    /* A sensor-data gap invalidates only the time-based trend evidence. */
+    const temp_phase_t phase_before_gap = c.phase;
+    const float integral_before_gap = c.integral;
+    const uint16_t target_before_gap = c.last_target_c;
+    temperature_ctrl_reset_trend(&c);
+    assert(c.trend_count == 0 && c.trend_next == 0 && c.rise_4s_c == 0);
+    assert(c.braking_margin_c == COOKER_TEMP_BRAKE_BASE_C);
+    assert(c.phase == phase_before_gap && c.integral == integral_before_gap);
+    assert(c.target_valid && c.last_target_c == target_before_gap);
+    temperature_ctrl_observe(&c, 124);
+    assert(c.trend_count == 1);
+    assert(temperature_ctrl_update(&c, 125, 124, 500) == 6);
+
     /* A changed target starts a fresh phase decision instead of staying in HOLD. */
     assert(step(&c, 160, 124) == 99);
     assert(c.phase == TEMP_PHASE_PREHEAT);

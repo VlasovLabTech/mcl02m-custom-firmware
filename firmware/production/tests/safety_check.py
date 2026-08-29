@@ -108,7 +108,7 @@ def main() -> int:
             "incident->transmitted_topology = s_last_successful_command_0d" in power and
             '"X,%" PRIu32' in power and
             '\\"start_incident\\"' in power and
-            "POWERBOARD_STATUS_JSON_MAX 2560" in web,
+            "POWERBOARD_STATUS_JSON_MAX 3072" in web,
             "EST preserves one first-cause RAM incident and exposes compact UART plus authenticated status evidence")
     require("#define COOKER_MAX_TIMER_S              (5U * 60U * 60U)" in config,
             "cooking timer is capped at five hours")
@@ -128,9 +128,17 @@ def main() -> int:
             "COOKER_TEMP_HIGH_BRAKE_MIN_C" in (MAIN / "temperature_ctrl.c").read_text(encoding="utf-8") and
             "approach_exit_error_c" in (MAIN / "temperature_ctrl.c").read_text(encoding="utf-8"),
             "temperature PREHEAT uses a bounded four-second adaptive braking margin with hysteresis")
+    require("temperature_ctrl_reset_trend" in engine and
+            "readings_were_valid && !s_status.readings_valid" in engine and
+            'emit_status("temperature_reading_gap")' in engine and
+            "controller->trend_count = 0" in
+            (MAIN / "temperature_ctrl.c").read_text(encoding="utf-8"),
+            "a sensor-data gap invalidates stale trend evidence without resetting the whole controller")
     require("s_status.state != COOK_STATE_COOKING" in engine and
+            "s_status.transition_pending) return;" in engine and
+            "if (s_status.timer_remaining_s > 0)" in engine and
             "update_timer_locked" in engine,
-            "cooking countdown freezes on Pause and NoPan")
+            "cooking countdown freezes on Pause, NoPan and pending output transactions")
     require("s_status.state == COOK_STATE_FAULT" in engine and
             "COOK_STATE_SLEEP" not in engine[engine.find("set_fault_locked"):engine.find("map_power_fault")],
             "fault latch cannot auto-enter Sleep")
@@ -327,6 +335,12 @@ def main() -> int:
             "s.heartbeat_gap_remaining_ms" in power and
             "s.heartbeat_gap_observed_stop" in power,
             "UART diagnostics use complete compact frames instead of periodic JSON")
+    require('"B,%04X,%04X,%u,' in power and
+            '"C,%s,%s,%u,%u,%u,%u,%u,%" PRIu32' in engine and
+            "startup_required_valid_mask" in power_header and
+            "startup_service_valid_mask" in power_header and
+            "return required_result;" in power,
+            "boot capabilities and cooking events have compact UART evidence while R2C-R2F stay best-effort")
     require("#define COOKER_MANUAL_PAUSE_TIMEOUT_MS   (2U * 60U * 60U * 1000U)" in config and
             "update_manual_pause_timeout_locked" in engine and
             'begin_normal_stop_locked("PAUSE TIMEOUT", false)' in engine and

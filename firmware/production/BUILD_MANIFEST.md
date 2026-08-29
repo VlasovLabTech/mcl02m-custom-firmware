@@ -3,7 +3,7 @@
 Build date: 2026-08-29
 ESP-IDF: 6.0.2
 Target: ESP32, Unicore
-Firmware: `0.2.22-dev`
+Firmware: `0.2.23-dev`
 
 The app header embeds compile metadata, so a clean rebuild may have a different
 SHA-256 while retaining the same source, layout, size and validation gates.
@@ -12,17 +12,17 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 ## App image
 
 - File: `build/mcl02m_custom.bin`
-- Size: `896656` bytes (`0xDAE90`)
-- SHA-256: `4e6d8e50187c05557acd7ed058b9f7d1843a5a47205e14a89c74a2ddd4d38512`
-- ESP image validation hash: `3e664ce160f3ee1d98fcf8194a9177ceac5e0d0b2cb4eec7016629548d70c1bd`
-- Stock OTA slot: `0x160000` bytes; image fits with `545136` bytes free.
+- Size: `897808` bytes (`0xDB310`)
+- SHA-256: `5a4af047e96059114ac8a75baa53d4b9facd09cc4ce520b0ba6e300ef9ea2a0b`
+- ESP image validation hash: `1234015898f77d2756096488b8b188068011c5b35b8af857e5a6df6db2aca6f1`
+- Stock OTA slot: `0x160000` bytes; image fits with `543984` bytes free.
 
 ## Linked memory
 
-- Flash code: 641322 bytes
-- Flash data: 150668 bytes
+- Flash code: 642074 bytes
+- Flash data: 151068 bytes
 - IRAM: 89047 / 131072 bytes (67.94%)
-- DRAM static: 37020 / 180736 bytes (20.48%)
+- DRAM static: 37028 / 180736 bytes (20.49%)
 - RTC slow: 64 / 8192 bytes
 
 ## Offline gates
@@ -47,6 +47,9 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
   profile-zero/Pause/NoPan clocks, frozen countdowns, five-hour profile waits under
   the eight-hour retained-session guard, every delayed-expiry menu, exact-boundary
   cancellation, long-center priority, skipped cells and RAM-only schedule loss.
+  The `0.2.23-dev` cases additionally prove that best-effort startup service reads
+  cannot fail an otherwise complete required probe and that profile completion
+  waits for an existing output transaction before advancing.
 - `tests/safety_check.py`: PASS.
 - Production ELF check: temporary `I2C ERRORS` menu/overlay code is absent while
   its guarded source remains available.
@@ -55,12 +58,14 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 - `tools/generate_oled_assets.py --check`: PASS, ten exact 384-byte frames.
 - `esptool image-info`: valid checksum and validation hash, ESP32/DIO/40 MHz/16 MiB.
 - Generated partition table: byte-identical to stock.
+- `tools/monitor_uart.py --list`: PASS; pyserial enumerates the available ports and
+  the monitor remains passive/read-only.
 - Recovery dump: 16 MiB, SHA-256
   `e7d3ef41f6b5802558698589d5f3a6467d89e6838e8efa3bb040ffe4048bcc8e`.
 
 ## Development-unit deployment
 
-This `0.2.22-dev` artifact has not been flashed. The development unit still runs the
+This `0.2.23-dev` artifact has not been flashed. The development unit still runs the
 hash-verified `0.2.17-dev` app written only to stock `ota_1` at `0x170000` on
 2026-08-29 after explicit owner authorization. That operation did not write the
 bootloader, partition table, `otadata`, NVS, PHY, `ota_0` or eFuse.

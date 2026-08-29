@@ -142,6 +142,7 @@ static void enter_no_pan_context_locked(int64_t now_us)
     s_active_zero = false;
     s_status.active_zero = false;
     s_status.applied_gear = 0;
+    s_status.paused_gear = 0;
     strlcpy(s_status.detail, "NO PAN", sizeof(s_status.detail));
 }
 
@@ -209,6 +210,16 @@ static bool state_configurable(cook_state_t state)
 
 static void emit_status(const char *event)
 {
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+    ESP_LOGI(TAG,
+             "C,%s,%s,%u,%u,%u,%u,%u,%" PRIu32 ",%" PRIu32 ",%u,%u,%u,%s",
+             event, cooking_state_name(s_status.state), s_status.mode,
+             s_status.selected_gear, s_status.applied_gear, s_status.bottom_c,
+             s_status.active_zero ? 1U : 0U, s_status.timer_remaining_s,
+             s_status.transition_generation, s_status.transition_kind,
+             s_status.transition_pending ? 1U : 0U, s_status.i2c_bad_cycles,
+             s_status.detail);
+#endif
     telemetry_emitf("{\"t_ms\":%lld,\"type\":\"cooking\",\"event\":\"%s\","
                     "\"state\":\"%s\",\"mode\":%u,\"gear\":%u,\"temp\":%u,"
                     "\"active_zero\":%s,\"pause_s\":%" PRIu32 "}",
@@ -232,6 +243,7 @@ static void set_fault_locked(cooker_fault_t fault, const char *detail)
     s_status.fault = fault;
     s_status.delayed_start = false;
     s_status.timer_enabled = false;
+    s_status.paused_gear = 0;
     s_waiting_pan_before_start = false;
     s_pan_return_waiting_output = false;
     s_active_zero = false;
@@ -585,14 +597,14 @@ static void update_session_time_buckets_locked(const powerboard_status_t *pb,
 
 static void update_timer_locked(int64_t delta_us)
 {
-    if (!s_status.timer_enabled || s_status.timer_remaining_s == 0 ||
-        (s_status.transition_pending &&
-         s_status.transition_kind == PB_TRANSITION_PAUSE) ||
-        s_status.state != COOK_STATE_COOKING) return;
-    s_timer_accumulator_us += delta_us;
-    while (s_timer_accumulator_us >= 1000000 && s_status.timer_remaining_s > 0) {
-        s_timer_accumulator_us -= 1000000;
-        --s_status.timer_remaining_s;
+    if (!s_status.timer_enabled || s_status.state != COOK_STATE_COOKING ||
+        s_status.transition_pending) return;
+    if (s_status.timer_remaining_s > 0) {
+        s_timer_accumulator_us += delta_us;
+        while (s_timer_accumulator_us >= 1000000 && s_status.timer_remaining_s > 0) {
+            s_timer_accumulator_us -= 1000000;
+            --s_status.timer_remaining_s;
+        }
     }
     if (s_status.timer_remaining_s == 0) {
         if (s_status.mode == COOK_MODE_PROFILE) {
@@ -656,6 +668,7 @@ static void apply_confirmed_transition_locked(const powerboard_status_t *pb,
     s_applied_transition_generation = pb->transition_confirmed_generation;
     switch (pb->transition_kind) {
     case PB_TRANSITION_START:
+        s_status.paused_gear = 0;
         s_active_zero = pb->confirmed_state == PB_STATE_ACTIVE_ZERO;
         s_status.active_zero = s_active_zero;
         s_status.state = COOK_STATE_COOKING;
@@ -664,6 +677,7 @@ static void apply_confirmed_transition_locked(const powerboard_status_t *pb,
         emit_status(s_active_zero ? "active_zero_confirmed" : "heating_confirmed");
         break;
     case PB_TRANSITION_ACTIVE_ZERO:
+        s_status.paused_gear = 0;
         s_active_zero = true;
         s_status.active_zero = true;
         s_status.state = COOK_STATE_COOKING;
@@ -680,6 +694,7 @@ static void apply_confirmed_transition_locked(const powerboard_status_t *pb,
         emit_status("manual_pause_confirmed");
         break;
     case PB_TRANSITION_RESUME:
+        s_status.paused_gear = 0;
         s_active_zero = pb->confirmed_state == PB_STATE_ACTIVE_ZERO;
         s_status.active_zero = s_active_zero;
         s_status.state = COOK_STATE_COOKING;
@@ -691,6 +706,7 @@ static void apply_confirmed_transition_locked(const powerboard_status_t *pb,
         emit_status("manual_resume_confirmed");
         break;
     case PB_TRANSITION_PAN_RETURN_HOLD:
+        s_status.paused_gear = 0;
         s_active_zero = true;
         s_status.active_zero = true;
         s_status.state = COOK_STATE_NO_PAN;
@@ -703,6 +719,7 @@ static void apply_confirmed_transition_locked(const powerboard_status_t *pb,
         emit_status("pan_return_safe_hold_confirmed");
         break;
     case PB_TRANSITION_PAN_RETURN_RESUME:
+        s_status.paused_gear = 0;
         s_pan_return_waiting_output = false;
         s_active_zero = pb->confirmed_state == PB_STATE_ACTIVE_ZERO;
         s_status.active_zero = s_active_zero;
@@ -760,6 +777,7 @@ static void request_pan_return_output_locked(const powerboard_status_t *pb,
 static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now_us)
 {
     const bool was_cookware_limited = s_status.cookware_limited;
+    const bool readings_were_valid = s_status.readings_valid;
     s_status.applied_gear = pb->applied_gear;
     s_status.igbt_c = pb->igbt_c;
     s_status.bottom_c = pb->bottom_c;
@@ -768,6 +786,11 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
                                         pb->consecutive_bad_cycles);
     s_status.readings_valid = (pb->valid_mask & ((1U << 3) | (1U << 4))) ==
                               ((1U << 3) | (1U << 4));
+    if (readings_were_valid && !s_status.readings_valid) {
+        temperature_ctrl_reset_trend(&s_temperature);
+        s_last_temp_update_us = 0;
+        emit_status("temperature_reading_gap");
+    }
     if (pb->valid_mask & (1U << 2)) s_status.mains_voltage_v = pb->registers[2] + 50U;
     s_status.power_board_revision = pb->registers[8];
     s_status.power_board_revision_valid = (pb->valid_mask & (1U << 8)) != 0;
@@ -1009,6 +1032,7 @@ static void handle_intent_locked(const intent_t *intent)
                 s_status.fault = FAULT_NONE;
                 s_status.state = COOK_STATE_IDLE;
                 s_status.applied_gear = 0;
+                s_status.paused_gear = 0;
                 strlcpy(s_status.detail, "ACKNOWLEDGED", sizeof(s_status.detail));
             }
         } else if (s_status.state == COOK_STATE_COMPLETE) s_status.state = COOK_STATE_IDLE;

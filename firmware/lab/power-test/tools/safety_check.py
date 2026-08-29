@@ -102,6 +102,14 @@ def main() -> int:
     boot_stop = control.find("esp_err_t boot_stop = send_stop_sequence();")
     boot_probe = control.find("esp_err_t startup = startup_probe();")
     require(0 <= boot_stop < boot_probe, "boot issues Stop before probing the power board")
+    startup = function_body(control, "startup_probe")
+    require("static const uint8_t required[]" in startup and
+            "static const uint8_t service[]" in startup and
+            "startup_required_valid_mask" in startup and
+            "startup_service_valid_mask" in startup and
+            "startup_service_failures" in startup and
+            "return required_result;" in startup,
+            "required startup capabilities are independent from best-effort R2C-R2F diagnostics")
 
     require("if (!interrupted && !wait_until_or_stop(cycle_start, 400))" in control and
             "if (!wait_until_or_stop(cycle_start, 450))" in control and
@@ -128,11 +136,17 @@ def main() -> int:
     require("vTaskDelayUntil(&next, pdMS_TO_TICKS(MCL02M_CONTROL_HEARTBEAT_MS))" in control_task,
             "control task is paced by the verified 500-ms stock heartbeat")
     feedback = function_body(control, "update_status_feedback")
-    require("s_status.state == PB_STATE_STARTING" in feedback and
+    transition_finish = function_body(control, "finish_transition_locked")
+    start_body = function_body(control, "powerboard_control_start")
+    require("PB_TRANSITION_START" in start_body and
+            "gear == 0 ? PB_STATE_ACTIVE_ZERO : PB_STATE_HEATING" in start_body and
+            "transition_confirmation_open" in feedback and
             "r26 == 0x01 || r26 == 0x02" in feedback and
-            "s_status.state = PB_STATE_HEATING" in feedback and
-            control.count("s_status.state = PB_STATE_HEATING") == 1,
-            "STARTING becomes HEATING only after valid R26=01/02 feedback")
+            "finish_transition_locked();" in feedback and
+            "s_status.state = requested_state" in transition_finish and
+            "s_status.transition_confirmed_generation" in transition_finish and
+            "s_status.state = PB_STATE_HEATING" not in control,
+            "START reaches HEATING only through fresh valid R26=01/02 transition confirmation")
     require("r20_silent_nonfault" in control and
             "value == 0x2b" in control and "value == 0x29" in control and
             "value == 0x2a" in control and
@@ -140,9 +154,10 @@ def main() -> int:
             "fault_locked(\"POWER TRANSITION\")" not in feedback,
             "R20=2B/29/2A are silent nonfaults and other unknown values become warnings")
     require("MCL02M_START_CONFIRM_TIMEOUT_MS" in control_task and
-            "fault_locked(\"START TIMEOUT\")" in control and
+            'case PB_TRANSITION_START: reason = "START TIMEOUT"' in control and
+            "fault_locked(reason);" in control and
             control_task.find("write_register(0x0c") <
-            control_task.find("s_start_confirm_deadline_us = esp_timer_get_time()"),
+            control_task.find("s_transition_deadline_us = esp_timer_get_time()"),
             "startup confirmation watchdog begins after the command heartbeat")
     require(control_task.find("update_status_feedback()") <
             control_task.find("update_time_and_safety(esp_timer_get_time())"),
@@ -154,8 +169,9 @@ def main() -> int:
             "s_run_deadline_us" in control,
             "heating requires a timed Arm and a bounded run deadline")
     timing = function_body(control, "update_time_and_safety")
-    require("stop_locked(\"COMPLETE\")" in timing and "RUN TIMEOUT" not in control,
-            "normal run-duration expiry performs a safe completed Stop, not a fault")
+    require('begin_stop_locked("RUN LIMIT")' in timing and
+            'fault_locked("RUN LIMIT")' not in timing,
+            "normal run-duration expiry begins a verified safe Stop transaction")
     require("MCL02M_MAX_IGBT_C" in control and "MCL02M_MAX_BOTTOM_C" in control and
             "MCL02M_I2C_BAD_CYCLES_TO_FAULT" in control,
             "temperature and I2C-loss faults are active")

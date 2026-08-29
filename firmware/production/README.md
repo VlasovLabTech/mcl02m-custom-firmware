@@ -13,7 +13,7 @@
 - `R26=01` restricted-cookware feedback is accepted as normal heating and caps every
   control path at real gear `35`/`A1`; POWER reports the permitted value, blocks only
   upward edits above 35, and displays a temporary explanatory message;
-- physical Settings shows both `0.2.22-dev` firmware and live raw `R28` power-board
+- physical Settings shows both `0.2.23-dev` firmware and live raw `R28` power-board
   revision/type with four left-aligned rows;
 - `R20=2B/29/2A` are silent nonfaults; another unknown nonzero `R20` shows its exact
   hex value as a persistent warning, and the first physical input dismisses only the
@@ -101,6 +101,11 @@
   The fixed `D` field order is: state, target/applied gear, topology, last commands,
   `R20…R27`, valid mask, temperatures, run/remaining/arm/start-confirm/heartbeat-gap
   timers, cycle/error/active-zero counters, stop/heartbeat/active-zero flags, fault.
+- `0.2.23-dev` adds a one-shot `B` power-board capability frame and event-driven `C`
+  cooking frames. Required startup reads have a separate validity mask; failures of
+  best-effort `R2C`–`R2F` remain visible without producing `BOOT I2C`. The passive
+  `tools/monitor_uart.py` recorder stores every raw line while summarizing changed
+  `D` frames and events on screen.
 - Start acknowledgement is accepted only after a complete successful nonzero
   heartbeat and strictly before its single eight-second deadline. EST captures one
   immutable first-cause RAM record before repeated Stop changes live feedback. The

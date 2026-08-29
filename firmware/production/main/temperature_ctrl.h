@@ -27,6 +27,7 @@ typedef struct {
 
 void temperature_ctrl_reset(temperature_ctrl_t *controller);
 void temperature_ctrl_restart(temperature_ctrl_t *controller);
+void temperature_ctrl_reset_trend(temperature_ctrl_t *controller);
 void temperature_ctrl_observe(temperature_ctrl_t *controller, uint8_t measured_c);
 uint8_t temperature_ctrl_update(temperature_ctrl_t *controller,
                                 uint16_t target_c, uint8_t measured_c,

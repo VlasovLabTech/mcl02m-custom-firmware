@@ -1,7 +1,7 @@
 # MCL02M custom firmware — implementation status
 
 Дата: 2026-08-29
-Версия исходников: `0.2.22-dev`
+Версия исходников: `0.2.23-dev`
 Статус: the development unit runs the hash-verified `0.2.17-dev` app written only to
 stock `ota_1` at `0x170000` on 2026-08-29. It booted successfully, and supervised
 testing confirmed retained-session active zero without unwanted relay switching,
@@ -37,12 +37,17 @@ feedback first confirms active zero, then the cooking layer refreshes temperatur
 resets PI/trend/saturation context, applies the small-cookware cap, recomputes output
 and requests a separately confirmed Resume. Unknown `R20` values cannot prove return;
 Stop and Pause replace or cancel the return generation. The
-unflashed `0.2.22-dev` source separates the five-hour user/profile countdown from
+unflashed `0.2.23-dev` source separates the five-hour user/profile countdown from
 the eight-hour retained-session wall bound, two-hour manual Pause and three-second
 cooking lease, and exposes distinct heating, ordinary active-zero, profile POWER-0,
 Pause and NoPan elapsed counters. Delayed expiry synchronizes the physical UI to the
 actual selected mode from any menu. Profile selection cannot mutate a delayed run,
 and long-center Stop/Cancel takes priority over an open timer editor. The
+same `0.2.23-dev` batch separates required startup capabilities from best-effort
+`R2C`–`R2F` service reads, emits compact boot/cooking evidence for supervised UART
+capture, invalidates stale temperature-trend samples after a sensor-data gap, defers
+profile-cell completion across pending power transactions, and clears Pause-only
+diagnostic state on every terminal/non-Pause transition. The
 earlier one-time NVS refresh is complete and must not be repeated automatically.
 
 ## Реализованный пользовательский контур

@@ -4,7 +4,7 @@ Status: **in progress; the first bounded fix batch is implemented, while the rem
 
 Audit baseline: `0.2.10-dev`, commit `2b5784e` (`2026-08-28`)
 
-Current source: `0.2.22-dev`. Version `0.2.17-dev` was flashed to the development
+Current source: `0.2.23-dev`. Version `0.2.17-dev` was flashed to the development
 cooker on 2026-08-29 after explicit authorization; retained-session active zero works
 without unexpected relay switching. The source now also keeps the temporary I2C-loss
 OLED counter behind a disabled compile-time flag, so it is absent from the production
@@ -464,6 +464,10 @@ Reset it on confirmed Stop or explicitly retain it as `last_run_elapsed_s`.
 
 ### L3. `paused_gear` can become stale across unusual transitions
 
+Implementation status: **fixed in unflashed `0.2.23-dev`**. Fault, Stop, NoPan,
+confirmed Start/active-zero/Resume/pan-return and fault acknowledgement now clear the
+field; only a real Pause context retains it.
+
 Centralize entry/exit actions for Pause, Stop, Fault, NoPan and profile-stage changes
 so `paused_gear` is never left over from a previous context.
 
@@ -474,6 +478,11 @@ Outside the special scheduled-wait path, pan presence is often derived from
 it as `unknown / present / absent` when I2C data is missing.
 
 ### L5. Temperature trend samples do not carry individual timestamps
+
+Implementation status: **fixed conservatively in unflashed `0.2.23-dev`**. The first
+valid-to-invalid sensor transition clears only the four-second trend window and its
+derived braking evidence, while preserving the active controller phase and PI state.
+Fresh valid samples must rebuild a complete trend window after communication returns.
 
 The trend window is sample-based. After a communication gap, old and new samples can
 be treated as if evenly spaced. Timestamp samples or reset the trend window after a
@@ -620,7 +629,7 @@ used by a stock cross-channel temperature check. Register `R29` must not be conf
 with the unrelated `R20=29` service event. No speculative runtime branch is added
 until a genuinely different board tuple is observed.
 
-- [ ] Read `R25/R28/R29` as normal startup capabilities and make `R2C`–`R2F`
+- [x] Read `R25/R28/R29` as normal startup capabilities and make `R2C`–`R2F`
   best-effort service diagnostics rather than boot requirements.
 - [ ] Select the stock NTC conversion family from `R28`, or block Start with a clear
   unsupported-board reason. Never silently apply the tested-board LUT to an
@@ -629,6 +638,11 @@ until a genuinely different board tuple is observed.
   group before changing the current conservative two-sample filter.
 - [ ] Capture and compare the second cooker's raw startup register set before any
   supervised heating test.
+
+The first item is implemented in unflashed `0.2.23-dev`. Required startup reads and
+best-effort service reads now have independent masks. One compact `B` frame and the
+authenticated status preserve the complete tuple and service failure count. No LUT
+or `R29` behavior is guessed from that evidence.
 
 ### Package 3 — Transactional Stop (`C1`)
 
@@ -739,7 +753,15 @@ Policy tests cover all menu-to-mode synchronization, frozen countdowns, skipped
 zero-duration cells, multi-hour profile zero, the exact cancel boundary, and RAM-only
 schedule loss on restart.
 
+Unflashed `0.2.23-dev` also closes a deterministic profile-boundary race: a timer
+that reaches zero waits for any already-pending output transition to settle before
+preparing and applying the next cell. This prevents transition contention from being
+misreported as `PROFILE STAGE FAILED` without changing cell durations.
+
 ### Final field validation after each package
+
+The executable operator/monitor sequence and evidence schema are maintained in
+[`HARDWARE_VALIDATION_PLAN.md`](HARDWARE_VALIDATION_PLAN.md).
 
 - [x] Build and run all offline gates, inspect the exact app image and preserve compact
   diagnostic coverage.
