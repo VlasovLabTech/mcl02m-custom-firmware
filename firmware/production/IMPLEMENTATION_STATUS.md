@@ -52,8 +52,10 @@ reproduced a Delayed Start `ETM`: the deadline began Start after the loop had al
 captured a stopped power-board snapshot. Version `0.2.24-dev` refreshes that snapshot
 after a successful scheduled Start, ignores stopped feedback while the Start
 transaction is still pending, and orders the waiting OLED as mode, selected value,
-delay label, countdown. A targeted supervised test confirmed Delayed Start reached
-`COOKING` without `ETM`, followed by a confirmed transactional user Stop. The
+delay label, countdown. Targeted supervised tests confirmed delayed POWER and
+TEMPERATURE Starts reached `COOKING` without `ETM`, cancellation did not revive an
+expired schedule, temperature reached its setpoint and entered active zero, and both
+user Stops completed transactionally. The
 earlier one-time NVS refresh is complete and must not be repeated automatically.
 
 ## Реализованный пользовательский контур

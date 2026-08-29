@@ -141,7 +141,7 @@ Append one row per supervised session:
 
 | Date/time | Firmware version | App SHA-256 | Cooker | Boot `B` tuple | Steps | Result | Log path | Physical observations |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2026-08-30 01:51 MSK | `0.2.24-dev` | `f547b7dd4ba9bddb1a50b5ff6a9ad9d920a579b77a55acac8e06d3c8571fd21c` | Development unit | required `0F30`; service `F000/0`; `R25/R28/R29=0A/0B/32` | Boot, version, delayed POWER 10 Start, user Stop | PASS | `_local_private/validation/uart-20260830-015103.log` | Delayed Start reached confirmed `COOKING` without `ETM`; Stop reached confirmed `R26=00`, `S,DONE`, `IDLE` |
+| 2026-08-30 01:51–02:08 MSK | `0.2.24-dev` | `f547b7dd4ba9bddb1a50b5ff6a9ad9d920a579b77a55acac8e06d3c8571fd21c` | Development unit | required `0F30`; service `F000/0`; `R25/R28/R29=0A/0B/32` | Boot, version, delayed POWER 10 Start, delayed cancellation, delayed TEMPERATURE 55 °C Start, user Stops | PASS | `_local_private/validation/uart-20260830-015103.log`; `_local_private/validation/uart-20260830-020518.log` | Both delayed modes reached confirmed `COOKING` without `ETM`; cancellation did not revive Start; temperature reached 55 °C and entered active zero; both Stops reached confirmed `R26=00`, `S,DONE`, `IDLE` |
 
 Keep these decisions open until hardware evidence exists:
 
