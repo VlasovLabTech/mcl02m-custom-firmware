@@ -230,9 +230,9 @@ static esp_err_t setup_handler(httpd_req_t *req)
 static esp_err_t status_handler(httpd_req_t *req)
 {
     if (!cookie_authorized(req)) return error(req, "401 Unauthorized", "login required");
-    char cooker[768];
+    char cooker[896];
     cooking_engine_status_json(cooker, sizeof(cooker));
-    char powerboard[1536];
+    char powerboard[1792];
     powerboard_control_status_json(powerboard, sizeof(powerboard));
     network_status_t network;
     network_prod_get_status(&network);
@@ -268,7 +268,7 @@ static esp_err_t status_handler(httpd_req_t *req)
         profiles_used += (size_t)written;
     }
     strlcpy(profiles_json + profiles_used, "]", sizeof(profiles_json) - profiles_used);
-    char response[4096];
+    char response[5120];
     const int response_length = snprintf(response, sizeof(response),
              "{\"firmware\":\"%s\",\"cooker\":%s,\"powerboard\":%s,"
              "\"network\":{\"enabled\":%s,\"sta_connected\":%s,\"ip\":\"%s\","

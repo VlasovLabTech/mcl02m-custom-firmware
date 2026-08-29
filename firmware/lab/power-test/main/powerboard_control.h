@@ -61,6 +61,10 @@ typedef struct {
     uint32_t stop_confirm_remaining_ms;
     uint32_t stop_generation;
     uint8_t stop_confirm_samples;
+    uint32_t lease_remaining_ms;
+    uint32_t lease_generation;
+    uint32_t lease_renewals;
+    uint32_t lease_expirations;
     uint32_t heartbeat_gap_remaining_ms;
     uint32_t completed_cycles;
     uint32_t bad_cycles;
@@ -72,6 +76,8 @@ typedef struct {
     bool cookware_limited;
     bool stop_verified;
     bool stop_timed_out;
+    bool lease_active;
+    bool lease_expired;
     bool heartbeat_gap_observed_stop;
     char fault[24];
     char stop_reason[24];
@@ -89,6 +95,8 @@ esp_err_t powerboard_control_set_gear(unsigned gear);
 esp_err_t powerboard_control_pause(void);
 esp_err_t powerboard_control_resume(void);
 esp_err_t powerboard_control_stop(const char *reason);
+esp_err_t powerboard_control_lease_begin(uint32_t *generation);
+esp_err_t powerboard_control_lease_renew(uint32_t generation);
 esp_err_t powerboard_control_heartbeat_gap(unsigned duration_ms);
 esp_err_t powerboard_control_clear_fault(void);
 

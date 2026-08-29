@@ -59,6 +59,7 @@ static bool s_saturation_announced;
 static bool s_no_pan_announced;
 static bool s_waiting_pan_before_start;
 static bool s_active_zero;
+static uint32_t s_lease_generation;
 static cooker_profile_t s_active_profile;
 static bool s_profile_selected;
 
@@ -114,6 +115,7 @@ const char *cooking_fault_name(cooker_fault_t fault)
     case FAULT_E12_POWER_STATUS: return "E12 POWER";
     case FAULT_POWER_STATUS: return "POWER STATUS";
     case FAULT_START_TIMEOUT: return "START TIMEOUT";
+    case FAULT_COOKING_LEASE: return "COOK LEASE";
     case FAULT_HARD_RUN_LIMIT: return "RUN LIMIT";
     default: return "UNKNOWN";
     }
@@ -164,6 +166,7 @@ static void set_fault_locked(cooker_fault_t fault, const char *detail)
     s_status.timer_enabled = false;
     s_waiting_pan_before_start = false;
     s_active_zero = false;
+    s_lease_generation = 0;
     s_status.active_zero = false;
     s_status.cookware_limited = false;
     s_status.r20_warning_active = false;
@@ -189,6 +192,7 @@ static cooker_fault_t map_power_fault(const powerboard_status_t *pb)
     if (strstr(pb->fault, "BOTTOM") != NULL) return FAULT_E05_BOTTOM_OVERHEAT;
     if (strstr(pb->fault, "I2C") != NULL) return FAULT_E09_COMMUNICATION;
     if (strstr(pb->fault, "START") != NULL) return FAULT_START_TIMEOUT;
+    if (strstr(pb->fault, "COOK LEASE") != NULL) return FAULT_COOKING_LEASE;
     return FAULT_POWER_STATUS;
 }
 
@@ -265,10 +269,14 @@ static esp_err_t begin_run_locked(void)
     esp_err_t err = powerboard_control_arm(COOKER_POWERBOARD_ARM_MS);
     if (err == ESP_OK) {
         armed = true;
+        err = powerboard_control_lease_begin(&s_lease_generation);
+    }
+    if (err == ESP_OK) {
         err = powerboard_control_start(gear, COOKER_HARD_RUN_LIMIT_MS);
     }
     if (err != ESP_OK) {
         if (armed) powerboard_control_stop("START ROLLBACK");
+        s_lease_generation = 0;
         if (s_status.mode == COOK_MODE_PROFILE) s_status.timer_enabled = false;
         return err;
     }
@@ -313,6 +321,7 @@ static void begin_normal_stop_locked(const char *reason, bool complete)
     s_status.timer_enabled = false;
     s_waiting_pan_before_start = false;
     s_active_zero = false;
+    s_lease_generation = 0;
     s_status.active_zero = false;
     s_status.cookware_limited = false;
     s_status.r20_warning_active = false;
@@ -536,6 +545,11 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
     s_status.stop_elapsed_ms = pb->stop_elapsed_ms;
     s_status.stop_generation = pb->stop_generation;
     s_status.stop_timed_out = pb->stop_timed_out;
+    s_status.lease_remaining_ms = pb->lease_remaining_ms;
+    s_status.lease_generation = pb->lease_generation;
+    s_status.lease_renewals = pb->lease_renewals;
+    s_status.lease_active = pb->lease_active;
+    s_status.lease_expired = pb->lease_expired;
 
     if (pb->unknown_r20_seq != s_status.r20_warning_seq) {
         s_status.r20_warning_seq = pb->unknown_r20_seq;
@@ -566,7 +580,10 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
         return;
     }
     if (pb->state == PB_STATE_STOPPING && state_active(s_status.state)) {
-        set_fault_locked(FAULT_HARD_RUN_LIMIT, "RUN LIMIT");
+        if (pb->lease_expired || strstr(pb->fault, "COOK LEASE") != NULL)
+            set_fault_locked(FAULT_COOKING_LEASE, "COOK LEASE");
+        else
+            set_fault_locked(FAULT_HARD_RUN_LIMIT, "RUN LIMIT");
         return;
     }
     if (s_status.state == COOK_STATE_STOPPING) {
@@ -618,8 +635,30 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
         strlcpy(s_status.detail, "COOKING", sizeof(s_status.detail));
         emit_status("heating_confirmed");
     }
-    if (pb->state == PB_STATE_STOPPED && state_active(s_status.state))
-        set_fault_locked(FAULT_HARD_RUN_LIMIT, "UNEXPECTED STOP");
+    if (pb->state == PB_STATE_STOPPED && state_active(s_status.state)) {
+        if (pb->lease_expired)
+            set_fault_locked(FAULT_COOKING_LEASE, "COOK LEASE");
+        else
+            set_fault_locked(FAULT_HARD_RUN_LIMIT, "UNEXPECTED STOP");
+    }
+}
+
+static void renew_cooking_lease_locked(void)
+{
+    if (!state_active(s_status.state) || s_waiting_pan_before_start) return;
+    const esp_err_t err = powerboard_control_lease_renew(s_lease_generation);
+    if (err == ESP_OK) return;
+
+    powerboard_status_t pb;
+    powerboard_control_get_status(&pb);
+    if (pb.lease_expired || strstr(pb.fault, "COOK LEASE") != NULL) {
+        set_fault_locked(FAULT_COOKING_LEASE, "COOK LEASE");
+    } else if (pb.state == PB_STATE_STOPPING &&
+               strstr(pb.fault, "RUN LIMIT") != NULL) {
+        set_fault_locked(FAULT_HARD_RUN_LIMIT, "RUN LIMIT");
+    } else {
+        set_fault_locked(FAULT_POWER_STATUS, "LEASE RENEW FAILED");
+    }
 }
 
 static void handle_intent_locked(const intent_t *intent)
@@ -831,6 +870,7 @@ static void engine_task(void *arg)
         update_manual_pause_timeout_locked(now);
         update_timer_locked(delta);
         update_temperature_locked(now);
+        renew_cooking_lease_locked();
         xSemaphoreGive(s_lock);
         vTaskDelay(pdMS_TO_TICKS(COOKER_CONTROL_PERIOD_MS));
     }
@@ -889,6 +929,9 @@ size_t cooking_engine_status_json(char *output, size_t output_size)
         "\"active_zero\":%s,\"pause_remaining_s\":%" PRIu32 ","
         "\"stop_elapsed_ms\":%" PRIu32 ",\"stop_generation\":%" PRIu32 ","
         "\"stop_timed_out\":%s,"
+        "\"lease_active\":%s,\"lease_expired\":%s,"
+        "\"lease_remaining_ms\":%" PRIu32 ","
+        "\"lease_generation\":%" PRIu32 ",\"lease_renewals\":%" PRIu32 ","
         "\"timer_enabled\":%s,\"timer_s\":%" PRIu32 ","
         "\"timer_last_s\":%" PRIu32 ",\"delayed\":%s,\"delayed_s\":%" PRIu32 ","
         "\"clock_valid\":%s,\"hold_saturated\":%s,"
@@ -906,6 +949,8 @@ size_t cooking_engine_status_json(char *output, size_t output_size)
         s.r20_warning_seq,
         s.active_zero ? "true" : "false", s.pause_remaining_s,
         s.stop_elapsed_ms, s.stop_generation, s.stop_timed_out ? "true" : "false",
+        s.lease_active ? "true" : "false", s.lease_expired ? "true" : "false",
+        s.lease_remaining_ms, s.lease_generation, s.lease_renewals,
         s.timer_enabled ? "true" : "false", s.timer_remaining_s, s.timer_last_s,
         s.delayed_start ? "true" : "false", s.delayed_remaining_s,
         s.clock_valid ? "true" : "false", s.hold_saturated ? "true" : "false",

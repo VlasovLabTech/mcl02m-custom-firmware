@@ -1,7 +1,7 @@
 # MCL02M custom firmware — implementation status
 
 Дата: 2026-08-29
-Версия исходников: `0.2.18-dev`
+Версия исходников: `0.2.19-dev`
 Статус: the development unit runs the hash-verified `0.2.17-dev` app written only to
 stock `ota_1` at `0x170000` on 2026-08-29. It booted successfully, and supervised
 testing confirmed retained-session active zero without unwanted relay switching,
@@ -23,6 +23,9 @@ covers the complete known Start response matrix. Unflashed `0.2.18-dev` implemen
 the transactional Stop package: all Stop origins converge on `STOPPING`, complete
 zero commands continue until two fresh `R26=00` samples, and late recovery remains
 possible after timeout or I²C loss without losing the first recorded cause. The
+unflashed `0.2.19-dev` source adds a generation-tagged three-second cooking lease.
+Only the cooking task renews it in live sessions; the independent power task expires
+it into transactional Stop and retains a distinct `ECL / COOK LEASE` diagnosis. The
 earlier one-time NVS refresh is complete and must not be repeated automatically.
 
 ## Реализованный пользовательский контур

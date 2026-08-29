@@ -13,7 +13,7 @@
 - `R26=01` restricted-cookware feedback is accepted as normal heating and caps every
   control path at real gear `35`/`A1`; POWER reports the permitted value, blocks only
   upward edits above 35, and displays a temporary explanatory message;
-- physical Settings shows both `0.2.18-dev` firmware and live raw `R28` power-board
+- physical Settings shows both `0.2.19-dev` firmware and live raw `R28` power-board
   revision/type with four left-aligned rows;
 - `R20=2B/29/2A` are silent nonfaults; another unknown nonzero `R20` shows its exact
   hex value as a persistent warning, and the first physical input dismisses only the
@@ -23,6 +23,9 @@
 - every normal and safety Stop enters one idempotent `STOPPING` transaction, repeats
   `00/00/00` until two fresh `R26=00` samples, and exposes preserved timeout/I²C
   evidence without falsely announcing `IDLE` or `COMPLETE`;
+- a generation-tagged 3-s cooking lease is renewed only by the cooking task in live
+  sessions; the independent 500-ms power task converts expiry into transactional Stop
+  and preserves the distinct `ECL / COOK LEASE` cause;
 - Stop, Pause/Resume, NoPan `60 s` с обязательным циклом `мелодия → пауза 3 s`
   даже при `SOUND OFF`, critical fault latch, IGBT/bottom guards;
 - cooking timer up to 5 h with sequential `SECONDS → MINUTES → HOURS` confirmation,

@@ -102,7 +102,7 @@ def main() -> int:
             "incident->transmitted_topology = s_last_successful_command_0d" in power and
             '"X,%" PRIu32' in power and
             '\\"start_incident\\"' in power and
-            "char powerboard[1536]" in web,
+            "char powerboard[1792]" in web,
             "EST preserves one first-cause RAM incident and exposes compact UART plus authenticated status evidence")
     require("#define COOKER_MAX_TIMER_S              (5U * 60U * 60U)" in config,
             "cooking timer is capped at five hours")
@@ -217,6 +217,27 @@ def main() -> int:
             "class StopTransaction" in
             (ROOT / "tests" / "policy_tests.py").read_text(encoding="utf-8"),
             "all normal and safety Stop origins use one idempotent transaction confirmed by two fresh R26=00 samples")
+    require("MCL02M_COOKING_LEASE_ENABLED=1" in cmake and
+            "#define MCL02M_COOKING_LEASE_MS 3000U" in power_safety and
+            "powerboard_control_lease_begin" in power_header and
+            "powerboard_control_lease_renew" in power_header and
+            "expire_lease_locked" in power and
+            'begin_stop_locked("COOK LEASE")' in power and
+            "now_us >= s_lease_deadline_us" in power and
+            "generation != s_status.lease_generation" in power and
+            "!lease_ready || !preflight_healthy_locked()" in power and
+            'ESP_LOGE(TAG, "L,EXPIRE,%" PRIu32' in power and
+            "powerboard_control_lease_begin(&s_lease_generation)" in engine and
+            "powerboard_control_lease_renew(s_lease_generation)" in engine and
+            "!state_active(s_status.state) || s_waiting_pan_before_start" in engine and
+            "renew_cooking_lease_locked();" in engine and
+            "pb->state == PB_STATE_STOPPED && state_active(s_status.state)" in engine and
+            "if (pb->lease_expired)" in engine and
+            "FAULT_COOKING_LEASE" in source and 'code = "ECL"' in display and
+            "esp_task_wdt_add(NULL)" in power and
+            "class CookingLease" in
+            (ROOT / "tests" / "policy_tests.py").read_text(encoding="utf-8"),
+            "the generation-tagged three-second cooking lease is renewed only by the cooking task and independently expires into transactional Stop")
     require("retained_session_healthy_locked" in power and
             "s_status.registers[6] != 0" in power and
             "!retained_session_healthy_locked()" in power and

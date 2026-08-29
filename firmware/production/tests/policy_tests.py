@@ -222,6 +222,64 @@ class StopTransaction:
                 self.issue = "STOP TIMEOUT"
 
 
+LEASE_LIVE_STATES = {
+    "STARTING", "HEATING", "ACTIVE_ZERO", "PAUSED", "NO_PAN", "PROFILE_ZERO"
+}
+
+
+@dataclass
+class CookingLease:
+    """Model the cooking-task lease enforced by the independent power task."""
+
+    generation: int = 0
+    active: bool = False
+    expired: bool = False
+    deadline_ms: int | None = None
+    renewals: int = 0
+    expirations: int = 0
+    stop_reason: str = "NONE"
+
+    def begin(self, now_ms: int, state: str) -> int:
+        assert state == "ARMED"
+        assert not self.active
+        self.generation += 1
+        self.active = True
+        self.expired = False
+        self.deadline_ms = now_ms + 3_000
+        self.renewals = 0
+        return self.generation
+
+    def renew(self, generation: int, now_ms: int, state: str) -> bool:
+        if (
+            not self.active
+            or generation == 0
+            or generation != self.generation
+            or state not in LEASE_LIVE_STATES
+        ):
+            return False
+        if self.deadline_ms is None or now_ms >= self.deadline_ms:
+            self._expire()
+            return False
+        self.deadline_ms = now_ms + 3_000
+        self.renewals += 1
+        return True
+
+    def power_tick(self, now_ms: int) -> None:
+        if self.active and self.deadline_ms is not None and now_ms >= self.deadline_ms:
+            self._expire()
+
+    def normal_stop(self) -> None:
+        self.active = False
+        self.deadline_ms = None
+
+    def _expire(self) -> None:
+        self.active = False
+        self.expired = True
+        self.deadline_ms = None
+        self.expirations += 1
+        self.stop_reason = "COOK LEASE"
+
+
 @dataclass
 class Timer:
     remaining: int
@@ -652,6 +710,59 @@ def run() -> None:
     assert orthogonal_stop.state == "STOPPING" and orthogonal_stop.issue == "NONE"
     orthogonal_stop.feedback(1_500, r26=1, r20=0x17)
     assert orthogonal_stop.issue == "KNOWN R20" and orthogonal_stop.reason == "CANCEL"
+
+    for live_state in LEASE_LIVE_STATES:
+        lease = CookingLease()
+        generation = lease.begin(0, "ARMED")
+        assert lease.renew(generation, 100, live_state)
+        lease.power_tick(2_999)
+        assert lease.active and not lease.expired
+
+    for nonlive_state in {"IDLE", "READY", "DELAYED", "STOPPING", "COMPLETE", "FAULT"}:
+        lease = CookingLease()
+        assert not lease.renew(1, 100, nonlive_state)
+        assert not lease.active and not lease.expired
+
+    suspended_cooking = CookingLease()
+    suspended_cooking.begin(0, "ARMED")
+    suspended_cooking.power_tick(2_999)
+    assert suspended_cooking.active
+    suspended_cooking.power_tick(3_000)
+    assert suspended_cooking.expired
+    assert suspended_cooking.stop_reason == "COOK LEASE"
+    assert suspended_cooking.expirations == 1
+
+    stalled_ui = CookingLease()
+    ui_generation = stalled_ui.begin(0, "ARMED")
+    for timestamp in range(100, 10_001, 100):
+        assert stalled_ui.renew(ui_generation, timestamp, "ACTIVE_ZERO")
+        if timestamp % 500 == 0:
+            stalled_ui.power_tick(timestamp)
+    assert stalled_ui.active and not stalled_ui.expired
+
+    stalled_power = CookingLease()
+    power_generation = stalled_power.begin(0, "ARMED")
+    for timestamp in (1_000, 2_000, 3_000):
+        assert stalled_power.renew(power_generation, timestamp, "PAUSED")
+    assert stalled_power.deadline_ms == 6_000
+    assert not stalled_power.expired  # Power-task watchdog remains a separate guard.
+
+    stale_generation = CookingLease()
+    old_generation = stale_generation.begin(0, "ARMED")
+    stale_generation.normal_stop()
+    new_generation = stale_generation.begin(1_000, "ARMED")
+    deadline = stale_generation.deadline_ms
+    assert new_generation != old_generation
+    assert not stale_generation.renew(old_generation, 1_100, "HEATING")
+    assert stale_generation.deadline_ms == deadline
+    assert stale_generation.renew(new_generation, 1_100, "HEATING")
+
+    stopped_lease = CookingLease()
+    stopped_generation = stopped_lease.begin(0, "ARMED")
+    stopped_lease.normal_stop()
+    stopped_lease.power_tick(10_000)
+    assert not stopped_lease.active and not stopped_lease.expired
+    assert not stopped_lease.renew(stopped_generation, 10_000, "PROFILE_ZERO")
     assert profile_sequence([2400, 1500, 0, 300, 0]) == [1, 2, 4]
     assert profile_sequence([0, 0, 0, 0, 0]) == []
     assert active_zero_command("ACTIVE_ZERO") == (0x81, 0, 0)

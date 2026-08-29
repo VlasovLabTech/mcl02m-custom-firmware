@@ -4,7 +4,7 @@ Status: **in progress; the first bounded fix batch is implemented, while the rem
 
 Audit baseline: `0.2.10-dev`, commit `2b5784e` (`2026-08-28`)
 
-Current source: `0.2.18-dev`. Version `0.2.17-dev` was flashed to the development
+Current source: `0.2.19-dev`. Version `0.2.17-dev` was flashed to the development
 cooker on 2026-08-29 after explicit authorization; retained-session active zero works
 without unexpected relay switching. The source now also keeps the temporary I2C-loss
 OLED counter behind a disabled compile-time flag, so it is absent from the production
@@ -639,15 +639,15 @@ require only `R26=02`.
 
 ### Package 4 — Cooking lease (`C2`)
 
-- [ ] Add a generation-tagged lease renewed only by the cooking task while a live
+- [x] Add a generation-tagged lease renewed only by the cooking task while a live
   session legitimately exists: STARTING, heating, active-zero cooking, manual Pause,
   NoPan recovery and profile zero-power waits.
-- [ ] Do not renew it in ordinary IDLE/READY/DELAYED or after STOPPING begins.
-- [ ] Let the independent 500-ms power task expire the lease and enter the same
+- [x] Do not renew it in ordinary IDLE/READY/DELAYED or after STOPPING begins.
+- [x] Let the independent 500-ms power task expire the lease and enter the same
   repeated transactional Stop even if the cooking task is deadlocked.
-- [ ] Keep the existing power-task watchdog as a separate protection; report lease
+- [x] Keep the existing power-task watchdog as a separate protection; report lease
   expiry and power-task watchdog reset as different causes.
-- [ ] Test suspended cooking, UI and power tasks independently. A UI stall must not
+- [x] Test suspended cooking, UI and power tasks independently. A UI stall must not
   stop valid cooking, but a cooking-task stall must stop it within the lease bound.
 
 ### Package 5 — Confirmed Start, active zero, Pause and Resume

@@ -49,6 +49,9 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     MCL02M_ACTIVE_ZERO_ENABLED=1
     MCL02M_ACTIVE_ZERO_DIAGNOSTICS=1
     MCL02M_COMPACT_UART_TELEMETRY=1
+    # The independent power task stops a live session if the cooking task no
+    # longer renews its generation-tagged three-second lease.
+    MCL02M_COOKING_LEASE_ENABLED=1
     # Separate interface-side emergency cutoff above the 190 C setpoint range.
     # The stock power MCU continues to enforce its native E05 protection.
     MCL02M_MAX_BOTTOM_C=210U

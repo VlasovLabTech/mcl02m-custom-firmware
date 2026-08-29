@@ -43,6 +43,7 @@ typedef enum {
     FAULT_E12_POWER_STATUS,
     FAULT_POWER_STATUS,
     FAULT_START_TIMEOUT,
+    FAULT_COOKING_LEASE,
     FAULT_HARD_RUN_LIMIT,
 } cooker_fault_t;
 
@@ -111,6 +112,11 @@ typedef struct {
     uint32_t stop_elapsed_ms;
     uint32_t stop_generation;
     bool stop_timed_out;
+    uint32_t lease_remaining_ms;
+    uint32_t lease_generation;
+    uint32_t lease_renewals;
+    bool lease_active;
+    bool lease_expired;
     uint32_t run_elapsed_s;
     uint8_t profile_index;
     uint8_t profile_stage_index;

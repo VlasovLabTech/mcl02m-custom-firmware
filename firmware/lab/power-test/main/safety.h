@@ -46,6 +46,12 @@
 #ifndef MCL02M_STOP_CONFIRM_SAMPLES
 #define MCL02M_STOP_CONFIRM_SAMPLES 2U
 #endif
+#ifndef MCL02M_COOKING_LEASE_ENABLED
+#define MCL02M_COOKING_LEASE_ENABLED 0
+#endif
+#ifndef MCL02M_COOKING_LEASE_MS
+#define MCL02M_COOKING_LEASE_MS 3000U
+#endif
 #ifndef MCL02M_ARM_WINDOW_MS
 #define MCL02M_ARM_WINDOW_MS 30000U
 #endif
@@ -61,6 +67,8 @@
 
 _Static_assert(MCL02M_SMALL_COOKWARE_MAX_GEAR <= MCL02M_LOW_TOPOLOGY_MAX_GEAR,
                "small cookware must stay on the stock low-power topology");
+_Static_assert(MCL02M_COOKING_LEASE_MS >= 3U * MCL02M_CONTROL_HEARTBEAT_MS,
+               "cooking lease must span at least three power heartbeats");
 
 static inline bool mcl02m_powerboard_read_selector_allowed(unsigned reg)
 {

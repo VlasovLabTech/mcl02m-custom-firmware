@@ -175,7 +175,7 @@ modified. See [Flashing and recovery](docs/FLASHING.md) before writing anything.
 
 ## Development status
 
-The current source version is `0.2.18-dev`; the development unit runs the
+The current source version is `0.2.19-dev`; the development unit runs the
 hash-verified `0.2.17-dev` image written only to stock `ota_1` at `0x170000` on
 2026-08-29. Supervised testing confirmed retained-session active zero without
 unexpected relay switching, Sleep/Wake, the temporary I2C debug display, and
@@ -200,7 +200,11 @@ model covers accepted, delayed, missing, late, fault, NoPan, warning and I²C-ga
 responses. Unflashed `0.2.18-dev` adds a transactional `STOPPING` state shared by
 normal completion and every safety origin. It continues sending the complete zero
 command until two fresh `R26=00` samples confirm output-off, and it preserves timeout
-or I²C-loss evidence while retrying instead of reporting a false `IDLE/COMPLETE`. The
+or I²C-loss evidence while retrying instead of reporting a false `IDLE/COMPLETE`.
+Unflashed `0.2.19-dev` adds a generation-tagged three-second cooking lease. Only the
+cooking task renews it in a legitimate live session; expiry is detected by the
+independent 500-ms power task and enters the same repeated Stop transaction with a
+distinct `ECL / COOK LEASE` cause. The
 remaining findings and proposed fix sequence are preserved in the
 [state-machine implementation plan](docs/STATE_MACHINE_IMPLEMENTATION_PLAN.md).
 The `0.2.17-dev` app was flashed after explicit owner authorization. Esptool verified

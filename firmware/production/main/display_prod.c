@@ -122,6 +122,7 @@ static void format_fault_code(cooker_fault_t fault, char output[4])
     case FAULT_E12_POWER_STATUS: code = "E12"; break;
     case FAULT_POWER_STATUS: code = "EPB"; break;
     case FAULT_START_TIMEOUT: code = "EST"; break;
+    case FAULT_COOKING_LEASE: code = "ECL"; break;
     case FAULT_HARD_RUN_LIMIT: code = "ETM"; break;
     default: break;
     }

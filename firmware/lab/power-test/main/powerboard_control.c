@@ -48,6 +48,7 @@ static int64_t s_run_deadline_us;
 static int64_t s_start_confirm_deadline_us;
 static int64_t s_stop_started_us;
 static int64_t s_stop_confirm_deadline_us;
+static int64_t s_lease_deadline_us;
 static int64_t s_heartbeat_gap_deadline_us;
 static unsigned s_no_pan_samples;
 static unsigned s_r20_fault_samples;
@@ -398,6 +399,12 @@ static void record_stop_issue_locked(const char *issue)
 #endif
 }
 
+static void invalidate_lease_locked(void)
+{
+    s_status.lease_active = false;
+    s_lease_deadline_us = 0;
+}
+
 static void fault_locked(const char *reason)
 {
     if (s_status.state == PB_STATE_FAULT) {
@@ -409,6 +416,7 @@ static void fault_locked(const char *reason)
     const char *fault_reason = reason == NULL ? "FAULT" : reason;
     capture_start_incident_locked(fault_reason, previous_state);
     start_stop_evidence_locked(fault_reason);
+    invalidate_lease_locked();
     s_status.state = PB_STATE_FAULT;
     s_status.target_gear = 0;
     s_status.applied_gear = 0;
@@ -439,6 +447,7 @@ static void begin_stop_locked(const char *reason)
     const powerboard_state_t previous_state = s_status.state;
 #endif
     start_stop_evidence_locked(reason);
+    invalidate_lease_locked();
     s_status.state = PB_STATE_STOPPING;
     s_status.target_gear = 0;
     s_status.applied_gear = 0;
@@ -456,6 +465,19 @@ static void begin_stop_locked(const char *reason)
 #if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
     ESP_LOGI(TAG, "S,BEGIN,%" PRIu32 ",%s,%s", s_status.stop_generation,
              powerboard_state_name(previous_state), s_status.stop_reason);
+#endif
+}
+
+static void expire_lease_locked(void)
+{
+    if (!s_status.lease_active) return;
+    const uint32_t generation = s_status.lease_generation;
+    s_status.lease_expired = true;
+    ++s_status.lease_expirations;
+    begin_stop_locked("COOK LEASE");
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+    ESP_LOGE(TAG, "L,EXPIRE,%" PRIu32 ",%" PRIu32,
+             generation, s_status.lease_expirations);
 #endif
 }
 
@@ -547,6 +569,14 @@ static void update_time_and_safety(int64_t now_us)
         s_status.state = PB_STATE_STOPPED;
         s_arm_deadline_us = 0;
         strlcpy(s_status.fault, "ARM EXPIRED", sizeof(s_status.fault));
+    }
+    if (s_status.lease_active && s_lease_deadline_us != 0 &&
+        now_us >= s_lease_deadline_us) {
+        if (state_session_open(s_status.state)) {
+            expire_lease_locked();
+        } else {
+            invalidate_lease_locked();
+        }
     }
     if (s_run_deadline_us != 0 && now_us >= s_run_deadline_us &&
         state_session_open(s_status.state)) {
@@ -778,7 +808,8 @@ static void emit_status(void)
              "%04X,%u,%u,%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ","
              "%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ","
              "%" PRIu32 ",%u,%u,%u,%u,%02X,%02X,%" PRIu32 ",%s,"
-             "%" PRIu32 ",%u,%u,%u,%" PRIu32 ",%s,%s",
+             "%" PRIu32 ",%u,%u,%u,%" PRIu32 ",%s,%s,"
+             "%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%u,%u",
              powerboard_state_name(s.state), s.target_gear, s.applied_gear, s.topology,
              s.last_command_0d, s.last_command_00, s.last_command_0c,
              s.registers[0], s.registers[1], s.registers[2], s.registers[3],
@@ -794,9 +825,11 @@ static void emit_status(void)
              s.unknown_r20_value, s.unknown_r20_seq, s.fault,
              s.stop_generation, s.stop_verified ? 1U : 0U,
              s.stop_confirm_samples, s.stop_timed_out ? 1U : 0U,
-             s.stop_elapsed_ms, s.stop_reason, s.stop_issue);
+             s.stop_elapsed_ms, s.stop_reason, s.stop_issue,
+             s.lease_generation, s.lease_remaining_ms, s.lease_renewals,
+             s.lease_active ? 1U : 0U, s.lease_expired ? 1U : 0U);
 #endif
-    char json[1536];
+    char json[1792];
     powerboard_control_status_json(json, sizeof(json));
     telemetry_emit(json);
 }
@@ -983,6 +1016,7 @@ void powerboard_control_get_status(powerboard_status_t *status)
     status->arm_remaining_ms = remaining_ms(s_arm_deadline_us, now);
     status->start_confirm_remaining_ms = remaining_ms(s_start_confirm_deadline_us, now);
     status->stop_confirm_remaining_ms = remaining_ms(s_stop_confirm_deadline_us, now);
+    status->lease_remaining_ms = remaining_ms(s_lease_deadline_us, now);
     status->heartbeat_gap_remaining_ms = remaining_ms(s_heartbeat_gap_deadline_us, now);
     if (s_stop_started_us != 0 && now >= s_stop_started_us)
         status->stop_elapsed_ms = (uint32_t)((now - s_stop_started_us) / 1000);
@@ -1010,6 +1044,10 @@ size_t powerboard_control_status_json(char *output, size_t output_size)
         "\"stop_generation\":%" PRIu32 ",\"stop_confirm_samples\":%u,"
         "\"stop_verified\":%s,\"stop_timed_out\":%s,"
         "\"stop_reason\":\"%s\",\"stop_issue\":\"%s\","
+        "\"lease_active\":%s,\"lease_expired\":%s,"
+        "\"lease_remaining_ms\":%" PRIu32 ","
+        "\"lease_generation\":%" PRIu32 ",\"lease_renewals\":%" PRIu32 ","
+        "\"lease_expirations\":%" PRIu32 ","
         "\"hb_gap_ms\":%" PRIu32 ","
         "\"hb_gap_observed_stop\":%s,\"cycles\":%" PRIu32 ",\"bad_cycles\":%" PRIu32 ","
         "\"consecutive_bad_cycles\":%" PRIu32 ","
@@ -1034,6 +1072,9 @@ size_t powerboard_control_status_json(char *output, size_t output_size)
         s.stop_confirm_remaining_ms, s.stop_generation, s.stop_confirm_samples,
         s.stop_verified ? "true" : "false",
         s.stop_timed_out ? "true" : "false", s.stop_reason, s.stop_issue,
+        s.lease_active ? "true" : "false", s.lease_expired ? "true" : "false",
+        s.lease_remaining_ms, s.lease_generation, s.lease_renewals,
+        s.lease_expirations,
         s.heartbeat_gap_remaining_ms,
         s.heartbeat_gap_observed_stop ? "true" : "false", s.completed_cycles,
         s.bad_cycles, s.consecutive_bad_cycles,
@@ -1077,8 +1118,13 @@ esp_err_t powerboard_control_start(unsigned gear, unsigned duration_ms)
         duration_ms > MCL02M_MAX_RUN_MS) return ESP_ERR_INVALID_ARG;
     xSemaphoreTake(s_status_lock, portMAX_DELAY);
     const int64_t now = esp_timer_get_time();
+#if MCL02M_COOKING_LEASE_ENABLED
+    const bool lease_ready = s_status.lease_active && s_lease_deadline_us > now;
+#else
+    const bool lease_ready = true;
+#endif
     if (s_status.state != PB_STATE_ARMED || s_arm_deadline_us <= now ||
-        !preflight_healthy_locked()) {
+        !lease_ready || !preflight_healthy_locked()) {
         xSemaphoreGive(s_status_lock);
         return ESP_ERR_INVALID_STATE;
     }
@@ -1236,6 +1282,64 @@ esp_err_t powerboard_control_stop(const char *reason)
     xSemaphoreGive(s_status_lock);
     if (s_control_task != NULL) xTaskNotifyGive(s_control_task);
     return ESP_OK;
+}
+
+esp_err_t powerboard_control_lease_begin(uint32_t *generation)
+{
+#if !MCL02M_COOKING_LEASE_ENABLED
+    (void)generation;
+    return ESP_ERR_NOT_SUPPORTED;
+#else
+    if (generation == NULL) return ESP_ERR_INVALID_ARG;
+    xSemaphoreTake(s_status_lock, portMAX_DELAY);
+    if (s_status.state != PB_STATE_ARMED || s_status.lease_active) {
+        xSemaphoreGive(s_status_lock);
+        return ESP_ERR_INVALID_STATE;
+    }
+    ++s_status.lease_generation;
+    if (s_status.lease_generation == 0) ++s_status.lease_generation;
+    s_status.lease_active = true;
+    s_status.lease_expired = false;
+    s_status.lease_renewals = 0;
+    s_lease_deadline_us = esp_timer_get_time() +
+        (int64_t)MCL02M_COOKING_LEASE_MS * 1000;
+    *generation = s_status.lease_generation;
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+    ESP_LOGI(TAG, "L,BEGIN,%" PRIu32 ",%u", *generation,
+             MCL02M_COOKING_LEASE_MS);
+#endif
+    xSemaphoreGive(s_status_lock);
+    return ESP_OK;
+#endif
+}
+
+esp_err_t powerboard_control_lease_renew(uint32_t generation)
+{
+#if !MCL02M_COOKING_LEASE_ENABLED
+    (void)generation;
+    return ESP_ERR_NOT_SUPPORTED;
+#else
+    const int64_t now_us = esp_timer_get_time();
+    bool expired = false;
+    xSemaphoreTake(s_status_lock, portMAX_DELAY);
+    if (!s_status.lease_active || generation == 0 ||
+        generation != s_status.lease_generation ||
+        !state_session_open(s_status.state)) {
+        xSemaphoreGive(s_status_lock);
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (s_lease_deadline_us == 0 || now_us >= s_lease_deadline_us) {
+        expire_lease_locked();
+        expired = true;
+    } else {
+        s_lease_deadline_us = now_us +
+            (int64_t)MCL02M_COOKING_LEASE_MS * 1000;
+        ++s_status.lease_renewals;
+    }
+    xSemaphoreGive(s_status_lock);
+    if (expired && s_control_task != NULL) xTaskNotifyGive(s_control_task);
+    return expired ? ESP_ERR_TIMEOUT : ESP_OK;
+#endif
 }
 
 esp_err_t powerboard_control_heartbeat_gap(unsigned duration_ms)
