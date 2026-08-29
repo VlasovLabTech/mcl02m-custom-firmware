@@ -145,7 +145,7 @@ def main() -> int:
             "pausing_no_pan && s_no_pan_announced" in engine,
             "NoPan melody loop is interrupted on pan return, Stop or Pause")
     require("sound_stop();" in engine[engine.find("case INTENT_ACK"):
-                                      engine.find("case INTENT_TIMER_SET")],
+                                      engine.find("case INTENT_SCHEDULE_REL")],
             "fault acknowledgement immediately silences a remaining alarm pattern")
     require("/api/control" not in web and "control_handler" not in web,
             "web firmware exposes no heating-control endpoint")
@@ -235,7 +235,7 @@ def main() -> int:
             "xSemaphoreTake(s_lock, portMAX_DELAY);" in
             engine[engine.find("esp_err_t cooking_set_mode"):
                    engine.find("esp_err_t cooking_profile_select")],
-            "return post(INTENT_START, 0, false, NULL);" in engine and
+            "return post(INTENT_START, 0, NULL);" in engine and
             "mode, power and temperature changes complete before queued Start")
     require("static bool state_configurable" in engine and
             "state == COOK_STATE_READY || state == COOK_STATE_COMPLETE" in engine and
@@ -336,7 +336,7 @@ def main() -> int:
             "Simplified Chinese is a persisted third language with complete compact OLED glyph coverage")
     require("ui_controller_timer_editing()" in indicators and
             "s_timer_editing = true" in ui,
-            "timer LED is on immediately while the two-field editor is open")
+            "timer LED is on immediately while the three-stage editor is open")
     require("return event->value < 0 ? magnitude : -magnitude;" in ui,
             "clockwise encoder rotation increases menu and setpoint values")
     require("#define HOME_ITEMS 7" in ui and
@@ -386,9 +386,25 @@ def main() -> int:
     require("ui_controller_setpoint_editing()" in indicators and
             "cooker.state == COOK_STATE_READY" in indicators,
             "readiness LEDs stop blinking after leaving POWER/TEMPERATURE editing")
-    require("VIEW_TIMER_DISABLE" in ui and "cooking_timer_toggle();" in ui and
+    require("VIEW_TIMER_DISABLE" in ui and "cooking_timer_disable()" in ui and
+            "INTENT_TIMER_TOGGLE" not in engine and
+            "s_status.timer_enabled = false;" in engine and
             "if (s_timer_editing) close_timer_editor();" in ui,
-            "an active timer requires center confirmation to disable; Timer backs out unchanged")
+            "an active timer uses synchronous explicit disable; Timer backs out unchanged")
+    require("VIEW_TIMER_SECONDS" in ui and "VIEW_TIMER_MINUTES" in ui and
+            "s_view = VIEW_TIMER_MINUTES;" in ui and
+            "s_view = VIEW_TIMER_HOURS;" in ui and
+            "s_timer_minutes * 60U + s_timer_seconds" in ui and
+            'tr(lang, "SECONDS", "СЕКУНДЫ", "秒")' in ui and
+            'tr(lang, "MINUTES", "МИНУТЫ", "分钟")' in ui,
+            "timer editor confirms seconds, then minutes, then hours")
+    timer_api = engine[engine.find("esp_err_t cooking_timer_set"):
+                       engine.find("esp_err_t cooking_schedule_relative")]
+    require("xSemaphoreTake(s_lock, portMAX_DELAY);" in timer_api and
+            "s_status.timer_enabled = true;" in timer_api and
+            "s_status.timer_enabled = false;" in timer_api and
+            "post(" not in timer_api,
+            "timer Set and Disable complete synchronously without queued toggle races")
     require("status.state == COOK_STATE_DELAYED" in ui and "cooking_schedule_cancel();" in ui and
             "VIEW_START_IN_MINUTES" in ui and "VIEW_START_IN_HOURS" in ui,
             "center hold cancels delayed Start and START IN edits minutes then hours")

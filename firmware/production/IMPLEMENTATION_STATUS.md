@@ -1,7 +1,7 @@
 # MCL02M custom firmware — implementation status
 
 Дата: 2026-08-29
-Версия исходников: `0.2.15-dev`
+Версия исходников: `0.2.16-dev`
 Статус: the development unit runs the hash-verified `0.2.14-dev` app written only to
 stock `ota_1` at `0x170000` on 2026-08-29. It booted successfully, and supervised
 testing confirmed retained-session active zero without unwanted relay switching,
@@ -14,6 +14,8 @@ power-board `R28` on a dedicated four-line, left-aligned OLED screen. The
 unflashed `0.2.15-dev` source excludes the temporary I2C-loss counter from the
 production menu and OLED while preserving that implementation behind a disabled
 compile-time flag. Internal E09 counting and compact diagnostics are unchanged. The
+unflashed `0.2.16-dev` source also replaces the queued timer toggle with synchronous
+Set/Disable and uses a seconds, minutes, hours confirmation sequence. The
 earlier one-time NVS refresh is complete and must not be repeated automatically.
 
 ## Реализованный пользовательский контур
@@ -32,7 +34,7 @@ earlier one-time NVS refresh is complete and must not be repeated automatically.
 | Sleep | default 1 min Idle; wake returns to Home/Power, or Home/Temperature when Sleep began from Temperature; secondary menu selections are never restored; heartbeat and safety continue at zero output |
 | OLED | renderer использует полные `64×48` без отладочной рамки; десять 1-bit картинок показывают turn-on 5 s синхронно с boot-мелодией, wake 3 s, cooking 2,5 s, confirm/cancel 1,5 s, ready/no-pan/error до изменения состояния и две 10-s стадии Sleep; active timeout default 3 min; первое нажатие/вращение только будит; encoder guard 1,5 s |
 | TIMER SCREEN | `AUTO` полностью гасит OLED; `ALWAYS` оставляет только countdown и перемещает его раз в минуту |
-| Cooking timer | крупные редакторы `MM:SS → HH`, максимум 5 h; при остатке ≥1 h рабочий экран показывает `H:MM′`, ниже часа — `MM:SS″`; TIMER открывает редактор, активный timer отключается только подтверждением центра; RAM only |
+| Cooking timer | large `MM:SS` editor confirms blinking seconds first and blinking minutes second, followed by a separate hours confirmation; maximum 5 h; Set and Disable complete synchronously, an all-zero value is rejected, and rapid disable/re-enable cannot race queued toggles; at ≥1 h the running screen shows `H:MM′`, below one hour `MM:SS″`; RAM only |
 | Delayed start | крупные `START IN/START AT` (`СТАРТ ЧЕРЕЗ/СТАРТ В`) `HH:MM`; максимум ближайшие 24 h; Cancel или hold центра отменяют; RAM only; timer LED мигает; при NoPan ждёт 60 s |
 | Clock | отдельный пункт `CLOCK/ЧАСЫ` показывает идущие `HH:MM`; ручные 24-часовые `HH:MM` без секунд и без flash-write; реальная SNTP-синхронизация всегда приоритетнее ручной установки; после полного снятия питания offline clock снова недействителен |
 | Profiles | five NVS profiles with up to five timed POWER/TEMPERATURE cells; POWER gear 0 is an active-zero wait cell and is not subject to the manual-Pause timeout; zero duration skips a cell; total maximum 5 h; Load still requires a separate physical Start |

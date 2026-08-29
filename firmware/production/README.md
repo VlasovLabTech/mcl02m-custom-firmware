@@ -13,7 +13,7 @@
 - `R26=01` restricted-cookware feedback is accepted as normal heating and caps every
   control path at real gear `35`/`A1`; POWER reports the permitted value, blocks only
   upward edits above 35, and displays a temporary explanatory message;
-- physical Settings shows both `0.2.15-dev` firmware and live raw `R28` power-board
+- physical Settings shows both `0.2.16-dev` firmware and live raw `R28` power-board
   revision/type with four left-aligned rows;
 - `R20=2B/29/2A` are silent nonfaults; another unknown nonzero `R20` shows its exact
   hex value as a persistent warning, and the first physical input dismisses only the
@@ -22,8 +22,8 @@
   performs a full Stop after 2 h while ordinary zero-power sessions continue;
 - Stop, Pause/Resume, NoPan `60 s` с обязательным циклом `мелодия → пауза 3 s`
   даже при `SOUND OFF`, critical fault latch, IGBT/bottom guards;
-- cooking timer `MM:SS + HH` до 5 h, подтверждаемое отключение, RAM-last-value,
-  COMPLETE melody;
+- cooking timer up to 5 h with sequential `SECONDS → MINUTES → HOURS` confirmation,
+  synchronous explicit Set/Disable, RAM-last-value, and COMPLETE melody;
 - `START IN` и `START AT`, только после физического задания/разрешения;
 - OLED-off/wake guard, 9 LED мощности, timer LED, blue/orange status, buzzer;
 - полноэкранные `64×48` turn-on/wake/cooking/confirm/cancel/ready/no-pan/error/

@@ -23,8 +23,8 @@ esp_err_t cooking_wake(void);
 esp_err_t cooking_acknowledge(void);
 esp_err_t cooking_acknowledge_warning(void);
 
-esp_err_t cooking_timer_set(uint32_t seconds, bool enabled);
-esp_err_t cooking_timer_toggle(void);
+esp_err_t cooking_timer_set(uint32_t seconds);
+esp_err_t cooking_timer_disable(void);
 esp_err_t cooking_schedule_relative(uint32_t delay_s);
 esp_err_t cooking_schedule_absolute(int64_t epoch_s);
 esp_err_t cooking_schedule_cancel(void);

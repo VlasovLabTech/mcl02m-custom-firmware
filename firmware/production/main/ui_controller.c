@@ -45,7 +45,8 @@ typedef enum {
     VIEW_READINGS,
     VIEW_SETTINGS,
     VIEW_SETTING_VALUE,
-    VIEW_TIMER_MMSS,
+    VIEW_TIMER_SECONDS,
+    VIEW_TIMER_MINUTES,
     VIEW_TIMER_HOURS,
     VIEW_TIMER_DISABLE,
     VIEW_START_MENU,
@@ -71,8 +72,9 @@ static unsigned s_setting;
 static unsigned s_start_selection;
 static unsigned s_wifi_selection;
 static int s_setting_value;
-static uint32_t s_timer_mmss;
-static uint32_t s_timer_hours;
+static unsigned s_timer_seconds;
+static unsigned s_timer_minutes;
+static unsigned s_timer_hours;
 static unsigned s_temperature_edit_value = 100U;
 static unsigned s_start_in_minutes = 10;
 static unsigned s_start_in_hours;
@@ -92,6 +94,12 @@ static bool s_swallow_timer;
 static volatile bool s_timer_editing;
 static view_t s_timer_return_view;
 static unsigned s_wake_selection;
+
+static void reset_encoder_acceleration(void)
+{
+    s_last_encoder_us = 0;
+    s_fast_streak = 0;
+}
 
 static void remember_primary_wake_selection(void)
 {
@@ -338,13 +346,20 @@ static void render(void)
         } else snprintf(l2, sizeof(l2), "%d", s_setting_value);
         snprintf(l4, sizeof(l4), "%s", tr(lang, "PRESS SAVE", "НАЖ СОХР", "按键保存"));
         break;
-    case VIEW_TIMER_MMSS: {
-        char value[16];
-        snprintf(value, sizeof(value), "%02lu:%02lu", (unsigned long)(s_timer_mmss / 60),
-                 (unsigned long)(s_timer_mmss % 60));
-        if (!blink_on) strlcpy(value, "  :  ", sizeof(value));
+    case VIEW_TIMER_SECONDS:
+    case VIEW_TIMER_MINUTES: {
+        char minutes[4], seconds[4], value[16];
+        snprintf(minutes, sizeof(minutes), "%02u", s_timer_minutes);
+        snprintf(seconds, sizeof(seconds), "%02u", s_timer_seconds);
+        if (!blink_on) {
+            if (s_view == VIEW_TIMER_SECONDS) strlcpy(seconds, "  ", sizeof(seconds));
+            else strlcpy(minutes, "  ", sizeof(minutes));
+        }
+        snprintf(value, sizeof(value), "%s:%s", minutes, seconds);
         display_prod_set_time_editor_overlay(tr(lang, "TIMER", "ТАЙМЕР", "定时器"), value,
-                                             tr(lang, "MIN SEC", "МИН СЕК", "分 秒"));
+                                             s_view == VIEW_TIMER_SECONDS ?
+                                             tr(lang, "SECONDS", "СЕКУНДЫ", "秒") :
+                                             tr(lang, "MINUTES", "МИНУТЫ", "分钟"));
         return;
     }
     case VIEW_TIMER_HOURS: {
@@ -534,14 +549,16 @@ static void open_timer_action(void)
         return;
     }
     s_temperature_edit_deadline_us = 0;
+    reset_encoder_acceleration();
     s_timer_return_view = s_view;
     s_timer_editing = true;
     if (status.timer_enabled) {
         s_view = VIEW_TIMER_DISABLE;
     } else {
         s_timer_hours = status.timer_last_s / 3600U;
-        s_timer_mmss = status.timer_last_s % 3600U;
-        s_view = VIEW_TIMER_MMSS;
+        s_timer_minutes = (status.timer_last_s / 60U) % 60U;
+        s_timer_seconds = status.timer_last_s % 60U;
+        s_view = VIEW_TIMER_SECONDS;
     }
 }
 
@@ -657,7 +674,9 @@ static bool toggle_wifi(void)
 
 static void encoder_event(const ui_input_event_t *event)
 {
-    const int step = encoder_step(event, s_view == VIEW_TIMER_MMSS);
+    const bool timer_field = s_view == VIEW_TIMER_SECONDS || s_view == VIEW_TIMER_MINUTES;
+    const int step = encoder_step(event, timer_field);
+    const int timer_step = step > 1 ? 5 : (step < -1 ? -5 : step);
     cooker_snapshot_t status;
     cooking_engine_get_snapshot(&status);
     switch (s_view) {
@@ -685,13 +704,20 @@ static void encoder_event(const ui_input_event_t *event)
         else s_setting_value = clamp(s_setting_value + (step > 0 ? 30 : -30), -720, 840);
         break;
     case VIEW_WIFI_MENU: s_wifi_selection = (unsigned)clamp((int)s_wifi_selection + (step > 0 ? 1 : -1), 0, WIFI_ITEMS - 1); break;
-    case VIEW_TIMER_MMSS:
-        s_timer_mmss = (uint32_t)clamp((int)s_timer_mmss + step, 0,
-                                      s_timer_hours == 5 ? 0 : 3599);
+    case VIEW_TIMER_SECONDS:
+        s_timer_seconds = (unsigned)clamp((int)s_timer_seconds + timer_step, 0, 59);
+        if (s_timer_hours == 5U && s_timer_seconds != 0U) s_timer_hours = 4U;
+        break;
+    case VIEW_TIMER_MINUTES:
+        s_timer_minutes = (unsigned)clamp((int)s_timer_minutes + timer_step, 0, 59);
+        if (s_timer_hours == 5U && s_timer_minutes != 0U) s_timer_hours = 4U;
         break;
     case VIEW_TIMER_HOURS:
-        s_timer_hours = (uint32_t)clamp((int)s_timer_hours + (step > 0 ? 1 : -1), 0, 5);
-        if (s_timer_hours == 5) s_timer_mmss = 0;
+        s_timer_hours = (unsigned)clamp((int)s_timer_hours + (step > 0 ? 1 : -1), 0, 5);
+        if (s_timer_hours == 5U) {
+            s_timer_minutes = 0;
+            s_timer_seconds = 0;
+        }
         break;
     case VIEW_TIMER_DISABLE:
         break;
@@ -724,14 +750,19 @@ static void central_short(void)
     }
     if (s_timer_editing) {
         if (s_view == VIEW_TIMER_DISABLE) {
-            cooking_timer_toggle();
-            close_timer_editor();
-        } else if (s_view == VIEW_TIMER_MMSS) {
+            if (cooking_timer_disable() == ESP_OK) close_timer_editor();
+            else sound_play(SOUND_WARNING);
+        } else if (s_view == VIEW_TIMER_SECONDS) {
+            s_view = VIEW_TIMER_MINUTES;
+            reset_encoder_acceleration();
+        } else if (s_view == VIEW_TIMER_MINUTES) {
             s_view = VIEW_TIMER_HOURS;
+            reset_encoder_acceleration();
         } else {
-            const uint32_t seconds = s_timer_hours * 3600U + s_timer_mmss;
-            cooking_timer_set(seconds, seconds > 0);
-            close_timer_editor();
+            const uint32_t seconds = s_timer_hours * 3600U +
+                                     s_timer_minutes * 60U + s_timer_seconds;
+            if (cooking_timer_set(seconds) == ESP_OK) close_timer_editor();
+            else sound_play(SOUND_WARNING);
         }
         return;
     }
@@ -796,7 +827,8 @@ static void central_short(void)
         else open_setting_value();
         break;
     case VIEW_SETTING_VALUE: save_setting(); break;
-    case VIEW_TIMER_MMSS:
+    case VIEW_TIMER_SECONDS:
+    case VIEW_TIMER_MINUTES:
     case VIEW_TIMER_HOURS:
     case VIEW_TIMER_DISABLE:
         break;

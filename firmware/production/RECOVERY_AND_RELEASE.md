@@ -2,7 +2,7 @@
 
 Этот документ описывает будущую процедуру, но **не разрешает запись сейчас**.
 
-Current reference app artifact: `build/mcl02m_custom.bin` (`0.2.15-dev`). Its exact
+Current reference app artifact: `build/mcl02m_custom.bin` (`0.2.16-dev`). Its exact
 size and SHA-256 are recorded in `BUILD_MANIFEST.md`. This artifact has not been
 flashed. The development unit remains on the hash-verified `0.2.14-dev` image written
 to stock `ota_1` at `0x170000` on 2026-08-29. No other partition was written.

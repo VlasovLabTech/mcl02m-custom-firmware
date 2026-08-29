@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.16-dev — 2026-08-29
+
+- Replaced the queued timer toggle with synchronous, explicit Set and Disable
+  operations. Rapid disable/reopen/set sequences can no longer observe stale state or
+  invert a later command by processing two delayed toggles.
+- Split the cooking-timer editor into three confirmations: seconds, minutes, then
+  hours. Seconds and minutes share the `MM:SS` screen with only the active field
+  blinking; hours retain their separate screen.
+- Added bounded fast rotation for seconds/minutes, rejected an all-zero timer instead
+  of silently closing without a visible countdown, and retained the five-hour limit.
+- Added executable lifecycle and field-composition tests plus static regression gates
+  for synchronous timer mutation and the three-stage editor.
+
 ## 0.2.15-dev — 2026-08-29
 
 - Removed the temporary I2C-loss counter from the production OLED and physical

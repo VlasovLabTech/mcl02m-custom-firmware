@@ -33,8 +33,6 @@ typedef enum {
     INTENT_WAKE,
     INTENT_ACK,
     INTENT_ACK_WARNING,
-    INTENT_TIMER_SET,
-    INTENT_TIMER_TOGGLE,
     INTENT_SCHEDULE_REL,
     INTENT_SCHEDULE_ABS,
     INTENT_SCHEDULE_CANCEL,
@@ -43,7 +41,6 @@ typedef enum {
 typedef struct {
     intent_type_t type;
     int64_t value;
-    bool flag;
     char reason[24];
 } intent_t;
 
@@ -700,21 +697,6 @@ static void handle_intent_locked(const intent_t *intent)
             emit_status("unknown_r20_ack");
         }
         break;
-    case INTENT_TIMER_SET:
-        if (s_status.mode != COOK_MODE_PROFILE &&
-            intent->value >= 0 && intent->value <= COOKER_MAX_TIMER_S) {
-            s_status.timer_last_s = (uint32_t)intent->value;
-            s_status.timer_remaining_s = (uint32_t)intent->value;
-            s_status.timer_enabled = intent->flag && intent->value > 0;
-            s_timer_accumulator_us = 0;
-        }
-        break;
-    case INTENT_TIMER_TOGGLE:
-        if (s_status.mode != COOK_MODE_PROFILE) {
-            s_status.timer_enabled = !s_status.timer_enabled && s_status.timer_last_s > 0;
-            if (s_status.timer_enabled) s_status.timer_remaining_s = s_status.timer_last_s;
-        }
-        break;
     case INTENT_SCHEDULE_REL:
         if (state_schedulable(s_status.state) &&
             intent->value >= 1 && intent->value <= 24 * 60 * 60) {
@@ -830,10 +812,10 @@ esp_err_t cooking_engine_init(void)
            ESP_OK : ESP_ERR_NO_MEM;
 }
 
-static esp_err_t post(intent_type_t type, int64_t value, bool flag, const char *reason)
+static esp_err_t post(intent_type_t type, int64_t value, const char *reason)
 {
     if (s_queue == NULL) return ESP_ERR_INVALID_STATE;
-    intent_t intent = {.type = type, .value = value, .flag = flag};
+    intent_t intent = {.type = type, .value = value};
     if (reason != NULL) strlcpy(intent.reason, reason, sizeof(intent.reason));
     return xQueueSend(s_queue, &intent, pdMS_TO_TICKS(100)) == pdTRUE ?
            ESP_OK : ESP_ERR_TIMEOUT;
@@ -924,23 +906,51 @@ esp_err_t cooking_profile_select(unsigned index)
 }
 esp_err_t cooking_start(void)
 {
-    return post(INTENT_START, 0, false, NULL);
+    return post(INTENT_START, 0, NULL);
 }
-esp_err_t cooking_stop(const char *reason) { return post(INTENT_STOP, 0, false, reason == NULL ? "USER STOP" : reason); }
-esp_err_t cooking_pause_resume(void) { return post(INTENT_PAUSE_RESUME, 0, false, NULL); }
-esp_err_t cooking_sleep(void) { return post(INTENT_SLEEP, 0, false, NULL); }
-esp_err_t cooking_wake(void) { return post(INTENT_WAKE, 0, false, NULL); }
-esp_err_t cooking_acknowledge(void) { return post(INTENT_ACK, 0, false, NULL); }
-esp_err_t cooking_acknowledge_warning(void) { return post(INTENT_ACK_WARNING, 0, false, NULL); }
-esp_err_t cooking_timer_set(uint32_t seconds, bool enabled) { return seconds <= COOKER_MAX_TIMER_S ? post(INTENT_TIMER_SET, seconds, enabled, NULL) : ESP_ERR_INVALID_ARG; }
-esp_err_t cooking_timer_toggle(void) { return post(INTENT_TIMER_TOGGLE, 0, false, NULL); }
+esp_err_t cooking_stop(const char *reason) { return post(INTENT_STOP, 0, reason == NULL ? "USER STOP" : reason); }
+esp_err_t cooking_pause_resume(void) { return post(INTENT_PAUSE_RESUME, 0, NULL); }
+esp_err_t cooking_sleep(void) { return post(INTENT_SLEEP, 0, NULL); }
+esp_err_t cooking_wake(void) { return post(INTENT_WAKE, 0, NULL); }
+esp_err_t cooking_acknowledge(void) { return post(INTENT_ACK, 0, NULL); }
+esp_err_t cooking_acknowledge_warning(void) { return post(INTENT_ACK_WARNING, 0, NULL); }
+esp_err_t cooking_timer_set(uint32_t seconds)
+{
+    if (seconds == 0 || seconds > COOKER_MAX_TIMER_S) return ESP_ERR_INVALID_ARG;
+    if (s_lock == NULL) return ESP_ERR_INVALID_STATE;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    if (s_status.mode == COOK_MODE_PROFILE) {
+        xSemaphoreGive(s_lock);
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_status.timer_last_s = seconds;
+    s_status.timer_remaining_s = seconds;
+    s_status.timer_enabled = true;
+    s_timer_accumulator_us = 0;
+    xSemaphoreGive(s_lock);
+    return ESP_OK;
+}
+
+esp_err_t cooking_timer_disable(void)
+{
+    if (s_lock == NULL) return ESP_ERR_INVALID_STATE;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    if (s_status.mode == COOK_MODE_PROFILE) {
+        xSemaphoreGive(s_lock);
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_status.timer_enabled = false;
+    s_timer_accumulator_us = 0;
+    xSemaphoreGive(s_lock);
+    return ESP_OK;
+}
 esp_err_t cooking_schedule_relative(uint32_t delay_s)
 {
     if (delay_s < 1 || delay_s > 24U * 60U * 60U) return ESP_ERR_INVALID_ARG;
     cooker_snapshot_t snapshot;
     cooking_engine_get_snapshot(&snapshot);
     if (!state_schedulable(snapshot.state)) return ESP_ERR_INVALID_STATE;
-    return post(INTENT_SCHEDULE_REL, delay_s, false, NULL);
+    return post(INTENT_SCHEDULE_REL, delay_s, NULL);
 }
 esp_err_t cooking_schedule_absolute(int64_t epoch_s)
 {
@@ -950,6 +960,6 @@ esp_err_t cooking_schedule_absolute(int64_t epoch_s)
     cooking_engine_get_snapshot(&snapshot);
     if (!state_schedulable(snapshot.state)) return ESP_ERR_INVALID_STATE;
     if (!snapshot.clock_valid) return ESP_ERR_INVALID_STATE;
-    return post(INTENT_SCHEDULE_ABS, epoch_s, false, NULL);
+    return post(INTENT_SCHEDULE_ABS, epoch_s, NULL);
 }
-esp_err_t cooking_schedule_cancel(void) { return post(INTENT_SCHEDULE_CANCEL, 0, false, NULL); }
+esp_err_t cooking_schedule_cancel(void) { return post(INTENT_SCHEDULE_CANCEL, 0, NULL); }

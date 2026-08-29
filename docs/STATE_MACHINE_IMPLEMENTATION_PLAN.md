@@ -4,7 +4,7 @@ Status: **in progress; the first bounded fix batch is implemented, while the rem
 
 Audit baseline: `0.2.10-dev`, commit `2b5784e` (`2026-08-28`)
 
-Current source: `0.2.15-dev`. Version `0.2.14-dev` was flashed to the development
+Current source: `0.2.16-dev`. Version `0.2.14-dev` was flashed to the development
 cooker on 2026-08-29 and booted successfully; retained-session active zero works
 without unexpected relay switching. The source now also keeps the temporary I2C-loss
 OLED counter behind a disabled compile-time flag, so it is absent from the production
@@ -431,6 +431,21 @@ Recommended change:
 - Test zero-to-low, zero-to-high, Pause-to-low and Pause-to-high transitions while
   logging relays, fan, `R20`, `R26` and the transmitted commands.
 
+### M9. Queued timer Toggle can race immediate disable/re-enable actions
+
+Implementation status: **fixed in unflashed `0.2.16-dev`**.
+
+The former Timer disable prompt posted `INTENT_TIMER_TOGGLE` and immediately closed
+the editor. Reopening before the cooking task consumed the queue read stale
+`timer_enabled`; two quick toggle intents could also invert each other. A later Set
+was queued independently, so the screen could return before the new timer was
+actually visible in the shared snapshot.
+
+The timer API now performs explicit Set or Disable synchronously under the cooking
+lock. The editor confirms seconds, minutes and hours in order, and an all-zero Set is
+rejected instead of silently closing with no countdown. Regression tests cover
+set → disable → set and repeated disable/re-enable sequences.
+
 ## 6. Lower-priority consistency findings
 
 These are unlikely to be immediate safety failures, but fixing them will make future
@@ -667,6 +682,8 @@ require only `R26=02`.
 
 ### Package 7 — Timers, profiles and Delayed Start UI
 
+- [x] Replace queued timer Toggle with synchronous explicit Set/Disable and split the
+  editor into seconds, minutes and hours (`0.2.16-dev`).
 - [ ] Separate user cooking countdown, accumulated heating-on time, retained-session
   wall time, manual-Pause time, profile zero-power wait time and the safety lease.
 - [ ] Replace or scope the lower five-hour deadline only after the lease exists.

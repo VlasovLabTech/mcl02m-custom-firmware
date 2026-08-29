@@ -13,6 +13,34 @@ class Timer:
             self.remaining = max(0, self.remaining - seconds)
 
 
+@dataclass
+class TimerControl:
+    last: int = 270
+    remaining: int = 270
+    enabled: bool = False
+
+    def set(self, seconds: int) -> None:
+        assert 0 < seconds <= 5 * 60 * 60
+        self.last = seconds
+        self.remaining = seconds
+        self.enabled = True
+
+    def disable(self) -> None:
+        self.enabled = False
+
+
+def timer_fields(total_s: int) -> tuple[int, int, int]:
+    assert 0 <= total_s <= 5 * 60 * 60
+    return total_s % 60, (total_s // 60) % 60, total_s // 3600
+
+
+def timer_total(seconds: int, minutes: int, hours: int) -> int:
+    assert 0 <= seconds <= 59 and 0 <= minutes <= 59 and 0 <= hours <= 5
+    total = hours * 3600 + minutes * 60 + seconds
+    assert 0 < total <= 5 * 60 * 60
+    return total
+
+
 def braking_margin(target: int, rise_4s: int) -> int:
     margin = min(20, 10 + max(0, rise_4s))
     return max(margin, 15) if target >= 170 else margin
@@ -185,6 +213,18 @@ def run() -> None:
     assert timer.remaining == 260
     timer.tick("COOKING", 260)
     assert timer.remaining == 0
+
+    control = TimerControl()
+    control.set(5 * 60)
+    control.disable()
+    control.set(40 * 60)
+    assert control.enabled and control.last == 2400 and control.remaining == 2400
+    control.disable()
+    control.set(45)
+    assert control.enabled and control.remaining == 45
+    assert timer_fields(4 * 3600 + 40 * 60 + 25) == (25, 40, 4)
+    assert timer_total(25, 40, 4) == 4 * 3600 + 40 * 60 + 25
+    assert timer_total(0, 0, 5) == 5 * 60 * 60
 
     assert temperature_step("PREHEAT", 100, 20) == ("PREHEAT", 99)
     assert temperature_step("PREHEAT", 100, 75) == ("PREHEAT", 77)

@@ -3,7 +3,7 @@
 Build date: 2026-08-29
 ESP-IDF: 6.0.2
 Target: ESP32, Unicore
-Firmware: `0.2.15-dev`
+Firmware: `0.2.16-dev`
 
 The app header embeds compile metadata, so a clean rebuild may have a different
 SHA-256 while retaining the same source, layout, size and validation gates.
@@ -12,17 +12,17 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 ## App image
 
 - File: `build/mcl02m_custom.bin`
-- Size: `884864` bytes (`0xD8080`)
-- SHA-256: `2e255804eb67b947f9e4caf607a4c381c3b16e58275ae5df07dfff58761542e7`
-- ESP image validation hash: `1d89039a95400cce146def83e6469eb4316a6caa22961d925020be5a71de2948`
-- Stock OTA slot: `0x160000` bytes; image fits with `556928` bytes free.
+- Size: `885216` bytes (`0xD81E0`)
+- SHA-256: `1defea943fb10235a3d67e3ecc1c4ec0cb14b0ee82a7039e229e3e7702163846`
+- ESP image validation hash: `e9176261db752d513268f19e1a42c71ce54bca1d18ac2f162ab115de709e29f7`
+- Stock OTA slot: `0x160000` bytes; image fits with `556576` bytes free.
 
 ## Linked memory
 
-- Flash code: 632902 bytes
+- Flash code: 633254 bytes
 - Flash data: 147292 bytes
 - IRAM: 89047 / 131072 bytes (67.94%)
-- DRAM static: 36492 / 180736 bytes (20.19%)
+- DRAM static: 36500 / 180736 bytes (20.20%)
 - RTC slow: 64 / 8192 bytes
 
 ## Offline gates
@@ -42,10 +42,10 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 
 ## Development-unit deployment
 
-This `0.2.15-dev` artifact has not been flashed. The development unit remains on the
+This `0.2.16-dev` artifact has not been flashed. The development unit remains on the
 hash-verified `0.2.14-dev` image in stock `ota_1`, written at `0x170000` on
 2026-08-29. That deployment changed only the application slot. Building and
-documenting `0.2.15-dev` did not write any device partition.
+documenting `0.2.16-dev` did not write any device partition.
 
 ESP-IDF prints a generic `idf.py flash` suggestion after building. Project procedure
 forbids that broad command on this cooker. A successful build is not authorization

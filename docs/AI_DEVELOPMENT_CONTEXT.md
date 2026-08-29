@@ -13,7 +13,7 @@ from a request to edit or build software.
 - Xiaomi device model: `chunmi.ihcooker.v2`.
 - Interface controller: Espressif `ESP-WROOM-32D` (classic ESP32).
 - Display: monochrome 64×48 OLED, page-major 384-byte framebuffer.
-- Current custom source version: `0.2.15-dev`.
+- Current custom source version: `0.2.16-dev`.
 - Framework: ESP-IDF.
 - Public repository language: English for technical documents; the device UI
   supports English, Russian, and Simplified Chinese.
@@ -377,7 +377,12 @@ PAUSED, NO_PAN, COMPLETE, FAULT
 
 ### Cooking timer
 
-- Editable as `MM:SS`, then hours; maximum 5 hours.
+- The `MM:SS` screen confirms seconds first and minutes second, blinking only the
+  active field; a separate third screen confirms hours. Slow rotation changes one,
+  while sustained fast rotation changes seconds/minutes in bounded steps of five.
+- Set and Disable mutate the cooking state synchronously. Never reintroduce a queued
+  toggle: a rapid disable/reopen/set sequence must immediately observe the committed
+  state. An all-zero value is rejected and the maximum remains 5 hours.
 - Last value is retained in RAM, not flash.
 - Timer freezes in Pause and NoPan.
 - Manual Pause uses active zero and performs a full Stop after two continuous hours.
@@ -566,7 +571,7 @@ Before any release or hardware write:
 8. After flashing, first perform a no-heat boot/UI/I²C soak, then supervised short
    power tests with a water load.
 
-The reference `0.2.15-dev` artifact identified in
+The reference `0.2.16-dev` artifact identified in
 `firmware/production/BUILD_MANIFEST.md` is an offline build and has not been flashed.
 The development unit remains on hash-verified `0.2.14-dev` in stock `ota_1`, written
 at `0x170000` on 2026-08-29; that deployment did not touch the bootloader, partition
