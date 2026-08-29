@@ -89,10 +89,15 @@ def main() -> int:
             '"SMALL COOKWARE"' in engine and
             "COOKER_SMALL_COOKWARE_NOTICE_MS" in display,
             "R26=01 confirms heating, enforces the stock gear-35/A1 cookware limit, and explains it")
-    require("s_start_confirm_deadline_us != 0 && now_us < s_start_confirm_deadline_us" in power and
+    require("s_status.transition_kind == PB_TRANSITION_START" in power and
+            "s_status.transition_command_transmitted" in power and
+            "s_status.feedback_sequence > s_transition_feedback_baseline" in power and
+            "now_us < s_transition_deadline_us" in power and
             "if (!interrupted && command_transmitted)" in power and
-            'fault_locked("START TIMEOUT")' in power and
-            "MCL02M_START_CONFIRM_TIMEOUT_MS * 1000" in power,
+            'case PB_TRANSITION_START: reason = "START TIMEOUT"' in power and
+            "fault_locked(reason);" in power and
+            "MCL02M_START_CONFIRM_TIMEOUT_MS :" in power and
+            "(int64_t)timeout_ms * 1000" in power,
             "Start confirmation opens only after a successful nonzero heartbeat and closes strictly at one eight-second deadline")
     require("powerboard_start_incident_t" in power_header and
             "capture_start_incident_locked" in power and
@@ -102,7 +107,7 @@ def main() -> int:
             "incident->transmitted_topology = s_last_successful_command_0d" in power and
             '"X,%" PRIu32' in power and
             '\\"start_incident\\"' in power and
-            "char powerboard[1792]" in web,
+            "POWERBOARD_STATUS_JSON_MAX 2560" in web,
             "EST preserves one first-cause RAM incident and exposes compact UART plus authenticated status evidence")
     require("#define COOKER_MAX_TIMER_S              (5U * 60U * 60U)" in config,
             "cooking timer is capped at five hours")
@@ -225,7 +230,7 @@ def main() -> int:
             'begin_stop_locked("COOK LEASE")' in power and
             "now_us >= s_lease_deadline_us" in power and
             "generation != s_status.lease_generation" in power and
-            "!lease_ready || !preflight_healthy_locked()" in power and
+            "!lease_ready || preflight_issue != NULL" in power and
             'ESP_LOGE(TAG, "L,EXPIRE,%" PRIu32' in power and
             "powerboard_control_lease_begin(&s_lease_generation)" in engine and
             "powerboard_control_lease_renew(s_lease_generation)" in engine and
@@ -238,9 +243,50 @@ def main() -> int:
             "class CookingLease" in
             (ROOT / "tests" / "policy_tests.py").read_text(encoding="utf-8"),
             "the generation-tagged three-second cooking lease is renewed only by the cooking task and independently expires into transactional Stop")
-    require("retained_session_healthy_locked" in power and
-            "s_status.registers[6] != 0" in power and
-            "!retained_session_healthy_locked()" in power and
+    require("powerboard_transition_t" in power_header and
+            "powerboard_feedback_state_t" in power_header and
+            "#define MCL02M_TRANSITION_CONFIRM_TIMEOUT_MS 3000U" in power_safety and
+            "begin_transition_locked" in power and
+            "reset_transition_transmission_locked" in power and
+            "finish_transition_locked" in power and
+            "s_status.transition_generation == transition_generation" in power and
+            "s_transition_feedback_baseline = s_status.feedback_sequence" in power and
+            "s_status.feedback_sequence > s_transition_feedback_baseline" in power and
+            "transition_r20_compatible" in power and
+            "r26 == 0x01 || r26 == 0x02" in power and
+            "command_0d == PB_ACTIVE_ZERO_0D && command_00 == 0" in power and
+            "command_0d == topology_for_gear(transition_requested_gear)" in power and
+            "s_status.transmitted_gear = command_0c" in power and
+            "s_status.confirmation_inferred = true" in power and
+            "s_status.feedback_gear_known = false" in power and
+            "reject_transition_locked" in power and
+            '"T,REJECT,%" PRIu32' in power and
+            "char transition_rejection[32]" in power_header and
+            "preflight_issue_locked" in power and
+            "retained_session_issue_locked" in power and
+            'snprintf(reason, sizeof(reason), "START %s"' in power and
+            'snprintf(reason, sizeof(reason), "RESUME %s"' in power and
+            "retained_resume_first_gear" in power and
+            "return target;" in
+            power[power.find("static uint8_t retained_resume_first_gear"):
+                  power.find("static void advance_ramp")] and
+            "copy_transition_status_locked" in engine and
+            "apply_confirmed_transition_locked" in engine and
+            "Repeated short presses cannot invert an unconfirmed transition" in engine and
+            "if (status.transition_pending) return;" in ui and
+            '"PAUSE PENDING"' in engine and '"RESUME PENDING"' in engine and
+            "class ConfirmedTransition" in
+            (ROOT / "tests" / "policy_tests.py").read_text(encoding="utf-8"),
+            "Start, active zero, Pause and Resume use generation-tagged transmitted-command plus fresh-feedback confirmation without claiming a reported gear")
+    require("status_buffers_t *buffers = calloc" in web and
+            "free(buffers);" in web and
+            "component json overflow" in web and
+            "#if !MCL02M_COMPACT_UART_TELEMETRY" in power and
+            "char json[2560]" in power,
+            "expanded transition diagnostics avoid the power and HTTP task stacks")
+    require("retained_session_issue_locked" in power and
+            'return "R26 OUTPUT OFF"' in power and
+            "retained_issue != NULL" in power and
             'ESP_LOGW(TAG, "Z,REJECT,PAUSE' in power and
             'ESP_LOGI(TAG, "C,RESUME,%d"' in engine and
             'ESP_LOGI(TAG, "B,U,%lld"' in inputs,
@@ -252,7 +298,8 @@ def main() -> int:
             "apply_output_locked(resume_gear)" in pause_branch and
             pause_branch.find("apply_output_locked(resume_gear)") <
             pause_branch.find("powerboard_control_resume()") and
-            "s_last_temp_update_us = now;" in pause_branch and
+            "s_last_temp_update_us = now_us;" in engine and
+            'emit_status("manual_resume_confirmed")' in engine and
             "temperature_ctrl_observe(&s_temperature" in engine,
             "temperature Pause keeps trend observations and precomputes a fresh output before Resume")
     require("MCL02M_COMPACT_UART_TELEMETRY=1" in cmake and
@@ -308,6 +355,9 @@ def main() -> int:
             "Pause from NoPan starts a fresh NoPan timeout window after Resume")
     require("s_status.state != COOK_STATE_STARTING &&" in engine and
             "s_status.state != COOK_STATE_COOKING" in engine and
+            "const bool start_update = s_status.state == COOK_STATE_STARTING" in engine and
+            "begin_transition_locked(PB_TRANSITION_START" in power and
+            'ESP_LOGI(TAG, "T,RESTART,%u,%u"' in power and
             "temperature_target_safe_zero" in engine and
             "set_fault_locked(FAULT_POWER_STATUS, \"TEMP UPDATE FAILED\")" in engine,
             "temperature changes during Start apply immediately or force safe zero/fault")

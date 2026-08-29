@@ -1,7 +1,7 @@
 # MCL02M custom firmware — implementation status
 
 Дата: 2026-08-29
-Версия исходников: `0.2.19-dev`
+Версия исходников: `0.2.20-dev`
 Статус: the development unit runs the hash-verified `0.2.17-dev` app written only to
 stock `ota_1` at `0x170000` on 2026-08-29. It booted successfully, and supervised
 testing confirmed retained-session active zero without unwanted relay switching,
@@ -26,6 +26,12 @@ possible after timeout or I²C loss without losing the first recorded cause. The
 unflashed `0.2.19-dev` source adds a generation-tagged three-second cooking lease.
 Only the cooking task renews it in live sessions; the independent power task expires
 it into transactional Stop and retains a distinct `ECL / COOK LEASE` diagnosis. The
+unflashed `0.2.20-dev` source implements confirmed Start, active zero, Pause and
+Resume transactions. Requested, transmitted, feedback-observed and confirmed state
+are distinct; a transition completes only after the matching command and a later
+fresh compatible `R20/R26` sample, with generation checks, bounded deadlines and
+exact rejection evidence. Active-zero confirmation remains an explicitly documented
+inference because the power board does not report the selected gear. The
 earlier one-time NVS refresh is complete and must not be repeated automatically.
 
 ## Реализованный пользовательский контур
@@ -38,8 +44,8 @@ earlier one-time NVS refresh is complete and must not be repeated automatically.
 | UNKNOWN R20 | `2B`, `29`, and `2A` remain silent nonfaults; another unrecognized nonzero value shows a persistent `WARNING / UNKNOWN / R20 XX`; the first physical input dismisses only the warning and the established session continues |
 | TEMPERATURE | `40…190 °C`; entering T°C immediately copies and clamps the setpoint into editor-owned state; PREHEAT uses `56/77/99`; braking reserve is `clamp(10 °C + positive four-second rise, 10…20 °C)`, with a 15 °C minimum from 170 °C and 5 °C phase hysteresis; APPROACH uses `8 + 2 × error`; PI uses `4 + 2 × error + 0.08 × integral`; APPROACH/HOLD remain capped at `35`; output is active zero at/above target and PI resumes one degree below |
 | HOLD SATURATED | gear `35` в течение 90 s при ошибке не менее 3 °C: orange, warning и сообщение; предел не повышается |
-| Start | только отдельным нажатием центра; силовой preflight и `STARTING` до fresh `R26=01/02` received after the first successful nonzero heartbeat and strictly before the sole 8-s deadline; EST latches repeated Stop plus immutable first-cause evidence |
-| Pause/Resume | short center enters active zero and freezes the timer; temperature trend sampling continues while PI is frozen; Resume clears PI timing, calculates and installs a current output before resuming the retained session, and never intentionally pulses the old gear or performs Stop/re-arm; 2 h continuous manual Pause performs full Stop |
+| Start | only a separate center press; power preflight and generation-tagged `STARTING` remain pending until fresh compatible `R20` plus `R26=01/02` arrive after the matching successful heartbeat and strictly before the sole 8-s deadline; EST latches repeated Stop plus immutable first-cause evidence |
+| Pause/Resume | short center requests a generation-tagged transition and repeated presses remain idempotent until confirmation; Pause is confirmed from fresh retained-session feedback before its timer/state change; temperature trend sampling continues while PI is frozen; Resume recomputes and stages current output before its matching 3-s confirmation window, without Stop/re-arm; 2 h continuous confirmed manual Pause performs full Stop |
 | Stop/Sleep | hold центра 1,5 s с немедленным срабатыванием и звуком — Stop/Back; следующий hold в Idle — Sleep; Cancel всегда Stop/Back |
 | Sleep | default 1 min Idle; wake returns to Home/Power, or Home/Temperature when Sleep began from Temperature; secondary menu selections are never restored; heartbeat and safety continue at zero output |
 | OLED | renderer использует полные `64×48` без отладочной рамки; десять 1-bit картинок показывают turn-on 5 s синхронно с boot-мелодией, wake 3 s, cooking 2,5 s, confirm/cancel 1,5 s, ready/no-pan/error до изменения состояния и две 10-s стадии Sleep; active timeout default 3 min; первое нажатие/вращение только будит; encoder guard 1,5 s |

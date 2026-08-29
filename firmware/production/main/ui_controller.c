@@ -749,6 +749,7 @@ static void central_short(void)
         return;
     }
     if (status.state == COOK_STATE_STOPPING) return;
+    if (status.transition_pending) return;
     if (s_timer_editing) {
         if (s_view == VIEW_TIMER_DISABLE) {
             if (cooking_timer_disable() == ESP_OK) close_timer_editor();

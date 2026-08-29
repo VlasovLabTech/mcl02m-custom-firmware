@@ -4,7 +4,7 @@ Status: **in progress; the first bounded fix batch is implemented, while the rem
 
 Audit baseline: `0.2.10-dev`, commit `2b5784e` (`2026-08-28`)
 
-Current source: `0.2.19-dev`. Version `0.2.17-dev` was flashed to the development
+Current source: `0.2.20-dev`. Version `0.2.17-dev` was flashed to the development
 cooker on 2026-08-29 after explicit authorization; retained-session active zero works
 without unexpected relay switching. The source now also keeps the temporary I2C-loss
 OLED counter behind a disabled compile-time flag, so it is absent from the production
@@ -652,21 +652,27 @@ require only `R26=02`.
 
 ### Package 5 — Confirmed Start, active zero, Pause and Resume
 
-- [ ] Separate requested, transmitted and feedback-observed state/gear. A successful
+- [x] Separate requested, transmitted and feedback-observed state/gear. A successful
   API enqueue or I2C write is not yet a physical confirmation.
-- [ ] Preserve the proven `81/00/00` active-zero command and the observed no-click
+- [x] Preserve the proven `81/00/00` active-zero command and the observed no-click
   behavior; do not wait for an invented reply code that the board does not provide.
-- [ ] Define confirmation from the evidence that does exist: successful command
+- [x] Define confirmation from the evidence that does exist: successful command
   transmission followed by fresh valid feedback, compatible `R20`, expected session
   form of `R26`, and no Stop transaction.
-- [ ] Add explicit pending transitions or one generation-tagged transition object for
+- [x] Add explicit pending transitions or one generation-tagged transition object for
   Start, active zero, Pause and Resume, with bounded deadlines and exact rejection
   reasons.
-- [ ] Make repeated short presses idempotent while a transition is pending. A stale
+- [x] Make repeated short presses idempotent while a transition is pending. A stale
   acknowledgement from an earlier generation must not complete a newer transition.
-- [ ] Keep temperature Resume recomputation already implemented in `0.2.12-dev` and
+- [x] Keep temperature Resume recomputation already implemented in `0.2.12-dev` and
   deliberately choose/test the first resumed ramp step rather than inheriting it as
-  a side effect.
+  a side effect. Package 5 is implemented in unflashed `0.2.20-dev`: Start uses an
+  eight-second confirmation deadline, the retained-session transitions use three
+  seconds, exact rejection and timeout reasons remain observable, and the resumed
+  output deliberately starts at the freshly recomputed target because the power
+  session and relay topology were retained. A POWER or temperature edit during a
+  pending Start replaces that Start generation and must transmit the new safe first
+  command before any later feedback can confirm it.
 
 ### Package 6 — NoPan, cookware return and output recovery
 

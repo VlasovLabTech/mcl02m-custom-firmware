@@ -281,6 +281,137 @@ class CookingLease:
 
 
 @dataclass
+class ConfirmedTransition:
+    """Model generation-tagged command/feedback confirmation without invented gear data."""
+
+    generation: int = 0
+    confirmed_generation: int = 0
+    feedback_sequence: int = 0
+    feedback_baseline: int = 0
+    kind: str = "NONE"
+    requested_state: str = "STOPPED"
+    requested_gear: int = 0
+    transmitted_gear: int = 0
+    transmitted_topology: int = 0
+    confirmed_state: str = "STOPPED"
+    confirmed_gear: int = 0
+    pending: bool = False
+    command_transmitted: bool = False
+    inferred: bool = False
+    feedback_gear_known: bool = False
+    deadline_ms: int | None = None
+    result: str = "NONE"
+    rejection_sequence: int = 0
+    rejection: str = "NONE"
+
+    def request(self, kind: str, requested_state: str, gear: int) -> int | None:
+        if self.pending:
+            if (
+                self.kind == kind
+                and self.requested_state == requested_state
+                and self.requested_gear == gear
+            ):
+                return self.generation
+            self.rejection_sequence += 1
+            self.rejection = f"{kind} TRANSITION BUSY"
+            return None
+        self.generation += 1
+        self.kind = kind
+        self.requested_state = requested_state
+        self.requested_gear = gear
+        self.pending = True
+        self.command_transmitted = False
+        self.inferred = False
+        self.deadline_ms = None
+        self.feedback_baseline = self.feedback_sequence
+        self.result = "PENDING"
+        return self.generation
+
+    def transmit(self, generation: int, now_ms: int, command: tuple[int, int, int]) -> bool:
+        if not self.pending or generation != self.generation:
+            return False
+        if self.kind in {"ACTIVE_ZERO", "PAUSE"} or self.requested_gear == 0:
+            expected = (0x81, 0, 0)
+        elif self.requested_gear <= 35:
+            expected = (0xA1, 1, self.requested_gear)
+        elif self.requested_gear < 56:
+            expected = (0xC1, 1, self.requested_gear)
+        else:
+            expected = (0xE1, 1, self.requested_gear)
+        if command != expected:
+            return False
+        self.transmitted_topology, _, self.transmitted_gear = command
+        self.command_transmitted = True
+        self.feedback_baseline = self.feedback_sequence
+        if self.deadline_ms is None:
+            self.deadline_ms = now_ms + (8_000 if self.kind == "START" else 3_000)
+        return True
+
+    def replace_start_gear(self, gear: int) -> int | None:
+        if not self.pending or self.kind != "START":
+            self.rejection_sequence += 1
+            self.rejection = "GEAR TRANSITION BUSY"
+            return None
+        if gear == self.requested_gear:
+            return self.generation
+        self.generation += 1
+        self.requested_gear = min(gear, 10)
+        self.requested_state = "ACTIVE_ZERO" if gear == 0 else "HEATING"
+        self.command_transmitted = False
+        self.feedback_baseline = self.feedback_sequence
+        self.deadline_ms = None
+        self.result = "PENDING"
+        return self.generation
+
+    def feedback(self, now_ms: int, *, r20: int, r26: int, valid: bool = True) -> bool:
+        if valid:
+            self.feedback_sequence += 1
+        if not self.pending or not self.command_transmitted or not valid:
+            return False
+        if self.deadline_ms is None or now_ms >= self.deadline_ms:
+            self.timeout(now_ms)
+            return False
+        if self.feedback_sequence <= self.feedback_baseline:
+            return False
+        r20_ok = r20 not in KNOWN_R20_FAULTS and r20 != 0x02
+        if (self.kind in {"ACTIVE_ZERO", "PAUSE"} or self.requested_gear == 0) and r20 == 0x02:
+            r20_ok = True
+        if not r20_ok or r26 not in {1, 2}:
+            return False
+        self.pending = False
+        self.command_transmitted = False
+        self.confirmed_generation = self.generation
+        self.confirmed_state = self.requested_state
+        self.confirmed_gear = min(self.requested_gear, 35) if r26 == 1 else self.requested_gear
+        self.feedback_gear_known = False
+        self.inferred = True
+        self.deadline_ms = None
+        self.result = "CONFIRMED"
+        return True
+
+    def timeout(self, now_ms: int) -> None:
+        if not self.pending or self.deadline_ms is None or now_ms < self.deadline_ms:
+            return
+        reasons = {
+            "START": "START TIMEOUT",
+            "ACTIVE_ZERO": "ZERO ACK TIMEOUT",
+            "PAUSE": "PAUSE ACK TIMEOUT",
+            "RESUME": "RESUME TIMEOUT",
+        }
+        self.pending = False
+        self.command_transmitted = False
+        self.deadline_ms = None
+        self.result = reasons[self.kind]
+
+    def stop(self, reason: str = "USER STOP") -> None:
+        if self.pending:
+            self.pending = False
+            self.command_transmitted = False
+            self.deadline_ms = None
+            self.result = reason
+
+
+@dataclass
 class Timer:
     remaining: int
 
@@ -409,6 +540,10 @@ def active_zero_command(state: str) -> tuple[int, int, int]:
     if state == "STOPPED":
         return 0, 0, 0
     raise ValueError(state)
+
+
+def retained_resume_first_gear(target: int) -> int:
+    return target
 
 
 def manual_pause_state(elapsed_s: int) -> str:
@@ -763,6 +898,92 @@ def run() -> None:
     stopped_lease.power_tick(10_000)
     assert not stopped_lease.active and not stopped_lease.expired
     assert not stopped_lease.renew(stopped_generation, 10_000, "PROFILE_ZERO")
+
+    start_transition = ConfirmedTransition()
+    start_generation = start_transition.request("START", "HEATING", 10)
+    assert not start_transition.feedback(100, r20=0, r26=2)
+    assert start_transition.transmit(start_generation, 200, (0xA1, 1, 10))
+    assert start_transition.feedback(500, r20=0x2B, r26=2)
+    assert start_transition.confirmed_state == "HEATING"
+    assert start_transition.confirmed_gear == 10 and start_transition.inferred
+    assert not start_transition.feedback_gear_known
+
+    edited_start = ConfirmedTransition()
+    old_start_generation = edited_start.request("START", "HEATING", 10)
+    assert edited_start.transmit(old_start_generation, 0, (0xA1, 1, 10))
+    edited_start.feedback_sequence += 1  # unread old-generation feedback
+    zero_start_generation = edited_start.replace_start_gear(0)
+    assert zero_start_generation != old_start_generation
+    assert not edited_start.transmit(old_start_generation, 100, (0xA1, 1, 10))
+    assert edited_start.transmit(zero_start_generation, 200, (0x81, 0, 0))
+    assert edited_start.feedback(500, r20=0, r26=2)
+    assert edited_start.confirmed_state == "ACTIVE_ZERO"
+
+    for kind, final_state, gear, command in (
+        ("ACTIVE_ZERO", "ACTIVE_ZERO", 0, (0x81, 0, 0)),
+        ("PAUSE", "PAUSED", 0, (0x81, 0, 0)),
+        ("RESUME", "HEATING", 99, (0xE1, 1, 99)),
+        ("RESUME", "ACTIVE_ZERO", 0, (0x81, 0, 0)),
+    ):
+        transition = ConfirmedTransition()
+        generation = transition.request(kind, final_state, gear)
+        assert transition.request(kind, final_state, gear) == generation
+        assert transition.transmit(generation, 100, command)
+        assert transition.feedback(500, r20=0, r26=2)
+        assert transition.confirmed_generation == generation
+        assert transition.confirmed_state == final_state
+        assert transition.confirmed_gear == gear
+
+    no_pan_pause = ConfirmedTransition()
+    no_pan_pause_generation = no_pan_pause.request("PAUSE", "PAUSED", 0)
+    assert no_pan_pause.transmit(no_pan_pause_generation, 0, (0x81, 0, 0))
+    assert no_pan_pause.feedback(500, r20=0x02, r26=2)
+
+    zero_profile_start = ConfirmedTransition()
+    zero_start_generation = zero_profile_start.request("START", "ACTIVE_ZERO", 0)
+    assert zero_profile_start.transmit(zero_start_generation, 0, (0x81, 0, 0))
+    assert zero_profile_start.feedback(500, r20=0x02, r26=2)
+
+    stale_transition = ConfirmedTransition()
+    stale_generation = stale_transition.request("ACTIVE_ZERO", "ACTIVE_ZERO", 0)
+    assert stale_transition.request("RESUME", "HEATING", 35) is None
+    assert stale_transition.generation == stale_generation
+    assert stale_transition.rejection == "RESUME TRANSITION BUSY"
+    stale_transition.stop()
+    new_generation = stale_transition.request("START", "HEATING", 35)
+    assert new_generation != stale_generation
+    assert not stale_transition.transmit(stale_generation, 100, (0x81, 0, 0))
+    assert stale_transition.transmit(new_generation, 200, (0xA1, 1, 35))
+    assert stale_transition.feedback(500, r20=0, r26=1)
+    assert stale_transition.transmitted_gear == 35
+    assert stale_transition.confirmed_gear == 35
+
+    restricted_resume = ConfirmedTransition()
+    restricted_generation = restricted_resume.request("RESUME", "HEATING", 99)
+    assert restricted_resume.transmit(restricted_generation, 0, (0xE1, 1, 99))
+    assert restricted_resume.feedback(500, r20=0, r26=1)
+    assert restricted_resume.transmitted_gear == 99
+    assert restricted_resume.confirmed_gear == 35
+
+    exact_deadline = ConfirmedTransition()
+    deadline_generation = exact_deadline.request("RESUME", "HEATING", 35)
+    assert exact_deadline.transmit(deadline_generation, 0, (0xA1, 1, 35))
+    assert not exact_deadline.feedback(3_000, r20=0, r26=2)
+    assert exact_deadline.result == "RESUME TIMEOUT"
+
+    rejected_feedback = ConfirmedTransition()
+    rejected_generation = rejected_feedback.request("START", "HEATING", 10)
+    assert rejected_feedback.transmit(rejected_generation, 0, (0xA1, 1, 10))
+    assert not rejected_feedback.feedback(500, r20=0x17, r26=2)
+    assert not rejected_feedback.feedback(1_000, r20=0x02, r26=2)
+    assert rejected_feedback.pending
+    rejected_feedback.stop()
+    assert not rejected_feedback.pending and rejected_feedback.result == "USER STOP"
+
+    # A retained session deliberately resumes at the freshly recomputed target;
+    # it does not inherit the cold-start gear-10 ramp as an accidental side effect.
+    assert retained_resume_first_gear(99) == 99
+    assert retained_resume_first_gear(35) == 35
     assert profile_sequence([2400, 1500, 0, 300, 0]) == [1, 2, 4]
     assert profile_sequence([0, 0, 0, 0, 0]) == []
     assert active_zero_command("ACTIVE_ZERO") == (0x81, 0, 0)

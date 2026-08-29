@@ -21,6 +21,17 @@
 #include "telemetry.h"
 
 #define BODY_MAX 768
+#define COOKER_STATUS_JSON_MAX 1280
+#define POWERBOARD_STATUS_JSON_MAX 2560
+#define PROFILES_STATUS_JSON_MAX 1100
+#define STATUS_RESPONSE_JSON_MAX 7168
+
+typedef struct {
+    char cooker[COOKER_STATUS_JSON_MAX];
+    char powerboard[POWERBOARD_STATUS_JSON_MAX];
+    char profiles[PROFILES_STATUS_JSON_MAX];
+    char response[STATUS_RESPONSE_JSON_MAX];
+} status_buffers_t;
 
 static httpd_handle_t s_server;
 static char s_session[33];
@@ -230,46 +241,61 @@ static esp_err_t setup_handler(httpd_req_t *req)
 static esp_err_t status_handler(httpd_req_t *req)
 {
     if (!cookie_authorized(req)) return error(req, "401 Unauthorized", "login required");
-    char cooker[896];
-    cooking_engine_status_json(cooker, sizeof(cooker));
-    char powerboard[1792];
-    powerboard_control_status_json(powerboard, sizeof(powerboard));
+    status_buffers_t *buffers = calloc(1, sizeof(*buffers));
+    if (buffers == NULL)
+        return error(req, "503 Service Unavailable", "status memory unavailable");
+    const size_t cooker_length =
+        cooking_engine_status_json(buffers->cooker, sizeof(buffers->cooker));
+    const size_t powerboard_length =
+        powerboard_control_status_json(buffers->powerboard,
+                                       sizeof(buffers->powerboard));
+    if (cooker_length >= sizeof(buffers->cooker) ||
+        powerboard_length >= sizeof(buffers->powerboard)) {
+        free(buffers);
+        return error(req, "500 Internal Server Error", "component json overflow");
+    }
     network_status_t network;
     network_prod_get_status(&network);
     app_settings_t settings;
     settings_get(&settings);
     cooker_profile_t profiles[COOKER_PROFILE_COUNT];
     settings_profiles_get(profiles);
-    char profiles_json[1100] = "[";
+    strlcpy(buffers->profiles, "[", sizeof(buffers->profiles));
     size_t profiles_used = 1;
     for (unsigned i = 0; i < COOKER_PROFILE_COUNT; ++i) {
-        int written = snprintf(profiles_json + profiles_used,
-                               sizeof(profiles_json) - profiles_used,
+        int written = snprintf(buffers->profiles + profiles_used,
+                               sizeof(buffers->profiles) - profiles_used,
                                "%s{\"name\":\"%s\",\"stages\":[",
                                i ? "," : "", profiles[i].name);
-        if (written < 0 || (size_t)written >= sizeof(profiles_json) - profiles_used)
+        if (written < 0 || (size_t)written >= sizeof(buffers->profiles) - profiles_used) {
+            free(buffers);
             return error(req, "500 Internal Server Error", "profile json overflow");
+        }
         profiles_used += (size_t)written;
         for (unsigned stage = 0; stage < COOKER_PROFILE_STAGE_COUNT; ++stage) {
             const cooker_profile_stage_t *cell = &profiles[i].stages[stage];
-            written = snprintf(profiles_json + profiles_used,
-                               sizeof(profiles_json) - profiles_used,
+            written = snprintf(buffers->profiles + profiles_used,
+                               sizeof(buffers->profiles) - profiles_used,
                                "%s[%u,%u,%u,%" PRIu32 "]",
                                stage ? "," : "", cell->mode, cell->gear,
                                cell->temperature_c, cell->timer_s);
-            if (written < 0 || (size_t)written >= sizeof(profiles_json) - profiles_used)
+            if (written < 0 || (size_t)written >= sizeof(buffers->profiles) - profiles_used) {
+                free(buffers);
                 return error(req, "500 Internal Server Error", "profile json overflow");
+            }
             profiles_used += (size_t)written;
         }
-        written = snprintf(profiles_json + profiles_used,
-                           sizeof(profiles_json) - profiles_used, "]}");
-        if (written < 0 || (size_t)written >= sizeof(profiles_json) - profiles_used)
+        written = snprintf(buffers->profiles + profiles_used,
+                           sizeof(buffers->profiles) - profiles_used, "]}");
+        if (written < 0 || (size_t)written >= sizeof(buffers->profiles) - profiles_used) {
+            free(buffers);
             return error(req, "500 Internal Server Error", "profile json overflow");
+        }
         profiles_used += (size_t)written;
     }
-    strlcpy(profiles_json + profiles_used, "]", sizeof(profiles_json) - profiles_used);
-    char response[5120];
-    const int response_length = snprintf(response, sizeof(response),
+    strlcpy(buffers->profiles + profiles_used, "]",
+            sizeof(buffers->profiles) - profiles_used);
+    const int response_length = snprintf(buffers->response, sizeof(buffers->response),
              "{\"firmware\":\"%s\",\"cooker\":%s,\"powerboard\":%s,"
              "\"network\":{\"enabled\":%s,\"sta_connected\":%s,\"ip\":\"%s\","
              "\"ap_ssid\":\"%s\",\"clock\":%s},"
@@ -279,7 +305,7 @@ static esp_err_t status_handler(httpd_req_t *req)
              "\"wifi_enabled\":%s,\"sleep\":%u,\"oled\":%u,"
              "\"timezone\":%d},\"profiles\":%s,\"persistence\":%s,"
              "\"telemetry_dropped\":%" PRIu32 "}",
-             MCL02M_FIRMWARE_VERSION, cooker, powerboard,
+             MCL02M_FIRMWARE_VERSION, buffers->cooker, buffers->powerboard,
              network.enabled ? "true" : "false",
              network.sta_connected ? "true" : "false", network.sta_ip,
              network.ap_ssid, network.clock_synchronized ? "true" : "false",
@@ -291,12 +317,16 @@ static esp_err_t status_handler(httpd_req_t *req)
              settings.show_i2c_debug ? "true" : "false",
              settings.wifi_enabled ? "true" : "false",
              settings.sleep_minutes, settings.oled_timeout_s, settings.timezone_minutes,
-             profiles_json,
+             buffers->profiles,
              settings_persistence_available() ? "true" : "false",
              telemetry_dropped_count());
-    if (response_length < 0 || (size_t)response_length >= sizeof(response))
+    if (response_length < 0 || (size_t)response_length >= sizeof(buffers->response)) {
+        free(buffers);
         return error(req, "500 Internal Server Error", "status json overflow");
-    return json(req, response);
+    }
+    const esp_err_t result = json(req, buffers->response);
+    free(buffers);
+    return result;
 }
 
 static esp_err_t wifi_handler(httpd_req_t *req)

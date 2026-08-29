@@ -60,6 +60,7 @@ static bool s_no_pan_announced;
 static bool s_waiting_pan_before_start;
 static bool s_active_zero;
 static uint32_t s_lease_generation;
+static uint32_t s_applied_transition_generation;
 static cooker_profile_t s_active_profile;
 static bool s_profile_selected;
 
@@ -70,6 +71,28 @@ typedef enum {
 
 static stop_terminal_t s_stop_terminal;
 static char s_stop_reason[32];
+
+static void copy_transition_status_locked(const powerboard_status_t *pb)
+{
+    s_status.transition_remaining_ms = pb->transition_remaining_ms;
+    s_status.transition_generation = pb->transition_generation;
+    s_status.transition_confirmed_generation = pb->transition_confirmed_generation;
+    s_status.transition_rejection_sequence = pb->transition_rejection_sequence;
+    s_status.transition_kind = (uint8_t)pb->transition_kind;
+    s_status.transition_requested_gear = pb->transition_requested_gear;
+    s_status.transmitted_gear = pb->transmitted_gear;
+    s_status.confirmed_gear = pb->confirmed_gear;
+    s_status.feedback_r20 = pb->feedback_r20;
+    s_status.feedback_r26 = pb->feedback_r26;
+    s_status.feedback_gear = pb->feedback_gear;
+    s_status.transition_pending = pb->transition_pending;
+    s_status.transition_command_transmitted = pb->transition_command_transmitted;
+    s_status.confirmation_inferred = pb->confirmation_inferred;
+    strlcpy(s_status.transition_result, pb->transition_result,
+            sizeof(s_status.transition_result));
+    strlcpy(s_status.transition_rejection, pb->transition_rejection,
+            sizeof(s_status.transition_rejection));
+}
 
 static uint8_t cookware_limited_gear_locked(uint8_t gear)
 {
@@ -281,11 +304,15 @@ static esp_err_t begin_run_locked(void)
         return err;
     }
 
-    s_active_zero = gear == 0;
-    s_status.active_zero = s_active_zero;
-    s_status.state = s_active_zero ? COOK_STATE_COOKING : COOK_STATE_STARTING;
+    powerboard_status_t pb;
+    powerboard_control_get_status(&pb);
+    copy_transition_status_locked(&pb);
+
+    s_active_zero = false;
+    s_status.active_zero = false;
+    s_status.state = COOK_STATE_STARTING;
     s_status.fault = FAULT_NONE;
-    s_status.applied_gear = gear;
+    s_status.applied_gear = pb.applied_gear;
     s_status.paused_gear = 0;
     s_status.delayed_start = false;
     s_status.hold_saturated = false;
@@ -295,7 +322,7 @@ static esp_err_t begin_run_locked(void)
     s_no_pan_since_us = 0;
     s_run_started_us = esp_timer_get_time();
     s_timer_accumulator_us = 0;
-    strlcpy(s_status.detail, s_active_zero ? "ACTIVE ZERO" : "STARTING",
+    strlcpy(s_status.detail, gear == 0 ? "ACTIVE ZERO PENDING" : "STARTING",
             sizeof(s_status.detail));
     emit_status("start");
     return ESP_OK;
@@ -319,6 +346,7 @@ static void begin_normal_stop_locked(const char *reason, bool complete)
     s_status.delayed_start = false;
     s_status.hold_saturated = false;
     s_status.timer_enabled = false;
+    s_status.transition_pending = false;
     s_waiting_pan_before_start = false;
     s_active_zero = false;
     s_lease_generation = 0;
@@ -356,24 +384,24 @@ static esp_err_t apply_output_locked(uint8_t gear)
         pb.state == PB_STATE_FAULT || pb.state == PB_STATE_BOOT)
         return ESP_ERR_INVALID_STATE;
 
-    const bool was_active_zero = s_active_zero || pb.state == PB_STATE_ACTIVE_ZERO;
     const esp_err_t err = powerboard_control_set_gear(gear);
     if (err == ESP_OK) {
-        s_active_zero = gear == 0;
-        s_status.active_zero = s_active_zero || s_status.state == COOK_STATE_PAUSED;
-        s_status.applied_gear = gear;
-        if (s_status.state != COOK_STATE_PAUSED) {
-            if (gear == 0) {
+        powerboard_control_get_status(&pb);
+        copy_transition_status_locked(&pb);
+        s_status.applied_gear = pb.applied_gear;
+        s_active_zero = pb.state == PB_STATE_ACTIVE_ZERO;
+        s_status.active_zero = s_active_zero || pb.state == PB_STATE_PAUSED;
+        if (pb.transition_pending) {
+            if (pb.transition_kind == PB_TRANSITION_ACTIVE_ZERO) {
                 if (s_no_pan_announced) sound_stop();
                 s_no_pan_announced = false;
                 s_no_pan_since_us = 0;
-                s_status.state = COOK_STATE_COOKING;
-                strlcpy(s_status.detail, "ACTIVE ZERO", sizeof(s_status.detail));
-                emit_status("active_zero");
-            } else if (was_active_zero) {
-                s_status.state = COOK_STATE_STARTING;
-                strlcpy(s_status.detail, "RESUMING HEAT", sizeof(s_status.detail));
-                emit_status("active_zero_resume");
+                strlcpy(s_status.detail, "ACTIVE ZERO PENDING",
+                        sizeof(s_status.detail));
+                emit_status("active_zero_requested");
+            } else if (pb.transition_kind == PB_TRANSITION_RESUME) {
+                strlcpy(s_status.detail, "RESUME PENDING", sizeof(s_status.detail));
+                emit_status("active_zero_resume_requested");
             }
         }
     }
@@ -393,7 +421,11 @@ static esp_err_t set_mode_locked(cook_mode_t mode)
 
 static esp_err_t set_power_locked(uint8_t gear)
 {
+    const bool start_update = s_status.state == COOK_STATE_STARTING &&
+        s_status.transition_pending &&
+        s_status.transition_kind == PB_TRANSITION_START;
     if (s_status.state == COOK_STATE_DELAYED || s_status.state == COOK_STATE_FAULT ||
+        (s_status.transition_pending && !start_update) ||
         s_status.state == COOK_STATE_STOPPING)
         return ESP_ERR_INVALID_STATE;
     if (state_active(s_status.state) && s_status.mode != COOK_MODE_POWER)
@@ -418,7 +450,11 @@ static esp_err_t set_power_locked(uint8_t gear)
 
 static esp_err_t set_temperature_locked(uint16_t temperature_c)
 {
+    const bool start_update = s_status.state == COOK_STATE_STARTING &&
+        s_status.transition_pending &&
+        s_status.transition_kind == PB_TRANSITION_START;
     if (s_status.state == COOK_STATE_DELAYED || s_status.state == COOK_STATE_FAULT ||
+        (s_status.transition_pending && !start_update) ||
         s_status.state == COOK_STATE_STOPPING)
         return ESP_ERR_INVALID_STATE;
     if (state_active(s_status.state) && control_mode_locked() != COOK_MODE_TEMPERATURE)
@@ -465,6 +501,8 @@ static void update_manual_pause_timeout_locked(int64_t now_us)
 static void update_timer_locked(int64_t delta_us)
 {
     if (!s_status.timer_enabled || s_status.timer_remaining_s == 0 ||
+        (s_status.transition_pending &&
+         s_status.transition_kind == PB_TRANSITION_PAUSE) ||
         s_status.state != COOK_STATE_COOKING) return;
     s_timer_accumulator_us += delta_us;
     while (s_timer_accumulator_us >= 1000000 && s_status.timer_remaining_s > 0) {
@@ -482,7 +520,6 @@ static void update_timer_locked(int64_t delta_us)
                     set_fault_locked(FAULT_POWER_STATUS, "PROFILE STAGE FAILED");
                     return;
                 }
-                s_status.applied_gear = gear;
                 sound_play(SOUND_STAGE);
                 strlcpy(s_status.detail, "PROFILE NEXT", sizeof(s_status.detail));
                 emit_status("profile_stage");
@@ -501,6 +538,7 @@ static void update_temperature_locked(int64_t now_us)
 {
     if (control_mode_locked() != COOK_MODE_TEMPERATURE ||
         !state_active(s_status.state) ||
+        s_status.transition_pending ||
         !s_status.readings_valid || now_us - s_last_temp_update_us < COOKER_TEMP_UPDATE_MS * 1000LL)
         return;
     const uint32_t elapsed = s_last_temp_update_us == 0 ? COOKER_TEMP_UPDATE_MS :
@@ -520,6 +558,55 @@ static void update_temperature_locked(int64_t now_us)
         strlcpy(s_status.detail, "HOLD SATURATED", sizeof(s_status.detail));
         sound_play(SOUND_WARNING);
         emit_status("hold_saturated");
+    }
+}
+
+static void apply_confirmed_transition_locked(const powerboard_status_t *pb,
+                                               int64_t now_us)
+{
+    if (pb->transition_confirmed_generation == 0 ||
+        pb->transition_confirmed_generation == s_applied_transition_generation)
+        return;
+
+    s_applied_transition_generation = pb->transition_confirmed_generation;
+    switch (pb->transition_kind) {
+    case PB_TRANSITION_START:
+        s_active_zero = pb->confirmed_state == PB_STATE_ACTIVE_ZERO;
+        s_status.active_zero = s_active_zero;
+        s_status.state = COOK_STATE_COOKING;
+        strlcpy(s_status.detail, s_active_zero ? "ACTIVE ZERO" : "COOKING",
+                sizeof(s_status.detail));
+        emit_status(s_active_zero ? "active_zero_confirmed" : "heating_confirmed");
+        break;
+    case PB_TRANSITION_ACTIVE_ZERO:
+        s_active_zero = true;
+        s_status.active_zero = true;
+        s_status.state = COOK_STATE_COOKING;
+        strlcpy(s_status.detail, "ACTIVE ZERO", sizeof(s_status.detail));
+        emit_status("active_zero_confirmed");
+        break;
+    case PB_TRANSITION_PAUSE:
+        s_active_zero = true;
+        s_status.active_zero = true;
+        s_status.state = COOK_STATE_PAUSED;
+        s_manual_pause_since_us = now_us;
+        s_status.pause_remaining_s = COOKER_MANUAL_PAUSE_TIMEOUT_MS / 1000U;
+        strlcpy(s_status.detail, "PAUSED", sizeof(s_status.detail));
+        emit_status("manual_pause_confirmed");
+        break;
+    case PB_TRANSITION_RESUME:
+        s_active_zero = pb->confirmed_state == PB_STATE_ACTIVE_ZERO;
+        s_status.active_zero = s_active_zero;
+        s_status.state = COOK_STATE_COOKING;
+        s_manual_pause_since_us = 0;
+        s_status.pause_remaining_s = 0;
+        s_last_temp_update_us = now_us;
+        strlcpy(s_status.detail, s_active_zero ? "ACTIVE ZERO" : "COOKING",
+                sizeof(s_status.detail));
+        emit_status("manual_resume_confirmed");
+        break;
+    default:
+        break;
     }
 }
 
@@ -550,6 +637,7 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
     s_status.lease_renewals = pb->lease_renewals;
     s_status.lease_active = pb->lease_active;
     s_status.lease_expired = pb->lease_expired;
+    copy_transition_status_locked(pb);
 
     if (pb->unknown_r20_seq != s_status.r20_warning_seq) {
         s_status.r20_warning_seq = pb->unknown_r20_seq;
@@ -591,6 +679,7 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
             finish_normal_stop_locked();
         return;
     }
+    apply_confirmed_transition_locked(pb, now_us);
     if (s_waiting_pan_before_start) {
         const bool r20_valid = (pb->valid_mask & 1U) != 0;
         s_status.pan_present = r20_valid && pb->registers[0] == 0;
@@ -685,7 +774,11 @@ static void handle_intent_locked(const intent_t *intent)
 #if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
         ESP_LOGI(TAG, "C,PR,%s", cooking_state_name(s_status.state));
 #endif
-        if (s_status.state == COOK_STATE_COOKING || s_status.state == COOK_STATE_STARTING ||
+        if (s_status.transition_pending) {
+            /* Repeated short presses cannot invert an unconfirmed transition. */
+            break;
+        }
+        if (s_status.state == COOK_STATE_COOKING ||
             s_status.state == COOK_STATE_NO_PAN) {
             const bool pausing_no_pan = s_status.state == COOK_STATE_NO_PAN;
             s_status.paused_gear = s_status.applied_gear;
@@ -694,6 +787,9 @@ static void handle_intent_locked(const intent_t *intent)
             ESP_LOGI(TAG, "C,PAUSE,%d", pause_err);
 #endif
             if (pause_err == ESP_OK) {
+                powerboard_status_t pb;
+                powerboard_control_get_status(&pb);
+                copy_transition_status_locked(&pb);
                 if (pausing_no_pan && s_no_pan_announced) sound_stop();
                 if (pausing_no_pan) {
                     s_no_pan_announced = false;
@@ -704,12 +800,8 @@ static void handle_intent_locked(const intent_t *intent)
                     s_status.hold_saturated = false;
                     s_saturation_announced = false;
                 }
-                s_status.state = COOK_STATE_PAUSED;
-                s_status.active_zero = true;
-                s_manual_pause_since_us = now;
-                s_status.pause_remaining_s = COOKER_MANUAL_PAUSE_TIMEOUT_MS / 1000U;
-                strlcpy(s_status.detail, "PAUSED", sizeof(s_status.detail));
-                emit_status("manual_pause");
+                strlcpy(s_status.detail, "PAUSE PENDING", sizeof(s_status.detail));
+                emit_status("manual_pause_requested");
             }
         } else if (s_status.state == COOK_STATE_PAUSED) {
             esp_err_t resume_err = ESP_OK;
@@ -731,14 +823,11 @@ static void handle_intent_locked(const intent_t *intent)
             ESP_LOGI(TAG, "C,RESUME,%d", resume_err);
 #endif
             if (resume_err == ESP_OK) {
-                s_last_temp_update_us = now;
-                s_manual_pause_since_us = 0;
-                s_status.pause_remaining_s = 0;
-                s_status.active_zero = s_active_zero;
-                s_status.state = s_active_zero ? COOK_STATE_COOKING : COOK_STATE_STARTING;
-                strlcpy(s_status.detail, s_active_zero ? "ACTIVE ZERO" : "RESUMING",
-                        sizeof(s_status.detail));
-                emit_status("manual_resume");
+                powerboard_status_t pb;
+                powerboard_control_get_status(&pb);
+                copy_transition_status_locked(&pb);
+                strlcpy(s_status.detail, "RESUME PENDING", sizeof(s_status.detail));
+                emit_status("manual_resume_requested");
             }
         }
         break;
@@ -932,6 +1021,17 @@ size_t cooking_engine_status_json(char *output, size_t output_size)
         "\"lease_active\":%s,\"lease_expired\":%s,"
         "\"lease_remaining_ms\":%" PRIu32 ","
         "\"lease_generation\":%" PRIu32 ",\"lease_renewals\":%" PRIu32 ","
+        "\"transition_pending\":%s,\"transition_kind\":%u,"
+        "\"transition_generation\":%" PRIu32 ","
+        "\"transition_confirmed_generation\":%" PRIu32 ","
+        "\"transition_rejection_sequence\":%" PRIu32 ","
+        "\"transition_remaining_ms\":%" PRIu32 ","
+        "\"transition_command_transmitted\":%s,"
+        "\"transition_requested_gear\":%u,\"transmitted_gear\":%u,"
+        "\"confirmed_gear\":%u,\"confirmation_inferred\":%s,"
+        "\"feedback_r20\":%u,\"feedback_r26\":%u,\"feedback_gear\":%u,"
+        "\"transition_result\":\"%s\","
+        "\"transition_rejection\":\"%s\","
         "\"timer_enabled\":%s,\"timer_s\":%" PRIu32 ","
         "\"timer_last_s\":%" PRIu32 ",\"delayed\":%s,\"delayed_s\":%" PRIu32 ","
         "\"clock_valid\":%s,\"hold_saturated\":%s,"
@@ -951,6 +1051,15 @@ size_t cooking_engine_status_json(char *output, size_t output_size)
         s.stop_elapsed_ms, s.stop_generation, s.stop_timed_out ? "true" : "false",
         s.lease_active ? "true" : "false", s.lease_expired ? "true" : "false",
         s.lease_remaining_ms, s.lease_generation, s.lease_renewals,
+        s.transition_pending ? "true" : "false", s.transition_kind,
+        s.transition_generation, s.transition_confirmed_generation,
+        s.transition_rejection_sequence,
+        s.transition_remaining_ms,
+        s.transition_command_transmitted ? "true" : "false",
+        s.transition_requested_gear, s.transmitted_gear, s.confirmed_gear,
+        s.confirmation_inferred ? "true" : "false",
+        s.feedback_r20, s.feedback_r26, s.feedback_gear, s.transition_result,
+        s.transition_rejection,
         s.timer_enabled ? "true" : "false", s.timer_remaining_s, s.timer_last_s,
         s.delayed_start ? "true" : "false", s.delayed_remaining_s,
         s.clock_valid ? "true" : "false", s.hold_saturated ? "true" : "false",

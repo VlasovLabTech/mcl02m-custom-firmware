@@ -13,7 +13,7 @@ from a request to edit or build software.
 - Xiaomi device model: `chunmi.ihcooker.v2`.
 - Interface controller: Espressif `ESP-WROOM-32D` (classic ESP32).
 - Display: monochrome 64×48 OLED, page-major 384-byte framebuffer.
-- Current custom source version: `0.2.19-dev`.
+- Current custom source version: `0.2.20-dev`.
 - Framework: ESP-IDF.
 - Public repository language: English for technical documents; the device UI
   supports English, Russian, and Simplified Chinese.

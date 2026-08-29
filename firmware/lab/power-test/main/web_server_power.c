@@ -169,8 +169,11 @@ static esp_err_t ws_handler(httpd_req_t *req)
 
 static esp_err_t status_handler(httpd_req_t *req)
 {
-    char response[1792];
-    powerboard_control_status_json(response, sizeof(response));
+    char response[2560];
+    if (powerboard_control_status_json(response, sizeof(response)) >= sizeof(response)) {
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        return httpd_resp_sendstr(req, "status json overflow");
+    }
     return send_json(req, response);
 }
 

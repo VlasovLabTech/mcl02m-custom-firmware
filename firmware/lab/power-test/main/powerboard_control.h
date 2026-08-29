@@ -20,6 +20,22 @@ typedef enum {
     PB_STATE_FAULT,
 } powerboard_state_t;
 
+typedef enum {
+    PB_TRANSITION_NONE = 0,
+    PB_TRANSITION_START,
+    PB_TRANSITION_ACTIVE_ZERO,
+    PB_TRANSITION_PAUSE,
+    PB_TRANSITION_RESUME,
+} powerboard_transition_t;
+
+typedef enum {
+    PB_FEEDBACK_UNKNOWN = 0,
+    PB_FEEDBACK_OUTPUT_OFF,
+    PB_FEEDBACK_SESSION_ACTIVE,
+    PB_FEEDBACK_NO_PAN,
+    PB_FEEDBACK_FAULT,
+} powerboard_feedback_state_t;
+
 typedef struct {
     bool valid;
     uint32_t sequence;
@@ -65,6 +81,23 @@ typedef struct {
     uint32_t lease_generation;
     uint32_t lease_renewals;
     uint32_t lease_expirations;
+    uint32_t transition_remaining_ms;
+    uint32_t transition_generation;
+    uint32_t transition_confirmed_generation;
+    uint32_t transition_rejection_sequence;
+    uint32_t feedback_sequence;
+    powerboard_transition_t transition_kind;
+    powerboard_state_t transition_requested_state;
+    powerboard_state_t transmitted_state;
+    powerboard_state_t confirmed_state;
+    powerboard_feedback_state_t feedback_state;
+    uint8_t transition_requested_gear;
+    uint8_t transmitted_gear;
+    uint8_t transmitted_topology;
+    uint8_t confirmed_gear;
+    uint8_t feedback_r20;
+    uint8_t feedback_r26;
+    uint8_t feedback_gear;
     uint32_t heartbeat_gap_remaining_ms;
     uint32_t completed_cycles;
     uint32_t bad_cycles;
@@ -78,10 +111,16 @@ typedef struct {
     bool stop_timed_out;
     bool lease_active;
     bool lease_expired;
+    bool transition_pending;
+    bool transition_command_transmitted;
+    bool confirmation_inferred;
+    bool feedback_gear_known;
     bool heartbeat_gap_observed_stop;
     char fault[24];
     char stop_reason[24];
     char stop_issue[24];
+    char transition_result[24];
+    char transition_rejection[32];
     powerboard_start_incident_t start_incident;
 } powerboard_status_t;
 
@@ -101,3 +140,5 @@ esp_err_t powerboard_control_heartbeat_gap(unsigned duration_ms);
 esp_err_t powerboard_control_clear_fault(void);
 
 const char *powerboard_state_name(powerboard_state_t state);
+const char *powerboard_transition_name(powerboard_transition_t transition);
+const char *powerboard_feedback_state_name(powerboard_feedback_state_t state);
