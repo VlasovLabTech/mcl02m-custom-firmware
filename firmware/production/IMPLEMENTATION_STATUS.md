@@ -54,8 +54,10 @@ after a successful scheduled Start, ignores stopped feedback while the Start
 transaction is still pending, and orders the waiting OLED as mode, selected value,
 delay label, countdown. Targeted supervised tests confirmed delayed POWER and
 TEMPERATURE Starts reached `COOKING` without `ETM`, cancellation did not revive an
-expired schedule, temperature reached its setpoint and entered active zero, and both
-user Stops completed transactionally. The
+expired schedule, and temperature reached its setpoint and entered active zero. A
+POWER 10 NoPan test forced zero output; cookware return confirmed `PAN_RETURN_HOLD`
+before a separate `PAN_RETURN_RESUME` restored gear 10. Every user Stop completed
+transactionally. The
 earlier one-time NVS refresh is complete and must not be repeated automatically.
 
 ## Реализованный пользовательский контур
