@@ -96,6 +96,11 @@ remains valid and uses C1 normally.
 | `0x26` | output/cookware capability: `00` inactive, `01` restricted, `02` unrestricted |
 | `0x27` | auxiliary/topology feedback `00/01/02`, exact meaning unknown |
 | `0x28` | raw power-board revision/type selector; stock uses values above 2 for its newer NTC conversion path |
+| `0x29` | companion revision/capability flag; stock reads it with `R28`, and a nonzero value enables a cross-channel temperature-difference check |
+
+The preserved evidence, current behavior, and deferred compatibility decision for
+`R25/R28/R29` are documented in
+[Power-board capability registers](reverse-engineering/POWER_BOARD_CAPABILITY_REGISTERS.md).
 
 `R20=2B` is a stock-recognized relay-transition status. It is logged but neither
 displayed nor timed into a fault. `R20=29/2A` are stock service/calibration event

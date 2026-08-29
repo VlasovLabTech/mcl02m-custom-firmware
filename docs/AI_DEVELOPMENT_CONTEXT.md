@@ -247,9 +247,15 @@ time.
 | `R26` | output/cookware capability: `00` inactive, `01` restricted to gear 35 and `A1`, `02` unrestricted |
 | `R27` | auxiliary/topology feedback `00/01/02`; exact physical meaning unconfirmed |
 | `R28` | raw power-board revision/type selector, displayed in physical Settings and retained in diagnostics |
+| `R29` | companion revision/capability flag; nonzero enables a stock cross-channel temperature-difference check, but custom firmware does not yet infer a policy from it |
 
 Do not replace the lookup tables with linear fits in production. Linear fits were
 useful only for early diagnostics.
+
+The compatibility evidence and the conditions for revisiting `R25/R28/R29` are
+preserved in
+`docs/reverse-engineering/POWER_BOARD_CAPABILITY_REGISTERS.md`. Do not confuse the
+register `R29` with the unrelated silent service-event value `R20=29`.
 
 `R26=01` is a normal small-cookware response, not an error. The restriction is
 enforced below every control mode, including TEMPERATURE, profiles, Pause/Resume,

@@ -612,6 +612,14 @@ require only `R26=02`.
 
 ### Package 2B — Power-board revision compatibility before the second cooker
 
+The evidence and deferred decision are preserved in
+[`POWER_BOARD_CAPABILITY_REGISTERS.md`](reverse-engineering/POWER_BOARD_CAPABILITY_REGISTERS.md).
+`R25` is a startup capability/version byte (`0x0A` in the existing capture), `R28`
+selects the stock NTC conversion family, and `R29` is a companion capability flag
+used by a stock cross-channel temperature check. Register `R29` must not be confused
+with the unrelated `R20=29` service event. No speculative runtime branch is added
+until a genuinely different board tuple is observed.
+
 - [ ] Read `R25/R28/R29` as normal startup capabilities and make `R2C`–`R2F`
   best-effort service diagnostics rather than boot requirements.
 - [ ] Select the stock NTC conversion family from `R28`, or block Start with a clear
