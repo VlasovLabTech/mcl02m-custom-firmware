@@ -55,6 +55,9 @@ static int64_t s_no_pan_since_us;
 static int64_t s_run_started_us;
 static int64_t s_delayed_due_mono_us;
 static int64_t s_manual_pause_since_us;
+static int64_t s_heating_accumulator_us;
+static int64_t s_active_zero_accumulator_us;
+static int64_t s_profile_zero_accumulator_us;
 static bool s_saturation_announced;
 static bool s_no_pan_announced;
 static bool s_waiting_pan_before_start;
@@ -140,6 +143,20 @@ static void enter_no_pan_context_locked(int64_t now_us)
     s_status.active_zero = false;
     s_status.applied_gear = 0;
     strlcpy(s_status.detail, "NO PAN", sizeof(s_status.detail));
+}
+
+static void reset_session_timing_locked(void)
+{
+    s_heating_accumulator_us = 0;
+    s_active_zero_accumulator_us = 0;
+    s_profile_zero_accumulator_us = 0;
+    s_status.run_elapsed_s = 0;
+    s_status.retained_session_remaining_s = 0;
+    s_status.heating_elapsed_s = 0;
+    s_status.active_zero_elapsed_s = 0;
+    s_status.profile_zero_wait_elapsed_s = 0;
+    s_status.manual_pause_elapsed_s = 0;
+    s_status.no_pan_elapsed_s = 0;
 }
 
 const char *cooking_state_name(cook_state_t state)
@@ -324,7 +341,7 @@ static esp_err_t begin_run_locked(void)
         err = powerboard_control_lease_begin(&s_lease_generation);
     }
     if (err == ESP_OK) {
-        err = powerboard_control_start(gear, COOKER_HARD_RUN_LIMIT_MS);
+        err = powerboard_control_start(gear, COOKER_RETAINED_SESSION_LIMIT_MS);
     }
     if (err != ESP_OK) {
         if (armed) powerboard_control_stop("START ROLLBACK");
@@ -351,6 +368,7 @@ static esp_err_t begin_run_locked(void)
     s_pan_return_waiting_output = false;
     s_no_pan_since_us = 0;
     s_run_started_us = esp_timer_get_time();
+    reset_session_timing_locked();
     s_timer_accumulator_us = 0;
     strlcpy(s_status.detail, gear == 0 ? "ACTIVE ZERO PENDING" : "STARTING",
             sizeof(s_status.detail));
@@ -398,7 +416,7 @@ static void finish_normal_stop_locked(void)
     const bool complete = s_stop_terminal == STOP_TERMINAL_COMPLETE;
     s_status.state = complete ? COOK_STATE_COMPLETE : COOK_STATE_IDLE;
     s_run_started_us = 0;
-    s_status.run_elapsed_s = 0;
+    reset_session_timing_locked();
     if (complete) sound_play(SOUND_COMPLETE);
     strlcpy(s_status.detail, s_stop_reason[0] == '\0' ? "STOP" : s_stop_reason,
             sizeof(s_status.detail));
@@ -518,15 +536,51 @@ static void update_manual_pause_timeout_locked(int64_t now_us)
 {
     if (s_status.state != COOK_STATE_PAUSED || s_manual_pause_since_us == 0) {
         s_status.pause_remaining_s = 0;
+        s_status.manual_pause_elapsed_s = 0;
         return;
     }
     const int64_t timeout_us = (int64_t)COOKER_MANUAL_PAUSE_TIMEOUT_MS * 1000LL;
     const int64_t elapsed_us = now_us - s_manual_pause_since_us;
+    s_status.manual_pause_elapsed_s = (uint32_t)(elapsed_us / 1000000LL);
     if (elapsed_us >= timeout_us) {
         begin_normal_stop_locked("PAUSE TIMEOUT", false);
         return;
     }
     s_status.pause_remaining_s = (uint32_t)((timeout_us - elapsed_us + 999999LL) / 1000000LL);
+}
+
+static void update_session_time_buckets_locked(const powerboard_status_t *pb,
+                                               int64_t delta_us,
+                                               int64_t now_us)
+{
+    if (s_run_started_us != 0)
+        s_status.run_elapsed_s = (uint32_t)((now_us - s_run_started_us) / 1000000LL);
+    s_status.retained_session_remaining_s =
+        (pb->run_remaining_ms + 999U) / 1000U;
+    s_status.no_pan_elapsed_s =
+        s_status.state == COOK_STATE_NO_PAN && s_no_pan_since_us != 0 ?
+        (uint32_t)((now_us - s_no_pan_since_us) / 1000000LL) : 0;
+
+    if (delta_us <= 0 || s_status.state != COOK_STATE_COOKING ||
+        pb->transition_pending)
+        return;
+    if (pb->state == PB_STATE_HEATING && pb->applied_gear != 0) {
+        s_heating_accumulator_us += delta_us;
+    } else if (pb->state == PB_STATE_ACTIVE_ZERO) {
+        const bool profile_zero = s_status.mode == COOK_MODE_PROFILE &&
+            s_status.profile_stage_mode == COOK_MODE_POWER &&
+            s_status.selected_gear == 0;
+        if (profile_zero)
+            s_profile_zero_accumulator_us += delta_us;
+        else
+            s_active_zero_accumulator_us += delta_us;
+    }
+    s_status.heating_elapsed_s =
+        (uint32_t)(s_heating_accumulator_us / 1000000LL);
+    s_status.active_zero_elapsed_s =
+        (uint32_t)(s_active_zero_accumulator_us / 1000000LL);
+    s_status.profile_zero_wait_elapsed_s =
+        (uint32_t)(s_profile_zero_accumulator_us / 1000000LL);
 }
 
 static void update_timer_locked(int64_t delta_us)
@@ -720,8 +774,6 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
     s_status.pan_present = pb->state != PB_STATE_NO_PAN;
     s_status.cookware_limited = pb->cookware_limited;
     s_status.active_zero = pb->state == PB_STATE_ACTIVE_ZERO || pb->state == PB_STATE_PAUSED;
-    s_status.run_elapsed_s = s_run_started_us == 0 ? 0 :
-                             (uint32_t)((now_us - s_run_started_us) / 1000000);
     s_status.stop_elapsed_ms = pb->stop_elapsed_ms;
     s_status.stop_generation = pb->stop_generation;
     s_status.stop_timed_out = pb->stop_timed_out;
@@ -1056,6 +1108,7 @@ static void engine_task(void *arg)
         update_schedule_locked(now);
         apply_power_status_locked(&pb, now);
         update_manual_pause_timeout_locked(now);
+        update_session_time_buckets_locked(&pb, delta, now);
         update_timer_locked(delta);
         update_temperature_locked(now);
         renew_cooking_lease_locked();
@@ -1136,7 +1189,10 @@ size_t cooking_engine_status_json(char *output, size_t output_size)
         "\"clock_valid\":%s,\"hold_saturated\":%s,"
         "\"profile\":%u,\"profile_stage\":%u,\"profile_cells\":%u,"
         "\"profile_mode\":%u,"
-        "\"run_s\":%" PRIu32 ",\"detail\":\"%s\"}",
+        "\"run_s\":%" PRIu32 ",\"session_remaining_s\":%" PRIu32 ","
+        "\"heating_s\":%" PRIu32 ",\"active_zero_s\":%" PRIu32 ","
+        "\"profile_zero_s\":%" PRIu32 ",\"manual_pause_s\":%" PRIu32 ","
+        "\"no_pan_s\":%" PRIu32 ",\"detail\":\"%s\"}",
         cooking_state_name(s.state), s.mode, s.temp_phase, cooking_fault_name(s.fault),
         s.selected_gear, s.applied_gear, s.paused_gear, s.target_temperature_c,
         s.bottom_c, s.igbt_c, s.i2c_bad_cycles,
@@ -1164,7 +1220,10 @@ size_t cooking_engine_status_json(char *output, size_t output_size)
         s.clock_valid ? "true" : "false", s.hold_saturated ? "true" : "false",
         s.profile_index, s.profile_stage_index, s.profile_stage_count,
         s.profile_stage_mode,
-        s.run_elapsed_s, s.detail);
+        s.run_elapsed_s, s.retained_session_remaining_s,
+        s.heating_elapsed_s, s.active_zero_elapsed_s,
+        s.profile_zero_wait_elapsed_s, s.manual_pause_elapsed_s,
+        s.no_pan_elapsed_s, s.detail);
 }
 
 esp_err_t cooking_set_mode(cook_mode_t mode)

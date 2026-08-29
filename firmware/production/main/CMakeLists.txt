@@ -40,7 +40,7 @@ idf_component_register(
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     MCL02M_POWER_TEST_BUILD=0
-    MCL02M_MAX_RUN_MS=18000000U
+    MCL02M_MAX_RUN_MS=28800000U
     MCL02M_MAX_IGBT_C=80U
     MCL02M_I2C_BAD_CYCLES_TO_FAULT=6U
     # Stock-firmware static analysis shows 0x81/0x00/0x00 as the distinct

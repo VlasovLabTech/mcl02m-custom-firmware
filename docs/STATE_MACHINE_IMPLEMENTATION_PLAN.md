@@ -4,7 +4,7 @@ Status: **in progress; the first bounded fix batch is implemented, while the rem
 
 Audit baseline: `0.2.10-dev`, commit `2b5784e` (`2026-08-28`)
 
-Current source: `0.2.21-dev`. Version `0.2.17-dev` was flashed to the development
+Current source: `0.2.22-dev`. Version `0.2.17-dev` was flashed to the development
 cooker on 2026-08-29 after explicit authorization; retained-session active zero works
 without unexpected relay switching. The source now also keeps the temporary I2C-loss
 OLED counter behind a disabled compile-time flag, so it is absent from the production
@@ -710,24 +710,38 @@ after Stop or Pause.
 
 - [x] Replace queued timer Toggle with synchronous explicit Set/Disable and split the
   editor into seconds, minutes and hours (`0.2.16-dev`).
-- [ ] Separate user cooking countdown, accumulated heating-on time, retained-session
+- [x] Separate user cooking countdown, accumulated heating-on time, retained-session
   wall time, manual-Pause time, profile zero-power wait time and the safety lease.
-- [ ] Replace or scope the lower five-hour deadline only after the lease exists.
+- [x] Replace or scope the lower five-hour deadline only after the lease exists.
   Manual Pause still stops after two hours; intentional active zero and profile waits
   do not masquerade as Pause, but retain explicit safety bounds.
 - [x] Reject mode/profile/target mutation while Delayed Start is active
   (`0.2.12-dev`).
-- [ ] Synchronize the physical UI to the actual POWER, temperature or profile view
+- [x] Synchronize the physical UI to the actual POWER, temperature or profile view
   when a delayed run starts; define whether profile encoder edits are rejected.
-- [ ] Give long-center Stop priority over timer/delayed editors during every live
+- [x] Give long-center Stop priority over timer/delayed editors during every live
   state. Cancel and short presses retain their navigation roles.
-- [ ] Test delay expiry during every menu, timer completion while paused/NoPan,
+- [x] Test delay expiry during every menu, timer completion while paused/NoPan,
   multiple zero-duration profile cells, multi-hour active-zero stages, cancellation
   at deadline boundaries and power loss without automatic heating restoration.
 
+Package 7 is implemented in unflashed `0.2.22-dev`. The user/profile countdown keeps
+its five-hour limit and freezes in Pause and NoPan. The lower deadline is now an
+independent eight-hour retained-session wall guard, long enough for a maximum profile
+plus one full manual-Pause window and the NoPan boundary; the three-second cooking
+lease remains the task-stall guard. Authenticated status exposes retained wall time
+and separate actual-heating, ordinary-active-zero, profile-POWER-0, manual-Pause, and
+NoPan buckets. Delayed expiry synchronizes any physical menu to the actual POWER,
+TEMPERATURE, or PROFILE view, and profile selection remains immutable during the
+delay. The intent queue is processed before the deadline update, so Cancel at the
+exact boundary wins; long-center Stop/Cancel also outranks an open timer editor.
+Policy tests cover all menu-to-mode synchronization, frozen countdowns, skipped
+zero-duration cells, multi-hour profile zero, the exact cancel boundary, and RAM-only
+schedule loss on restart.
+
 ### Final field validation after each package
 
-- [ ] Build and run all offline gates, inspect the exact app image and preserve compact
+- [x] Build and run all offline gates, inspect the exact app image and preserve compact
   diagnostic coverage.
 - [x] Flash `0.2.17-dev` only after a separate explicit instruction for that exact
   build; esptool verified the app-only `0x170000` write.

@@ -13,7 +13,7 @@ from a request to edit or build software.
 - Xiaomi device model: `chunmi.ihcooker.v2`.
 - Interface controller: Espressif `ESP-WROOM-32D` (classic ESP32).
 - Display: monochrome 64×48 OLED, page-major 384-byte framebuffer.
-- Current custom source version: `0.2.21-dev`.
+- Current custom source version: `0.2.22-dev`.
 - Framework: ESP-IDF.
 - Public repository language: English for technical documents; the device UI
   supports English, Russian, and Simplified Chinese.
@@ -398,6 +398,14 @@ PAUSED, NO_PAN, COMPLETE, FAULT
 - Last value is retained in RAM, not flash.
 - Timer freezes in Pause and NoPan.
 - Manual Pause uses active zero and performs a full Stop after two continuous hours.
+- User and profile countdowns remain capped at five hours. They are independent from
+  the eight-hour retained power-session wall guard and the three-second cooking-task
+  lease. Authenticated status separately accounts actual heating, ordinary active
+  zero, profile POWER-0 wait, current manual Pause, and current NoPan time.
+- Delayed Start is RAM-only. A physical Cancel or long-center action queued at the
+  exact deadline is consumed before the deadline update and therefore wins. On real
+  expiry the UI switches from any open menu to the selected POWER, TEMPERATURE, or
+  PROFILE view; profile selection cannot change while the delay is active.
 - Completion stops output, plays the completion melody, shows the Ready image,
   and waits for acknowledgement.
 - Timer is unavailable for an active profile because every profile stage already

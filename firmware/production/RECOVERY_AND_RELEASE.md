@@ -2,7 +2,7 @@
 
 Этот документ описывает будущую процедуру, но **не разрешает запись сейчас**.
 
-Current reference app artifact: `build/mcl02m_custom.bin` (`0.2.21-dev`). Its exact
+Current reference app artifact: `build/mcl02m_custom.bin` (`0.2.22-dev`). Its exact
 size and SHA-256 are recorded in `BUILD_MANIFEST.md`; it has not been flashed. The
 deployed `0.2.17-dev` app was flashed to stock `ota_1` at `0x170000` on 2026-08-29
 after explicit authorization, and esptool verified the written data. No other
@@ -56,6 +56,9 @@ required. The firmware contains no automatic NVS erase.
    an `R26=01` small-cookware return.
 6. Boundary commands 35↔36 and 55↔56 no faster than stock 500-ms heartbeat.
 7. Timer complete and completion melody.
+   Also verify that countdown freezes in Pause/NoPan, a POWER-0 profile stage advances
+   without entering manual Pause, delayed expiry selects the correct live mode screen,
+   and long-center Stop wins while the timer editor is open.
 8. Fault screen/alarm test without artificial overheating.
 9. Only then short TEMPERATURE tests, starting at low target; HOLD must never
    exceed 35 and `HOLD SATURATED` must not raise it.

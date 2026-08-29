@@ -134,6 +134,12 @@ typedef struct {
     char transition_result[24];
     char transition_rejection[32];
     uint32_t run_elapsed_s;
+    uint32_t retained_session_remaining_s;
+    uint32_t heating_elapsed_s;
+    uint32_t active_zero_elapsed_s;
+    uint32_t profile_zero_wait_elapsed_s;
+    uint32_t manual_pause_elapsed_s;
+    uint32_t no_pan_elapsed_s;
     uint8_t profile_index;
     uint8_t profile_stage_index;
     uint8_t profile_stage_count;

@@ -40,6 +40,7 @@ def main() -> int:
     files = list(MAIN.glob("*.c")) + list(MAIN.glob("*.h"))
     source = "\n".join(path.read_text(encoding="utf-8") for path in files)
     config = (MAIN / "app_config.h").read_text(encoding="utf-8")
+    app_types = (MAIN / "app_types.h").read_text(encoding="utf-8")
     cmake = (MAIN / "CMakeLists.txt").read_text(encoding="utf-8")
     engine = (MAIN / "cooking_engine.c").read_text(encoding="utf-8")
     web = (MAIN / "web_server_prod.c").read_text(encoding="utf-8")
@@ -343,6 +344,20 @@ def main() -> int:
     require("state_schedulable" in engine and
             "if (!state_schedulable(snapshot.state)) return ESP_ERR_INVALID_STATE" in engine,
             "delayed Start cannot overwrite an active cooking state")
+    require("#define COOKER_RETAINED_SESSION_LIMIT_MS (8U * 60U * 60U * 1000U)" in config and
+            "MCL02M_MAX_RUN_MS=28800000U" in cmake and
+            "powerboard_control_start(gear, COOKER_RETAINED_SESSION_LIMIT_MS)" in engine and
+            "update_session_time_buckets_locked" in engine and
+            "retained_session_remaining_s" in app_types and
+            "heating_elapsed_s" in app_types and
+            "active_zero_elapsed_s" in app_types and
+            "profile_zero_wait_elapsed_s" in app_types and
+            "manual_pause_elapsed_s" in app_types and
+            "no_pan_elapsed_s" in app_types and
+            "session_remaining_s" in engine and "profile_zero_s" in engine and
+            "class SessionTimeBuckets" in
+            (ROOT / "tests" / "policy_tests.py").read_text(encoding="utf-8"),
+            "five-hour countdown, eight-hour retained-session wall bound, heating, active-zero, profile-zero, Pause, NoPan and lease time remain separate")
     require("INTENT_SET_MODE" not in engine and "INTENT_SET_POWER" not in engine and
             "INTENT_SET_TEMP" not in engine and
             "INTENT_START" in engine and
@@ -528,6 +543,26 @@ def main() -> int:
     require("status.state == COOK_STATE_DELAYED" in ui and "cooking_schedule_cancel();" in ui and
             "VIEW_START_IN_MINUTES" in ui and "VIEW_START_IN_HOURS" in ui,
             "center hold cancels delayed Start and START IN edits minutes then hours")
+    long_branch = ui[ui.find("static bool central_long"):
+                     ui.find("static void cancel_action")]
+    require("synchronize_delayed_start_view" in ui and
+            "s_last_cooking_state == COOK_STATE_DELAYED" in ui and
+            "s_view = VIEW_POWER" in ui and "s_view = VIEW_TEMPERATURE" in ui and
+            "s_view = VIEW_PROFILE_READY" in ui and
+            "status.state == COOK_STATE_DELAYED" in long_branch and
+            "cooking_stop(\"CENTER HOLD\")" in long_branch and
+            long_branch.find("status.state == COOK_STATE_DELAYED") <
+            long_branch.find("else if (s_timer_editing)") and
+            long_branch.find("cooking_stop(\"CENTER HOLD\")") <
+            long_branch.find("else if (s_timer_editing)") and
+            long_branch.count("s_timer_editing = false;") >= 3 and
+            "status.state == COOK_STATE_DELAYED" in
+            ui[ui.find("static void encoder_event"):ui.find("static void central_short")] and
+            "def delayed_deadline" in
+            (ROOT / "tests" / "policy_tests.py").read_text(encoding="utf-8") and
+            "def delayed_after_restart" in
+            (ROOT / "tests" / "policy_tests.py").read_text(encoding="utf-8"),
+            "delay expiry synchronizes the real mode view, profile browsing cannot mutate a delayed run, and long-center Stop/Cancel outranks timer editors")
     require("ui_oled_show_cooking" in display and "settings.show_context_value" in display and
             "settings.show_igbt" in display and "cooker.timer_enabled" in display,
             "active screens expose timer and optional contextual/IGBT readings")

@@ -3,7 +3,7 @@
 Build date: 2026-08-29
 ESP-IDF: 6.0.2
 Target: ESP32, Unicore
-Firmware: `0.2.21-dev`
+Firmware: `0.2.22-dev`
 
 The app header embeds compile metadata, so a clean rebuild may have a different
 SHA-256 while retaining the same source, layout, size and validation gates.
@@ -12,17 +12,17 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 ## App image
 
 - File: `build/mcl02m_custom.bin`
-- Size: `895728` bytes (`0xDAAF0`)
-- SHA-256: `23e866f5a03ffe827e804d66fc97c750afae00737d18cb35ac95eb48fc8c1436`
-- ESP image validation hash: `6468d66f7b5466fa7015691f8bca83921af823547e68d75fbe7a50269500f3d8`
-- Stock OTA slot: `0x160000` bytes; image fits with `546064` bytes free.
+- Size: `896656` bytes (`0xDAE90`)
+- SHA-256: `4e6d8e50187c05557acd7ed058b9f7d1843a5a47205e14a89c74a2ddd4d38512`
+- ESP image validation hash: `3e664ce160f3ee1d98fcf8194a9177ceac5e0d0b2cb4eec7016629548d70c1bd`
+- Stock OTA slot: `0x160000` bytes; image fits with `545136` bytes free.
 
 ## Linked memory
 
-- Flash code: 640494 bytes
-- Flash data: 150556 bytes
+- Flash code: 641322 bytes
+- Flash data: 150668 bytes
 - IRAM: 89047 / 131072 bytes (67.94%)
-- DRAM static: 36972 / 180736 bytes (20.46%)
+- DRAM static: 37020 / 180736 bytes (20.48%)
 - RTC slow: 64 / 8192 bytes
 
 ## Offline gates
@@ -43,6 +43,10 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
   recognized pan-present status, active-zero safe hold, fresh recomputation and a
   second Resume generation; they reject unknown-return evidence and late feedback
   after Stop or Pause.
+  Package 7 additionally covers independent retained-wall/heating/active-zero/
+  profile-zero/Pause/NoPan clocks, frozen countdowns, five-hour profile waits under
+  the eight-hour retained-session guard, every delayed-expiry menu, exact-boundary
+  cancellation, long-center priority, skipped cells and RAM-only schedule loss.
 - `tests/safety_check.py`: PASS.
 - Production ELF check: temporary `I2C ERRORS` menu/overlay code is absent while
   its guarded source remains available.
@@ -56,7 +60,7 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 
 ## Development-unit deployment
 
-This `0.2.21-dev` artifact has not been flashed. The development unit still runs the
+This `0.2.22-dev` artifact has not been flashed. The development unit still runs the
 hash-verified `0.2.17-dev` app written only to stock `ota_1` at `0x170000` on
 2026-08-29 after explicit owner authorization. That operation did not write the
 bootloader, partition table, `otadata`, NVS, PHY, `ota_0` or eFuse.

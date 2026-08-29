@@ -13,7 +13,7 @@
 - `R26=01` restricted-cookware feedback is accepted as normal heating and caps every
   control path at real gear `35`/`A1`; POWER reports the permitted value, blocks only
   upward edits above 35, and displays a temporary explanatory message;
-- physical Settings shows both `0.2.21-dev` firmware and live raw `R28` power-board
+- physical Settings shows both `0.2.22-dev` firmware and live raw `R28` power-board
   revision/type with four left-aligned rows;
 - `R20=2B/29/2A` are silent nonfaults; another unknown nonzero `R20` shows its exact
   hex value as a persistent warning, and the first physical input dismisses only the
@@ -36,6 +36,12 @@
   IGBT/bottom guards remain active;
 - cooking timer up to 5 h with sequential `SECONDS → MINUTES → HOURS` confirmation,
   synchronous explicit Set/Disable, RAM-last-value, and COMPLETE melody;
+- separate accounting for the five-hour countdown, eight-hour retained-session wall
+  guard, actual heating, ordinary active zero, profile POWER-0 waits, manual Pause,
+  NoPan and the independent cooking lease;
+- Delayed Start synchronizes the panel to POWER, TEMPERATURE or the selected PROFILE
+  after expiry; profile selection remains immutable during the delay, and long-center
+  Stop/Cancel outranks an open timer editor;
 - `START IN` и `START AT`, только после физического задания/разрешения;
 - OLED-off/wake guard, 9 LED мощности, timer LED, blue/orange status, buzzer;
 - полноэкранные `64×48` turn-on/wake/cooking/confirm/cancel/ready/no-pan/error/

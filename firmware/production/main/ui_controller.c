@@ -95,6 +95,9 @@ static bool s_swallow_timer;
 static volatile bool s_timer_editing;
 static view_t s_timer_return_view;
 static unsigned s_wake_selection;
+static cook_state_t s_last_cooking_state = COOK_STATE_IDLE;
+
+static int clamp(int value, int minimum, int maximum);
 
 static void reset_encoder_acceleration(void)
 {
@@ -112,6 +115,39 @@ static void restore_primary_wake_selection(void)
 {
     s_selection = s_wake_selection;
     s_view = VIEW_HOME;
+}
+
+static bool run_visible_state(cook_state_t state)
+{
+    return state == COOK_STATE_STARTING || state == COOK_STATE_COOKING ||
+           state == COOK_STATE_PAUSED || state == COOK_STATE_NO_PAN ||
+           state == COOK_STATE_STOPPING;
+}
+
+static void synchronize_delayed_start_view(const cooker_snapshot_t *status)
+{
+    const bool started = s_last_cooking_state == COOK_STATE_DELAYED &&
+                         run_visible_state(status->state);
+    s_last_cooking_state = status->state;
+    if (!started) return;
+
+    s_timer_editing = false;
+    s_temperature_edit_deadline_us = 0;
+    reset_encoder_acceleration();
+    if (status->mode == COOK_MODE_TEMPERATURE) {
+        s_selection = 1;
+        s_temperature_edit_value = (unsigned)clamp(
+            status->target_temperature_c, COOKER_TEMP_MIN_C, COOKER_TEMP_MAX_C);
+        s_view = VIEW_TEMPERATURE;
+    } else if (status->mode == COOK_MODE_PROFILE) {
+        if (status->profile_index > 0)
+            s_profile = status->profile_index - 1U;
+        s_selection = 2;
+        s_view = VIEW_PROFILE_READY;
+    } else {
+        s_selection = 0;
+        s_view = VIEW_POWER;
+    }
 }
 
 static const char *tr(app_language_t language, const char *english,
@@ -680,6 +716,9 @@ static void encoder_event(const ui_input_event_t *event)
     const int timer_step = step > 1 ? 5 : (step < -1 ? -5 : step);
     cooker_snapshot_t status;
     cooking_engine_get_snapshot(&status);
+    if (status.state == COOK_STATE_DELAYED &&
+        (s_view == VIEW_PROFILES || s_view == VIEW_PROFILE_READY))
+        return;
     switch (s_view) {
     case VIEW_HOME: s_selection = (unsigned)clamp((int)s_selection + (step > 0 ? 1 : -1), 0, HOME_ITEMS - 1); break;
     case VIEW_POWER: cooking_set_power(clamp((int)status.selected_gear + step, 0, 99)); break;
@@ -914,19 +953,22 @@ static bool central_long(void)
     cooker_snapshot_t status;
     cooking_engine_get_snapshot(&status);
     s_temperature_edit_deadline_us = 0;
-    if (s_timer_editing) {
-        close_timer_editor();
-    } else if (status.state == COOK_STATE_DELAYED) {
+    if (status.state == COOK_STATE_DELAYED) {
+        s_timer_editing = false;
         cooking_schedule_cancel();
         s_view = VIEW_HOME;
     } else if (status.state == COOK_STATE_FAULT) {
+        s_timer_editing = false;
         cooking_acknowledge();
         s_view = VIEW_HOME;
     } else if (status.state == COOK_STATE_COOKING || status.state == COOK_STATE_STARTING ||
                status.state == COOK_STATE_PAUSED || status.state == COOK_STATE_NO_PAN ||
                status.state == COOK_STATE_STOPPING) {
+        s_timer_editing = false;
         cooking_stop("CENTER HOLD");
         s_view = VIEW_HOME;
+    } else if (s_timer_editing) {
+        close_timer_editor();
     } else if (s_view == VIEW_FACTORY_CONFIRM) {
         app_settings_t before_reset;
         settings_get(&before_reset);
@@ -1080,6 +1122,7 @@ static void ui_task(void *arg)
         cooker_snapshot_t status;
         app_settings_t settings;
         cooking_engine_get_snapshot(&status);
+        synchronize_delayed_start_view(&status);
         settings_get(&settings);
         const int64_t now = esp_timer_get_time();
         const bool urgent_screen = status.r20_warning_active ||

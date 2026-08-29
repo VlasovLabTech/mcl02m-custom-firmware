@@ -175,7 +175,7 @@ modified. See [Flashing and recovery](docs/FLASHING.md) before writing anything.
 
 ## Development status
 
-The current source version is `0.2.21-dev`; the development unit runs the
+The current source version is `0.2.22-dev`; the development unit runs the
 hash-verified `0.2.17-dev` image written only to stock `ota_1` at `0x170000` on
 2026-08-29. Supervised testing confirmed retained-session active zero without
 unexpected relay switching, Sleep/Wake, the temporary I2C debug display, and
@@ -216,6 +216,12 @@ first confirms active zero; the cooking layer then refreshes readings, resets th
 interrupted temperature-control episode, applies the small-cookware cap, recomputes
 output, and confirms a separate Resume generation. Unknown `R20` warnings cannot
 prove return, and Stop or Pause invalidates an in-flight return generation. The
+unflashed `0.2.22-dev` source separates the five-hour user/profile countdown from
+an eight-hour retained-session wall guard, the two-hour manual-Pause limit, the
+three-second cooking lease, and diagnostic heating/active-zero/profile-zero/NoPan
+time buckets. Delayed Start now returns the physical UI to the actual POWER,
+TEMPERATURE, or PROFILE view regardless of which menu was open, and long-center
+Stop or delayed Cancel has priority over the timer editor. The
 remaining findings and proposed fix sequence are preserved in the
 [state-machine implementation plan](docs/STATE_MACHINE_IMPLEMENTATION_PLAN.md).
 The `0.2.17-dev` app was flashed after explicit owner authorization. Esptool verified

@@ -458,6 +458,65 @@ class TimerControl:
         self.enabled = False
 
 
+@dataclass
+class SessionTimeBuckets:
+    """Independent wall, output, Pause and NoPan accounting for one retained session."""
+
+    wall_s: int = 0
+    heating_s: int = 0
+    active_zero_s: int = 0
+    profile_zero_s: int = 0
+    manual_pause_s: int = 0
+    no_pan_s: int = 0
+
+    def tick(self, state: str, seconds: int, *, output: str = "OFF",
+             profile_zero: bool = False) -> None:
+        if state in {"STARTING", "COOKING", "PAUSED", "NO_PAN"}:
+            self.wall_s += seconds
+        if state == "PAUSED":
+            self.manual_pause_s += seconds
+        elif state == "NO_PAN":
+            self.no_pan_s += seconds
+        elif state == "COOKING" and output == "HEATING":
+            self.heating_s += seconds
+        elif state == "COOKING" and output == "ACTIVE_ZERO":
+            if profile_zero:
+                self.profile_zero_s += seconds
+            else:
+                self.active_zero_s += seconds
+
+
+def delayed_start_view(mode: str, current_view: str) -> str:
+    del current_view  # Expiry owns the view regardless of the menu being displayed.
+    return {
+        "POWER": "POWER",
+        "TEMPERATURE": "TEMPERATURE",
+        "PROFILE": "PROFILE_READY",
+    }[mode]
+
+
+def long_center_action(state: str, timer_editing: bool) -> str:
+    if state == "DELAYED":
+        return "CANCEL_DELAY"
+    if state in {"STARTING", "COOKING", "PAUSED", "NO_PAN", "STOPPING"}:
+        return "STOP"
+    if timer_editing:
+        return "CLOSE_TIMER"
+    return "NAVIGATE"
+
+
+def delayed_deadline(cancel_queued: bool, due: bool) -> str:
+    """Queued physical intents are consumed before the deadline update."""
+    if cancel_queued:
+        return "IDLE"
+    return "STARTING" if due else "DELAYED"
+
+
+def delayed_after_restart(was_scheduled: bool) -> bool:
+    del was_scheduled
+    return False  # Schedule state is deliberately RAM-only.
+
+
 def timer_fields(total_s: int) -> tuple[int, int, int]:
     assert 0 <= total_s <= 5 * 60 * 60
     return total_s % 60, (total_s // 60) % 60, total_s // 3600
@@ -656,6 +715,35 @@ def run() -> None:
     assert timer_fields(4 * 3600 + 40 * 60 + 25) == (25, 40, 4)
     assert timer_total(25, 40, 4) == 4 * 3600 + 40 * 60 + 25
     assert timer_total(0, 0, 5) == 5 * 60 * 60
+
+    clocks = SessionTimeBuckets()
+    clocks.tick("STARTING", 2)
+    clocks.tick("COOKING", 600, output="HEATING")
+    clocks.tick("COOKING", 300, output="ACTIVE_ZERO")
+    clocks.tick("COOKING", 3 * 60 * 60, output="ACTIVE_ZERO", profile_zero=True)
+    clocks.tick("PAUSED", 120)
+    clocks.tick("NO_PAN", 30)
+    assert clocks.wall_s == 2 + 600 + 300 + 3 * 60 * 60 + 120 + 30
+    assert clocks.heating_s == 600
+    assert clocks.active_zero_s == 300
+    assert clocks.profile_zero_s == 3 * 60 * 60
+    assert clocks.manual_pause_s == 120 and clocks.no_pan_s == 30
+    assert 5 * 60 * 60 + 2 * 60 * 60 + 60 < 8 * 60 * 60
+    menu_views = (
+        "HOME", "POWER", "TEMPERATURE", "READINGS", "SETTINGS", "TIMER",
+        "START_IN", "START_AT", "PROFILES", "WIFI", "CLOCK",
+    )
+    for current_view in menu_views:
+        assert delayed_start_view("POWER", current_view) == "POWER"
+        assert delayed_start_view("TEMPERATURE", current_view) == "TEMPERATURE"
+        assert delayed_start_view("PROFILE", current_view) == "PROFILE_READY"
+    assert long_center_action("COOKING", True) == "STOP"
+    assert long_center_action("NO_PAN", True) == "STOP"
+    assert long_center_action("DELAYED", True) == "CANCEL_DELAY"
+    assert long_center_action("IDLE", True) == "CLOSE_TIMER"
+    assert delayed_deadline(cancel_queued=True, due=True) == "IDLE"
+    assert delayed_deadline(cancel_queued=False, due=True) == "STARTING"
+    assert not delayed_after_restart(was_scheduled=True)
 
     assert temperature_step("PREHEAT", 100, 20) == ("PREHEAT", 99)
     assert temperature_step("PREHEAT", 100, 75) == ("PREHEAT", 77)

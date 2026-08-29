@@ -1,7 +1,7 @@
 # MCL02M custom firmware — implementation status
 
 Дата: 2026-08-29
-Версия исходников: `0.2.21-dev`
+Версия исходников: `0.2.22-dev`
 Статус: the development unit runs the hash-verified `0.2.17-dev` app written only to
 stock `ota_1` at `0x170000` on 2026-08-29. It booted successfully, and supervised
 testing confirmed retained-session active zero without unwanted relay switching,
@@ -37,6 +37,12 @@ feedback first confirms active zero, then the cooking layer refreshes temperatur
 resets PI/trend/saturation context, applies the small-cookware cap, recomputes output
 and requests a separately confirmed Resume. Unknown `R20` values cannot prove return;
 Stop and Pause replace or cancel the return generation. The
+unflashed `0.2.22-dev` source separates the five-hour user/profile countdown from
+the eight-hour retained-session wall bound, two-hour manual Pause and three-second
+cooking lease, and exposes distinct heating, ordinary active-zero, profile POWER-0,
+Pause and NoPan elapsed counters. Delayed expiry synchronizes the physical UI to the
+actual selected mode from any menu. Profile selection cannot mutate a delayed run,
+and long-center Stop/Cancel takes priority over an open timer editor. The
 earlier one-time NVS refresh is complete and must not be repeated automatically.
 
 ## Реализованный пользовательский контур
@@ -55,8 +61,9 @@ earlier one-time NVS refresh is complete and must not be repeated automatically.
 | Sleep | default 1 min Idle; wake returns to Home/Power, or Home/Temperature when Sleep began from Temperature; secondary menu selections are never restored; heartbeat and safety continue at zero output |
 | OLED | renderer использует полные `64×48` без отладочной рамки; десять 1-bit картинок показывают turn-on 5 s синхронно с boot-мелодией, wake 3 s, cooking 2,5 s, confirm/cancel 1,5 s, ready/no-pan/error до изменения состояния и две 10-s стадии Sleep; active timeout default 3 min; первое нажатие/вращение только будит; encoder guard 1,5 s |
 | TIMER SCREEN | `AUTO` полностью гасит OLED; `ALWAYS` оставляет только countdown и перемещает его раз в минуту |
-| Cooking timer | large `MM:SS` editor confirms blinking seconds first and blinking minutes second, followed by a separate hours confirmation; maximum 5 h; Set and Disable complete synchronously, an all-zero value is rejected, and rapid disable/re-enable cannot race queued toggles; at ≥1 h the running screen shows `H:MM′`, below one hour `MM:SS″`; RAM only |
-| Delayed start | крупные `START IN/START AT` (`СТАРТ ЧЕРЕЗ/СТАРТ В`) `HH:MM`; максимум ближайшие 24 h; Cancel или hold центра отменяют; RAM only; timer LED мигает; при NoPan ждёт 60 s |
+| Cooking timer | large `MM:SS` editor confirms blinking seconds first and blinking minutes second, followed by a separate hours confirmation; maximum 5 h; Set and Disable complete synchronously, an all-zero value is rejected, and rapid disable/re-enable cannot race queued toggles; countdown freezes only in manual Pause and NoPan; at ≥1 h the running screen shows `H:MM′`, below one hour `MM:SS″`; RAM only |
+| Session timing | retained power session has a separate 8 h wall guard; manual Pause has its own 2 h limit; authenticated status separately reports actual heating, ordinary active zero, profile POWER-0 wait, Pause and NoPan elapsed time plus the independent 3 s cooking lease |
+| Delayed start | крупные `START IN/START AT` (`СТАРТ ЧЕРЕЗ/СТАРТ В`) `HH:MM`; максимум ближайшие 24 h; Cancel или hold центра отменяют before the deadline update; RAM only and never restored after power loss; timer LED мигает; expiry from any menu synchronizes to POWER/TEMPERATURE/PROFILE; profile selection is immutable during delay; при NoPan ждёт 60 s |
 | Clock | отдельный пункт `CLOCK/ЧАСЫ` показывает идущие `HH:MM`; ручные 24-часовые `HH:MM` без секунд и без flash-write; реальная SNTP-синхронизация всегда приоритетнее ручной установки; после полного снятия питания offline clock снова недействителен |
 | Profiles | five NVS profiles with up to five timed POWER/TEMPERATURE cells; POWER gear 0 is an active-zero wait cell and is not subject to the manual-Pause timeout; zero duration skips a cell; total maximum 5 h; Load still requires a separate physical Start |
 | Readings | INFO: три строки `VOLT`, `NTC`, `IGBT`; сверху рабочего POWER — NTC, сверху TEMPERATURE — `S…°` и power; без timer опциональный IGBT заменяет context на 2 s после 5 s context; с timer IGBT скрыт, context остаётся; Pause скрывает timer/context |
