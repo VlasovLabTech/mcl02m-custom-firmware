@@ -13,7 +13,11 @@ from a request to edit or build software.
 - Xiaomi device model: `chunmi.ihcooker.v2`.
 - Interface controller: Espressif `ESP-WROOM-32D` (classic ESP32).
 - Display: monochrome 64×48 OLED, page-major 384-byte framebuffer.
-- Current custom source version: `0.2.24-dev`.
+- Current custom source version: `0.2.25-dev`.
+- `0.2.25-dev` makes timed pictures dismissible by the next physical press or encoder
+  movement while preserving a new picture created by that same action, keeps the
+  clean live focus screen throughout transactional Stop, and refuses `START AT` with
+  a localized `TIME NOT SET` screen whenever the wall clock is invalid.
 - `0.2.24-dev` fixes a hardware-reproduced Delayed Start race: expiry refreshes the
   power-board snapshot created before the scheduled Start, and pending Start feedback
   cannot classify the preceding stopped state as `ETM / UNEXPECTED STOP`. The delayed
@@ -424,7 +428,8 @@ PAUSED, NO_PAN, COMPLETE, FAULT
 ### Delayed start
 
 - `START IN`: relative delay.
-- `START AT`: next occurrence of the selected 24-hour time.
+- `START AT`: next occurrence of the selected 24-hour time. An invalid wall clock
+  cannot enter or complete this editor; the OLED reports `TIME NOT SET` instead.
 - The previously selected POWER/TEMPERATURE mode and setpoint are used.
 - Scheduling requires prior physical setup; it is RAM-only and is cancelled by
   Cancel or a center hold.
@@ -510,6 +515,12 @@ center → left → right to reduce OLED burn-in.
 - The error artwork's lower-right source label and separator are cleared during
   generation. The actual three-character fault code is rendered at 2× scale in
   the reserved `x=30…63`, `y=30…47` corner.
+- A new physical button press, touch press, or encoder movement dismisses the current
+  timed turn-on/wake/cooking/confirm/cancel image immediately. The input action is
+  still processed, so actions that intentionally create a new image keep that new
+  image. State-latched fault, Ready, and NoPan images retain their existing policy.
+- While transactional Stop is pending, the OLED retains the clean large live focus
+  layout; it never exposes the internal `STOPPING` diagnostic text screen.
 
 Approved image states:
 

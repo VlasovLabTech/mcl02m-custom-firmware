@@ -1,7 +1,7 @@
 # MCL02M custom firmware — implementation status
 
 Дата: 2026-08-30
-Версия исходников: `0.2.24-dev`
+Версия исходников: `0.2.25-dev`
 Статус: the development unit runs the hash-verified `0.2.24-dev` app written only to
 stock `ota_1` at `0x170000` on 2026-08-30. It booted successfully, and supervised
 testing confirmed retained-session active zero without unwanted relay switching,
@@ -57,7 +57,10 @@ TEMPERATURE Starts reached `COOKING` without `ETM`, cancellation did not revive 
 expired schedule, and temperature reached its setpoint and entered active zero. A
 POWER 10 NoPan test forced zero output; cookware return confirmed `PAN_RETURN_HOLD`
 before a separate `PAN_RETURN_RESUME` restored gear 10. Every user Stop completed
-transactionally. The
+transactionally. The unflashed `0.2.25-dev` UI dismisses an existing timed picture
+on the next physical press or encoder movement before processing that action, keeps
+the large live screen during transactional Stop, and blocks `START AT` with localized
+`TIME / NOT SET` when the wall clock is invalid. The
 earlier one-time NVS refresh is complete and must not be repeated automatically.
 
 ## Реализованный пользовательский контур
@@ -72,13 +75,13 @@ earlier one-time NVS refresh is complete and must not be repeated automatically.
 | HOLD SATURATED | gear `35` в течение 90 s при ошибке не менее 3 °C: orange, warning и сообщение; предел не повышается |
 | Start | only a separate center press; power preflight and generation-tagged `STARTING` remain pending until fresh compatible `R20` plus `R26=01/02` arrive after the matching successful heartbeat and strictly before the sole 8-s deadline; EST latches repeated Stop plus immutable first-cause evidence |
 | Pause/Resume | short center requests a generation-tagged transition and repeated presses remain idempotent until confirmation; Pause is confirmed from fresh retained-session feedback before its timer/state change; temperature trend sampling continues while PI is frozen; Resume recomputes and stages current output before its matching 3-s confirmation window, without Stop/re-arm; 2 h continuous confirmed manual Pause performs full Stop |
-| Stop/Sleep | hold центра 1,5 s с немедленным срабатыванием и звуком — Stop/Back; следующий hold в Idle — Sleep; Cancel всегда Stop/Back |
+| Stop/Sleep | hold центра 1,5 s с немедленным срабатыванием и звуком — Stop/Back; transactional STOPPING retains the clean large live screen instead of technical text; следующий hold в Idle — Sleep; Cancel всегда Stop/Back |
 | Sleep | default 1 min Idle; wake returns to Home/Power, or Home/Temperature when Sleep began from Temperature; secondary menu selections are never restored; heartbeat and safety continue at zero output |
-| OLED | renderer использует полные `64×48` без отладочной рамки; десять 1-bit картинок показывают turn-on 5 s синхронно с boot-мелодией, wake 3 s, cooking 2,5 s, confirm/cancel 1,5 s, ready/no-pan/error до изменения состояния и две 10-s стадии Sleep; active timeout default 3 min; первое нажатие/вращение только будит; encoder guard 1,5 s |
+| OLED | renderer использует полные `64×48` без отладочной рамки; десять 1-bit картинок показывают turn-on 5 s синхронно с boot-мелодией, wake 3 s, cooking 2,5 s, confirm/cancel 1,5 s, ready/no-pan/error до изменения состояния и две 10-s стадии Sleep; a physical press/turn dismisses an existing timed picture before its own action; active timeout default 3 min; первое нажатие/вращение только будит; encoder guard 1,5 s |
 | TIMER SCREEN | `AUTO` полностью гасит OLED; `ALWAYS` оставляет только countdown и перемещает его раз в минуту |
 | Cooking timer | large `MM:SS` editor confirms blinking seconds first and blinking minutes second, followed by a separate hours confirmation; maximum 5 h; Set and Disable complete synchronously, an all-zero value is rejected, and rapid disable/re-enable cannot race queued toggles; countdown freezes only in manual Pause and NoPan; at ≥1 h the running screen shows `H:MM′`, below one hour `MM:SS″`; RAM only |
 | Session timing | retained power session has a separate 8 h wall guard; manual Pause has its own 2 h limit; authenticated status separately reports actual heating, ordinary active zero, profile POWER-0 wait, Pause and NoPan elapsed time plus the independent 3 s cooking lease |
-| Delayed start | крупные `START IN/START AT` (`СТАРТ ЧЕРЕЗ/СТАРТ В`) `HH:MM`; максимум ближайшие 24 h; Cancel или hold центра отменяют before the deadline update; RAM only and never restored after power loss; timer LED мигает; expiry from any menu synchronizes to POWER/TEMPERATURE/PROFILE; profile selection is immutable during delay; при NoPan ждёт 60 s |
+| Delayed start | крупные `START IN/START AT` (`СТАРТ ЧЕРЕЗ/СТАРТ В`) `HH:MM`; максимум ближайшие 24 h; invalid clock blocks `START AT` with `TIME / NOT SET`; Cancel или hold центра отменяют before the deadline update; RAM only and never restored after power loss; timer LED мигает; expiry from any menu synchronizes to POWER/TEMPERATURE/PROFILE; profile selection is immutable during delay; при NoPan ждёт 60 s |
 | Clock | отдельный пункт `CLOCK/ЧАСЫ` показывает идущие `HH:MM`; ручные 24-часовые `HH:MM` без секунд и без flash-write; реальная SNTP-синхронизация всегда приоритетнее ручной установки; после полного снятия питания offline clock снова недействителен |
 | Profiles | five NVS profiles with up to five timed POWER/TEMPERATURE cells; POWER gear 0 is an active-zero wait cell and is not subject to the manual-Pause timeout; zero duration skips a cell; total maximum 5 h; Load still requires a separate physical Start |
 | Readings | INFO: три строки `VOLT`, `NTC`, `IGBT`; сверху рабочего POWER — NTC, сверху TEMPERATURE — `S…°` и power; без timer опциональный IGBT заменяет context на 2 s после 5 s context; с timer IGBT скрыт, context остаётся; Pause скрывает timer/context |
@@ -89,6 +92,12 @@ earlier one-time NVS refresh is complete and must not be repeated automatically.
 | Stock E-groups | известные устойчивые raw-группы сохраняют E03/E04/E05/E07/E08/E10/E12; communication — E09; неизвестные остаются generic |
 | I²C debug | The internal consecutive-bad-cycle counter, E09 threshold and diagnostic transport remain active. The temporary physical setting and OLED `0…6` overlay are compiled out of the production build with `COOKER_I2C_DEBUG_DISPLAY_ENABLED=0`; their source and two-second peak-hold implementation remain available for a future diagnostic build |
 | Active-zero debug | Compile-time removable compact UART frames retain full state, `R20…R27`, last `0D/00/0C`, temperatures, faults and counters, plus input and Pause/Resume decisions; authenticated Wi-Fi keeps the readable JSON snapshot |
+
+## Next planned work
+
+The remaining product-facing work is intentionally limited to melody refinement,
+OLED artwork refinement, and profile UX/behavior. The two-hour manual-Pause duration
+and 190 °C limit tests remain deferred rather than simulated.
 
 ## Силовой и safety-контур
 

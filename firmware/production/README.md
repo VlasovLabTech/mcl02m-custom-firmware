@@ -13,7 +13,7 @@
 - `R26=01` restricted-cookware feedback is accepted as normal heating and caps every
   control path at real gear `35`/`A1`; POWER reports the permitted value, blocks only
   upward edits above 35, and displays a temporary explanatory message;
-- physical Settings shows both `0.2.24-dev` firmware and live raw `R28` power-board
+- physical Settings shows both `0.2.25-dev` firmware and live raw `R28` power-board
   revision/type with four left-aligned rows;
 - `R20=2B/29/2A` are silent nonfaults; another unknown nonzero `R20` shows its exact
   hex value as a persistent warning, and the first physical input dismisses only the
@@ -46,9 +46,15 @@
   profile selection remains immutable during the delay, and long-center Stop/Cancel
   outranks an open timer editor;
 - `START IN` и `START AT`, только после физического задания/разрешения;
+- an invalid wall clock blocks `START AT` and shows localized `TIME / NOT SET`
+  instead of silently opening an editor or accepting a schedule;
 - OLED-off/wake guard, 9 LED мощности, timer LED, blue/orange status, buzzer;
 - полноэкранные `64×48` turn-on/wake/cooking/confirm/cancel/ready/no-pan/error/
   sleep-warning/sleep картинки; error-шаблон получает фактический E-код;
+- any new physical press or encoder movement dismisses an existing timed picture;
+  the action is still processed and may intentionally create its own new picture;
+- transactional Stop retains the clean large live screen and never exposes the
+  internal five-line `STOPPING` status page;
 - табличные PWM-мелодии boot/wake/complete/NoPan/critical/sleep; sleep работает
   с duty около 18%, остальные — 50%; UI click, STAGE и WARNING сохранены;
 - OLED timeout default 3 min с фиксированными интервалами до 5 h; активный экран

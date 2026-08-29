@@ -725,6 +725,23 @@ def picture_policy(
     return None
 
 
+def transient_after_physical_input(
+    transient: str | None, *, physical_input: bool, action_picture: str | None = None
+) -> str | None:
+    """Input dismisses the old timed picture; its own action may create a new one."""
+    if physical_input:
+        transient = None
+    return action_picture if action_picture is not None else transient
+
+
+def start_at_view(clock_valid: bool) -> str:
+    return "START_AT_HOURS" if clock_valid else "START_AT_NO_CLOCK"
+
+
+def live_screen_kind(state: str) -> str:
+    return "FOCUS" if state in {"STARTING", "COOKING", "PAUSED", "STOPPING"} else "TEXT"
+
+
 def run() -> None:
     timer = Timer(270)
     timer.tick("COOKING", 10)
@@ -1217,6 +1234,14 @@ def run() -> None:
     assert picture_policy("FAULT", transient="cancel") == "error"
     assert picture_policy("NO_PAN", transient="cooking") == "nopan"
     assert picture_policy("COMPLETE", idle_ms=999_999) == "ready"
+    assert transient_after_physical_input("cooking", physical_input=True) is None
+    assert transient_after_physical_input("confirm", physical_input=True) is None
+    assert transient_after_physical_input(
+        "cooking", physical_input=True, action_picture="cancel") == "cancel"
+    assert transient_after_physical_input("cooking", physical_input=False) == "cooking"
+    assert live_screen_kind("STOPPING") == "FOCUS"
+    assert start_at_view(False) == "START_AT_NO_CLOCK"
+    assert start_at_view(True) == "START_AT_HOURS"
     print("POLICY TESTS: PASS")
 
 

@@ -175,7 +175,7 @@ modified. See [Flashing and recovery](docs/FLASHING.md) before writing anything.
 
 ## Development status
 
-The current source version is `0.2.24-dev`; the development unit runs the
+The current source version is `0.2.25-dev`; the development unit runs the
 hash-verified `0.2.24-dev` image written only to stock `ota_1` at `0x170000` on
 2026-08-30. Supervised testing confirmed retained-session active zero without
 unexpected relay switching, Sleep/Wake, the temporary I2C debug display, and
@@ -230,7 +230,12 @@ gear lifetime. Version `0.2.24-dev` fixes the supervised-test Delayed Start race
 after expiry the engine refreshes the power-board snapshot before classifying
 feedback, and a still-pending Start cannot mistake the prior stopped state for
 `ETM`. Its waiting screen orders the selected value directly below `POWER` or
-`T°C`, before the delay label and countdown. The supervised operator/monitor sequence is documented in the
+`T°C`, before the delay label and countdown. Unflashed `0.2.25-dev` lets any new
+physical press or encoder movement dismiss an existing timed picture immediately;
+an action such as Cancel may then create its own new picture. Transactional Stop
+keeps the clean large live screen instead of briefly exposing technical `STOPPING`
+text. `START AT` refuses an invalid wall clock with a localized `TIME / NOT SET`
+screen rather than opening or accepting a time editor. The supervised operator/monitor sequence is documented in the
 [hardware validation plan](docs/HARDWARE_VALIDATION_PLAN.md). The
 remaining findings and proposed fix sequence are preserved in the
 [state-machine implementation plan](docs/STATE_MACHINE_IMPLEMENTATION_PLAN.md).

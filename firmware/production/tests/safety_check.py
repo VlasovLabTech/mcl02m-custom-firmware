@@ -721,6 +721,21 @@ def main() -> int:
             "display_prod_show_cancel();" in ui and
             "TRANSIENT_CONFIRM" in display and "TRANSIENT_CANCEL" in display,
             "settings confirmation and physical Cancel select their timed pictures")
+    input_body = ui[ui.find("static void input_event"):
+                    ui.find("static void ui_task")]
+    require("void display_prod_dismiss_transient(void)" in display and
+            "display_prod_dismiss_transient();" in input_body and
+            "event->type == UI_INPUT_ENCODER" in input_body and
+            "event->type == UI_INPUT_MAIN_PRESSED" in input_body and
+            "event->type == UI_INPUT_TOUCH_A_PRESSED" in input_body and
+            "event->type == UI_INPUT_TOUCH_B_PRESSED" in input_body and
+            input_body.find("display_prod_dismiss_transient();") <
+            input_body.find("cancel_action();"),
+            "physical input dismisses an existing timed picture before its own action may create one")
+    active_focus = display[display.find("const bool active_focus"):
+                           display.find("if (!effective_overlay", display.find("const bool active_focus"))]
+    require("cooker.state == COOK_STATE_STOPPING" in active_focus,
+            "transactional Stop retains the clean live focus screen instead of technical STOPPING text")
     require("picture = oled_image_ready;" in display and
             "picture = oled_image_error;" in display and
             "picture = oled_image_no_pan;" in display and
@@ -732,6 +747,13 @@ def main() -> int:
                                          display.find("vTaskDelay")] and
             "else if (sleep_clock)" in display,
             "sleep warning precedes Sleep and sleep2 overrides the clock for its first ten seconds")
+    require("VIEW_START_AT_NO_CLOCK" in ui and
+            'tr(lang, "TIME", "ВРЕМЯ", "时间")' in ui and
+            'tr(lang, "NOT SET", "НЕ ЗАДАНО", "未设置")' in ui and
+            "open_clock_editor(VIEW_START_MENU)" not in ui and
+            "if (!status.clock_valid)" in ui and
+            "if (cooking_schedule_absolute(target) == ESP_OK)" in ui,
+            "START AT refuses an invalid clock with an explicit localized TIME NOT SET screen")
     require("#define COOKER_TEMP_MAX_C                190U" in config,
             "temperature target is capped at 190 C")
     require("powerboard_control_status_json" in web and '\\"powerboard\\":%s' in web and

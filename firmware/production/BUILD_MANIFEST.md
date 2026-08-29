@@ -3,7 +3,7 @@
 Build date: 2026-08-30
 ESP-IDF: 6.0.2
 Target: ESP32, Unicore
-Firmware: `0.2.24-dev`
+Firmware: `0.2.25-dev`
 
 The app header embeds compile metadata, so a clean rebuild may have a different
 SHA-256 while retaining the same source, layout, size and validation gates.
@@ -12,15 +12,15 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 ## App image
 
 - File: `build/mcl02m_custom.bin`
-- Size: `897856` bytes (`0xDB340`)
-- SHA-256: `f547b7dd4ba9bddb1a50b5ff6a9ad9d920a579b77a55acac8e06d3c8571fd21c`
-- ESP image validation hash: `95bd83e8062b880239c577f99a853bd45e56d61cc4784b2a16744b99b2daa382`
-- Stock OTA slot: `0x160000` bytes; image fits with `543936` bytes free.
+- Size: `898160` bytes (`0xDB470`)
+- SHA-256: `ac97874049ccdde6e07140c1a342a6ae74d744ce14ebe425276c80b26c725620`
+- ESP image validation hash: `1c0f8394b3fb297547010730516dbcc0df4ada81e06f95d18287544b12f85575`
+- Stock OTA slot: `0x160000` bytes; image fits with `543632` bytes free.
 
 ## Linked memory
 
-- Flash code: 642122 bytes
-- Flash data: 151068 bytes
+- Flash code: 642374 bytes
+- Flash data: 151116 bytes
 - IRAM: 89047 / 131072 bytes (67.94%)
 - DRAM static: 37028 / 180736 bytes (20.49%)
 - RTC slow: 64 / 8192 bytes
@@ -54,6 +54,10 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
   pre-expiry stopped power-board snapshot before feedback classification, that a
   pending Start cannot be rejected by stopped transitional feedback, and that the
   waiting screen orders mode, selected value, delay label, then countdown.
+  The `0.2.25-dev` cases additionally prove that physical input dismisses an old
+  timed picture before the same action may create a new one, transactional Stop uses
+  the clean live-focus renderer, and `START AT` cannot enter or complete while the
+  wall clock is invalid and instead shows localized `TIME NOT SET` feedback.
 - `tests/safety_check.py`: PASS.
 - Production ELF check: temporary `I2C ERRORS` menu/overlay code is absent while
   its guarded source remains available.
@@ -69,9 +73,10 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 
 ## Development-unit deployment
 
-This hash-verified `0.2.24-dev` artifact was written only to stock `ota_1` at
-`0x170000` on 2026-08-30 after explicit owner authorization. Esptool verified the
-written data. That operation did not write the
+This `0.2.25-dev` artifact has not been flashed. The development unit runs the
+hash-verified `0.2.24-dev` app written only to stock `ota_1` at `0x170000` on
+2026-08-30 after explicit owner authorization. Esptool verified the written data.
+That operation did not write the
 bootloader, partition table, `otadata`, NVS, PHY, `ota_0` or eFuse.
 
 ESP-IDF prints a generic `idf.py flash` suggestion after building. Project procedure

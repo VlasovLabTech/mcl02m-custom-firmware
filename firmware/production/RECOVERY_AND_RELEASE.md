@@ -2,9 +2,9 @@
 
 Этот документ описывает будущую процедуру, но **не разрешает запись сейчас**.
 
-Current reference app artifact: `build/mcl02m_custom.bin` (`0.2.24-dev`). Its exact
-size and SHA-256 are recorded in `BUILD_MANIFEST.md`. This app was flashed to stock
-`ota_1` at `0x170000` on 2026-08-30
+Current reference app artifact: `build/mcl02m_custom.bin` (`0.2.25-dev`). Its exact
+size and SHA-256 are recorded in `BUILD_MANIFEST.md`; it has not been flashed. The
+deployed `0.2.24-dev` app was flashed to stock `ota_1` at `0x170000` on 2026-08-30
 after explicit authorization, and esptool verified the written data. No other
 partition was written.
 Чистая пересборка может иметь другой hash из-за compile metadata; для release

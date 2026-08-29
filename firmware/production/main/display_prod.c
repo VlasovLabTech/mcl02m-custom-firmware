@@ -374,7 +374,8 @@ static void display_task(void *arg)
             const bool active_focus = !effective_overlay && !timer_only_due && !urgent &&
                                       (cooker.state == COOK_STATE_STARTING ||
                                        cooker.state == COOK_STATE_COOKING ||
-                                       cooker.state == COOK_STATE_PAUSED);
+                                       cooker.state == COOK_STATE_PAUSED ||
+                                       cooker.state == COOK_STATE_STOPPING);
             if (!effective_overlay && !active_focus && picture == NULL) {
                 if (!timer_only_due) normal_screen(&cooker, &settings, lines);
             }
@@ -533,6 +534,13 @@ bool display_prod_is_awake(void)
     const bool awake = s_awake;
     xSemaphoreGive(s_lock);
     return awake;
+}
+
+void display_prod_dismiss_transient(void)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    set_transient_locked(TRANSIENT_NONE, 0, esp_timer_get_time());
+    xSemaphoreGive(s_lock);
 }
 
 void display_prod_show_confirm(void)

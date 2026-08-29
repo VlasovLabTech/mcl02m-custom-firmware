@@ -55,6 +55,7 @@ typedef enum {
     VIEW_START_IN_HOURS,
     VIEW_START_AT_HOURS,
     VIEW_START_AT_MINUTES,
+    VIEW_START_AT_NO_CLOCK,
     VIEW_PROFILES,
     VIEW_PROFILE_READY,
     VIEW_WIFI_MENU,
@@ -455,6 +456,13 @@ static void render(void)
                                              tr(lang, "MINUTES", "МИНУТЫ", "分钟"));
         return;
     }
+    case VIEW_START_AT_NO_CLOCK:
+        overlay(tr(lang, "START AT", "СТАРТ В", "定时启动"),
+                "",
+                tr(lang, "TIME", "ВРЕМЯ", "时间"),
+                tr(lang, "NOT SET", "НЕ ЗАДАНО", "未设置"),
+                "");
+        return;
     case VIEW_CLOCK_HOURS:
     case VIEW_CLOCK_MINUTES: {
         char hours[4], minutes[4];
@@ -772,6 +780,7 @@ static void encoder_event(const ui_input_event_t *event)
         break;
     case VIEW_START_AT_HOURS: s_start_at_hour = (unsigned)clamp((int)s_start_at_hour + (step > 0 ? 1 : -1), 0, 23); break;
     case VIEW_START_AT_MINUTES: s_start_at_minute = (unsigned)clamp((int)s_start_at_minute + step, 0, 59); break;
+    case VIEW_START_AT_NO_CLOCK: s_view = VIEW_START_MENU; break;
     case VIEW_CLOCK_HOURS: s_clock_hour = (unsigned)clamp((int)s_clock_hour + (step > 0 ? 1 : -1), 0, 23); break;
     case VIEW_CLOCK_MINUTES: s_clock_minute = (unsigned)clamp((int)s_clock_minute + step, 0, 59); break;
     case VIEW_PROFILES: s_profile = (unsigned)clamp((int)s_profile + (step > 0 ? 1 : -1), 0, COOKER_PROFILE_COUNT - 1); break;
@@ -845,7 +854,7 @@ static void central_short(void)
         } else {
             if (!status.clock_valid) {
                 sound_play(SOUND_WARNING);
-                open_clock_editor(VIEW_START_MENU);
+                s_view = VIEW_START_AT_NO_CLOCK;
                 break;
             }
             time_t now = time(NULL);
@@ -890,8 +899,19 @@ static void central_short(void)
         }
         break;
     }
-    case VIEW_START_AT_HOURS: s_view = VIEW_START_AT_MINUTES; break;
+    case VIEW_START_AT_HOURS:
+        if (status.clock_valid) s_view = VIEW_START_AT_MINUTES;
+        else {
+            sound_play(SOUND_WARNING);
+            s_view = VIEW_START_AT_NO_CLOCK;
+        }
+        break;
     case VIEW_START_AT_MINUTES: {
+        if (!status.clock_valid) {
+            sound_play(SOUND_WARNING);
+            s_view = VIEW_START_AT_NO_CLOCK;
+            break;
+        }
         time_t now = time(NULL);
         struct tm local;
         localtime_r(&now, &local);
@@ -900,10 +920,13 @@ static void central_short(void)
         local.tm_sec = 0;
         time_t target = mktime(&local);
         if (target <= now) target += 24 * 60 * 60;
-        cooking_schedule_absolute(target);
-        s_view = VIEW_HOME;
+        if (cooking_schedule_absolute(target) == ESP_OK) s_view = VIEW_HOME;
+        else sound_play(SOUND_WARNING);
         break;
     }
+    case VIEW_START_AT_NO_CLOCK:
+        s_view = VIEW_START_MENU;
+        break;
     case VIEW_CLOCK_HOURS:
         s_view = VIEW_CLOCK_MINUTES;
         break;
@@ -1023,6 +1046,12 @@ static void input_event(const ui_input_event_t *event)
 {
     const int64_t now = esp_timer_get_time();
     s_last_input_us = now;
+    if (event->type == UI_INPUT_ENCODER ||
+        event->type == UI_INPUT_MAIN_PRESSED ||
+        event->type == UI_INPUT_TOUCH_A_PRESSED ||
+        event->type == UI_INPUT_TOUCH_B_PRESSED ||
+        event->type == UI_INPUT_TOUCH_BOTH_PRESSED)
+        display_prod_dismiss_transient();
     cooker_snapshot_t input_status;
     cooking_engine_get_snapshot(&input_status);
     const bool true_urgent = input_status.state == COOK_STATE_FAULT ||

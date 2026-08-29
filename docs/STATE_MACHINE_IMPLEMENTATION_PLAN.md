@@ -4,12 +4,14 @@ Status: **in progress; the first bounded fix batch is implemented, while the rem
 
 Audit baseline: `0.2.10-dev`, commit `2b5784e` (`2026-08-28`)
 
-Current source: `0.2.24-dev`. Version `0.2.24-dev` was flashed to the development
+Current source: `0.2.25-dev`. Version `0.2.24-dev` was flashed to the development
 cooker on 2026-08-30 after explicit authorization; retained-session active zero works
 without unexpected relay switching, and the targeted Delayed Start regression passed
 without `ETM`. The source also keeps the temporary I2C-loss
 OLED counter behind a disabled compile-time flag, so it is absent from the production
-menu and display without deleting the implementation.
+menu and display without deleting the implementation. Unflashed `0.2.25-dev` removes
+the internal `STOPPING` text from the physical UI while retaining the complete lower
+transaction and diagnostics.
 
 This document preserves the complete control-flow review so the findings can be
 discussed, prioritized, and implemented later without relying on chat history. It is
