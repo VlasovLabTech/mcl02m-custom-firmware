@@ -174,25 +174,25 @@ modified. See [Flashing and recovery](docs/FLASHING.md) before writing anything.
 
 ## Development status
 
-The current source version is `0.2.14-dev`; the development unit remains on the
-hash-verified `0.2.11-dev` image written to stock `ota_1` on 2026-08-28. Earlier
-supervised testing
-confirmed retained-session active zero, Pause/Resume
-without unwanted relay switching, Sleep/Wake, the I2C debug display, and temperature
-operation with water. A 125 °C empty-pan test then showed about 5 °C of first-heat
+The current source version is `0.2.15-dev`; the development unit runs the
+hash-verified `0.2.14-dev` image written only to stock `ota_1` at `0x170000` on
+2026-08-29. Supervised testing confirmed retained-session active zero without
+unexpected relay switching, Sleep/Wake, the temporary I2C debug display, and
+temperature operation with water. A 125 °C empty-pan test then showed about 5 °C of first-heat
 overshoot while subsequent holding remained accurate. Source `0.2.10-dev` adds
 four-second rate-adaptive braking with phase hysteresis, recomputes temperature output
 before Resume, and crosses directly between low and high power topologies instead of
 transiently requesting gears 36…55. Source `0.2.11-dev` also adds a physical Settings
-screen for the firmware version. Unflashed source `0.2.12-dev` begins the deferred
-state-machine work by fixing five bounded configuration/transition defects. Unflashed
-`0.2.13-dev` adds stock-compatible restricted-cookware handling and a complete
-power-board response/register re-audit. Unflashed `0.2.14-dev` adds the live `R28`
-board revision to Settings and replaces unknown-`R20` generic faults with physical-
-input-acknowledged warnings. The
+screen for the firmware version. Versions `0.2.12-dev` through `0.2.14-dev` add five
+bounded state-integrity fixes, restricted-cookware handling, a complete power-board
+response/register re-audit, live `R28`, and physical-input-acknowledged unknown-`R20`
+warnings. Unflashed source `0.2.15-dev` excludes the temporary I2C-error counter from
+the production menu and OLED while retaining its implementation behind a disabled
+build flag. It also revises the deferred implementation packages around the observed
+protocol. The
 remaining findings and proposed fix sequence are preserved in the
 [state-machine implementation plan](docs/STATE_MACHINE_IMPLEMENTATION_PLAN.md).
-The new source is built and checked offline but has not been flashed.
+The `0.2.15-dev` source is built and checked offline but has not been flashed.
 
 This is an independent community project, not an official Xiaomi or Chunmi
 product. Use it at your own risk. Licensed under the [MIT License](LICENSE).

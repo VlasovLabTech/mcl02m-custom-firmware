@@ -171,6 +171,11 @@ esp_err_t settings_init(void)
             s_settings.crc32 = settings_crc(&s_settings);
         }
     }
+#if !COOKER_I2C_DEBUG_DISPLAY_ENABLED
+    /* RAM-only release override; the stored field and implementation stay reusable. */
+    s_settings.show_i2c_debug = 0;
+    s_settings.crc32 = settings_crc(&s_settings);
+#endif
     size = 0;
     if (nvs_get_blob(handle, "profiles", NULL, &size) == ESP_OK) {
         if (size == sizeof(s_profiles)) {

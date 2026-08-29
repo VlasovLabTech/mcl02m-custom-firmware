@@ -13,7 +13,7 @@
 - `R26=01` restricted-cookware feedback is accepted as normal heating and caps every
   control path at real gear `35`/`A1`; POWER reports the permitted value, blocks only
   upward edits above 35, and displays a temporary explanatory message;
-- physical Settings shows both `0.2.14-dev` firmware and live raw `R28` power-board
+- physical Settings shows both `0.2.15-dev` firmware and live raw `R28` power-board
   revision/type with four left-aligned rows;
 - `R20=2B/29/2A` are silent nonfaults; another unknown nonzero `R20` shows its exact
   hex value as a persistent warning, and the first physical input dismisses only the
@@ -68,10 +68,11 @@
 - Interface-generated E09 now requires six consecutive bad 500-ms I²C cycles.
   While any power-board fault remains latched, the complete Stop sequence is
   retransmitted every heartbeat.
-- Temporary `Settings → Show → I2C Errors` is OFF by default. When enabled it
-  overlays the current consecutive-bad-cycle count `0…6` at OLED `x=0, y=10`,
-  including over the E09 picture. A clean cycle resets the control counter
-  immediately, while the highest displayed digit remains visible for at least 2 s.
+- The production build omits the temporary `Settings → Show → I2C Errors` item and
+  OLED overlay. Their implementation, stored field, and two-second displayed-peak
+  hold remain in the source behind `COOKER_I2C_DEBUG_DISPLAY_ENABLED=0`; changing the
+  flag creates a future diagnostic build. The internal counter, six-cycle E09 policy,
+  compact UART frame, and authenticated status data remain active.
 - Active-zero diagnostics are available as a compact fixed UART frame and through
   authenticated `/api/status`. The UART frame retains the full driver state, last
   `0D/00/0C` command, raw `R20…R27`, temperatures, fault and counters without JSON

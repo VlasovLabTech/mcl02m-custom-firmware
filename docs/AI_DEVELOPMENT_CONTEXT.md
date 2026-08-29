@@ -13,7 +13,7 @@ from a request to edit or build software.
 - Xiaomi device model: `chunmi.ihcooker.v2`.
 - Interface controller: Espressif `ESP-WROOM-32D` (classic ESP32).
 - Display: monochrome 64×48 OLED, page-major 384-byte framebuffer.
-- Current custom source version: `0.2.14-dev`.
+- Current custom source version: `0.2.15-dev`.
 - Framework: ESP-IDF.
 - Public repository language: English for technical documents; the device UI
   supports English, Russian, and Simplified Chinese.
@@ -444,9 +444,14 @@ Settings menu:
 7. Idle-to-Sleep minutes.
 8. Active OLED timeout (1, 2, 3, 5, 10, 20, 30 min; 1–5 h).
 9. Timezone (`UTC-12:00…UTC+14:00`).
-10. Show the temporary I²C consecutive-bad-cycle counter (`0…6`).
-11. Wi-Fi submenu.
+10. Wi-Fi submenu.
+11. Firmware and live raw `R28` power-board revision.
 12. Factory reset.
+
+The former temporary I²C-counter item is excluded when
+`COOKER_I2C_DEBUG_DISPLAY_ENABLED=0`, as it is in the production build. Its menu,
+stored field, and overlay implementation remain in source for a deliberately enabled
+diagnostic build.
 
 The sleep clock moves down one pixel per minute and cycles horizontal alignment
 center → left → right to reduce OLED burn-in.
@@ -460,11 +465,13 @@ center → left → right to reduce OLED burn-in.
 - Never use more than five small text lines; keep at least 2 pixels between text
   rows when composing new screens.
 - Full-screen art is monochrome and exactly 64×48 (`384` packed bytes).
-- The optional I²C debug counter is drawn as one small digit at `x=0, y=10`
-  over the current frame. It deliberately may overlap normal content and also
-  remains visible on the E09 fault picture. A clean power-board cycle resets the
-  internal consecutive count immediately, but the largest displayed digit is held
-  for at least two seconds after the last nonzero sample.
+- When explicitly compiled as a diagnostic build, the optional I²C debug counter is
+  drawn as one small digit at `x=0, y=10` over the current frame. It deliberately may
+  overlap normal content and also remains visible on the E09 fault picture. A clean
+  power-board cycle resets the internal consecutive count immediately, but the
+  largest displayed digit is held for at least two seconds after the last nonzero
+  sample. Production `0.2.15-dev` compiles this overlay and its Settings entry out;
+  the internal error counter, E09 behavior and diagnostic transport remain active.
 - The error artwork's lower-right source label and separator are cleared during
   generation. The actual three-character fault code is rendered at 2× scale in
   the reserved `x=30…63`, `y=30…47` corner.
@@ -559,11 +566,12 @@ Before any release or hardware write:
 8. After flashing, first perform a no-heat boot/UI/I²C soak, then supervised short
    power tests with a water load.
 
-The reference `0.2.14-dev` artifact identified in
+The reference `0.2.15-dev` artifact identified in
 `firmware/production/BUILD_MANIFEST.md` is an offline build and has not been flashed.
-The development unit remains on hash-verified `0.2.11-dev` in stock `ota_1`; that
-write did not touch the bootloader, partition table, NVS, `otadata`, `ota_0`, PHY or
-eFuse. This status is not permission for another flash operation.
+The development unit remains on hash-verified `0.2.14-dev` in stock `ota_1`, written
+at `0x170000` on 2026-08-29; that deployment did not touch the bootloader, partition
+table, NVS, `otadata`, `ota_0`, PHY or eFuse. This status is not permission for
+another flash operation.
 
 ## 13. Remaining uncertainties and optional characterization
 
@@ -571,7 +579,7 @@ eFuse. This status is not permission for another flash operation.
   temperature holding have passed supervised checks. A 125 °C empty-pan trial on
   `0.2.9-dev` held accurately after an approximately 5 °C initial overshoot. The
   adaptive braking, Pause recomputation, and direct topology crossing present in the
-  deployed `0.2.11-dev` still require supervised cookware characterization.
+  deployed `0.2.14-dev` still require complete supervised cookware characterization.
 - Production retains the 80 °C interface-side IGBT guard and uses 210 °C for
   the separate interface-side bottom cutoff; the power MCU's native E05 also
   remains active.

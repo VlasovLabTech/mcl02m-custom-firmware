@@ -20,10 +20,18 @@
 
 #define LINE_BYTES 32
 #define HOME_ITEMS 7
+#if COOKER_I2C_DEBUG_DISPLAY_ENABLED
 #define SETTING_ITEMS 13
+#define SETTING_I2C_DEBUG_INDEX 9U
 #define SETTING_WIFI_INDEX 10U
 #define SETTING_FIRMWARE_VERSION_INDEX 11U
 #define SETTING_FACTORY_INDEX 12U
+#else
+#define SETTING_ITEMS 12
+#define SETTING_WIFI_INDEX 9U
+#define SETTING_FIRMWARE_VERSION_INDEX 10U
+#define SETTING_FACTORY_INDEX 11U
+#endif
 #define WIFI_ITEMS 4
 #define EDITOR_TIMEOUT_US (10LL * 1000000LL)
 #define TEMPERATURE_EDIT_TIMEOUT_US (2LL * 1000000LL)
@@ -131,17 +139,29 @@ static const char *setting_name(unsigned item, app_language_t language)
 {
     static const char *en[SETTING_ITEMS] = {
         "LANGUAGE", "SOUND", "SHOW", "SHOW", "SHOW", "SHOW",
-        "SLEEP MIN", "OLED TIME", "TIMEZONE", "SHOW", "WI-FI", "FIRMWARE",
+        "SLEEP MIN", "OLED TIME", "TIMEZONE",
+#if COOKER_I2C_DEBUG_DISPLAY_ENABLED
+        "SHOW",
+#endif
+        "WI-FI", "FIRMWARE",
         "FACTORY"
     };
     static const char *ru[SETTING_ITEMS] = {
         "ЯЗЫК", "ЗВУК", "ПОКАЗАТЬ", "ПОКАЗАТЬ", "ПОКАЗАТЬ", "ПОКАЗАТЬ",
-        "СОН МИН", "ЭКРАН ВР", "ЧАС ПОЯС", "ПОКАЗАТЬ", "WI-FI", "ПРОШИВКА",
+        "СОН МИН", "ЭКРАН ВР", "ЧАС ПОЯС",
+#if COOKER_I2C_DEBUG_DISPLAY_ENABLED
+        "ПОКАЗАТЬ",
+#endif
+        "WI-FI", "ПРОШИВКА",
         "ЗАВОДСКИЕ"
     };
     static const char *zh[SETTING_ITEMS] = {
         "语言", "声音", "显示", "显示", "显示", "显示",
-        "休眠分钟", "屏幕时间", "时区", "显示", "WI-FI", "FIRMWARE",
+        "休眠分钟", "屏幕时间", "时区",
+#if COOKER_I2C_DEBUG_DISPLAY_ENABLED
+        "显示",
+#endif
+        "WI-FI", "FIRMWARE",
         "恢复出厂"
     };
     if (item >= SETTING_ITEMS) return "?";
@@ -157,11 +177,22 @@ static const char *setting_name_second(unsigned item, app_language_t language)
     case 3: return "IGBT T°C";
     case 4: return tr(language, "TIMER SCREEN", "ТАЙМЕР", "定时屏幕");
     case 5: return tr(language, "SLEEP CLOCK", "ЧАСЫ В СНЕ", "休眠时钟");
-    case 9: return "I2C ERRORS";
+#if COOKER_I2C_DEBUG_DISPLAY_ENABLED
+    case SETTING_I2C_DEBUG_INDEX: return "I2C ERRORS";
+#endif
     case SETTING_FIRMWARE_VERSION_INDEX:
         return tr(language, "VERSION", "ВЕРСИЯ", "VERSION");
     default: return "";
     }
+}
+
+static bool setting_is_toggle(unsigned item)
+{
+    if (item >= 1U && item <= 5U) return true;
+#if COOKER_I2C_DEBUG_DISPLAY_ENABLED
+    if (item == SETTING_I2C_DEBUG_INDEX) return true;
+#endif
+    return false;
 }
 
 static const uint16_t OLED_TIMEOUTS_S[] = {
@@ -289,7 +320,7 @@ static void render(void)
             static const char *language_names[] = {"ENGLISH", "РУССКИЙ", "中文"};
             snprintf(l2, sizeof(l2), "%s", language_names[clamp(s_setting_value, LANG_EN, LANG_ZH)]);
         }
-        else if ((s_setting >= 1 && s_setting <= 5) || s_setting == 9)
+        else if (setting_is_toggle(s_setting))
             snprintf(l2, sizeof(l2), "%s", s_setting_value ?
                      tr(lang, "ON", "ВКЛ", "开") : tr(lang, "OFF", "ВЫКЛ", "关"));
         else if (s_setting == 8) {
@@ -570,7 +601,9 @@ static void open_setting_value(void)
     case 6: s_setting_value = settings.sleep_minutes; break;
     case 7: s_setting_value = settings.oled_timeout_s; break;
     case 8: s_setting_value = settings.timezone_minutes; break;
-    case 9: s_setting_value = settings.show_i2c_debug; break;
+#if COOKER_I2C_DEBUG_DISPLAY_ENABLED
+    case SETTING_I2C_DEBUG_INDEX: s_setting_value = settings.show_i2c_debug; break;
+#endif
     }
     s_view = VIEW_SETTING_VALUE;
 }
@@ -589,7 +622,9 @@ static void save_setting(void)
     case 6: settings.sleep_minutes = s_setting_value; break;
     case 7: settings.oled_timeout_s = s_setting_value; break;
     case 8: settings.timezone_minutes = s_setting_value; break;
-    case 9: settings.show_i2c_debug = s_setting_value; break;
+#if COOKER_I2C_DEBUG_DISPLAY_ENABLED
+    case SETTING_I2C_DEBUG_INDEX: settings.show_i2c_debug = s_setting_value; break;
+#endif
     }
     const esp_err_t err = settings_update(&settings);
     if (err != ESP_OK) {
@@ -644,7 +679,7 @@ static void encoder_event(const ui_input_event_t *event)
         if (s_setting == 0)
             s_setting_value = clamp(s_setting_value + (step > 0 ? 1 : -1),
                                     LANG_EN, LANG_ZH);
-        else if (s_setting <= 5 || s_setting == 9) s_setting_value = !s_setting_value;
+        else if (setting_is_toggle(s_setting)) s_setting_value = !s_setting_value;
         else if (s_setting == 6) s_setting_value = clamp(s_setting_value + (step > 0 ? 1 : -1), 1, 60);
         else if (s_setting == 7) s_setting_value = oled_timeout_step(s_setting_value, step);
         else s_setting_value = clamp(s_setting_value + (step > 0 ? 30 : -30), -720, 840);

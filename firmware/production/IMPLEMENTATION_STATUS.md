@@ -1,21 +1,20 @@
 # MCL02M custom firmware — implementation status
 
 Дата: 2026-08-29
-Версия исходников: `0.2.14-dev`
-Статус: the development unit remains on the hash-verified `0.2.11-dev` app
-written to stock `ota_1` on 2026-08-28. Unflashed source `0.2.14-dev` fixes the first
-five bounded state-integrity findings and implements stock-compatible restricted
-cookware handling. Earlier
-supervised tests confirmed retained-session active zero, Pause/Resume
-without unwanted relay switching, Sleep/Wake, I2C debug display, and temperature
-operation. At a 125 °C empty-pan setpoint, initial heating overshot by approximately
+Версия исходников: `0.2.15-dev`
+Статус: the development unit runs the hash-verified `0.2.14-dev` app written only to
+stock `ota_1` at `0x170000` on 2026-08-29. It booted successfully, and supervised
+testing confirmed retained-session active zero without unwanted relay switching,
+Sleep/Wake, the temporary I2C debug display, and temperature operation. At a 125 °C
+empty-pan setpoint, initial heating overshot by approximately
 5 °C and subsequent holding was accurate. The source includes adaptive initial
 braking, pause-safe output recomputation, and direct low/high topology crossing. Its
 physical Settings menu exposes both the compile-time firmware version and live raw
 power-board `R28` on a dedicated four-line, left-aligned OLED screen. The
-`0.2.14-dev` image is built and checked offline but has not
-been flashed. The earlier one-time NVS refresh is complete and must not be repeated
-automatically.
+unflashed `0.2.15-dev` source excludes the temporary I2C-loss counter from the
+production menu and OLED while preserving that implementation behind a disabled
+compile-time flag. Internal E09 counting and compact diagnostics are unchanged. The
+earlier one-time NVS refresh is complete and must not be repeated automatically.
 
 ## Реализованный пользовательский контур
 
@@ -43,7 +42,7 @@ automatically.
 | Critical | Stop + latched `error.png` с фактическим E-кодом; один мотив 2,5 s проигрывается дважды на burst, всего 3 bursts с паузами 4 s; ACK немедленно вызывает `sound_stop()`; Sleep запрещён до ACK |
 | NoPan | три последовательных отсчёта по 500 ms; отдельный `nopan.png`, orange blink, обязательный цикл `мелодия 2,74 s → тишина 3 s` даже при `SOUND OFF`, timer freeze, окно возврата 60 s, затем E02 fault; возврат/Stop/Pause немедленно прерывает цикл |
 | Stock E-groups | известные устойчивые raw-группы сохраняют E03/E04/E05/E07/E08/E10/E12; communication — E09; неизвестные остаются generic |
-| I²C debug | Temporary persisted setting, OFF by default; overlays consecutive bad cycles `0…6` in small text at OLED `x=0, y=10`, including the E09 picture; one clean cycle resets the internal count immediately while the maximum displayed digit is held for at least 2 s |
+| I²C debug | The internal consecutive-bad-cycle counter, E09 threshold and diagnostic transport remain active. The temporary physical setting and OLED `0…6` overlay are compiled out of the production build with `COOKER_I2C_DEBUG_DISPLAY_ENABLED=0`; their source and two-second peak-hold implementation remain available for a future diagnostic build |
 | Active-zero debug | Compile-time removable compact UART frames retain full state, `R20…R27`, last `0D/00/0C`, temperatures, faults and counters, plus input and Pause/Resume decisions; authenticated Wi-Fi keeps the readable JSON snapshot |
 
 ## Силовой и safety-контур
@@ -113,7 +112,8 @@ automatically.
 
 - Setpoint range is `40…190 °C`. Retained-session active zero and steady holding have
   passed supervised checks. The adaptive braking, Pause recomputation, and topology
-  crossing in deployed `0.2.11-dev` still need a supervised cookware test.
+  crossing included in deployed `0.2.14-dev` still need complete supervised cookware
+  characterization.
 - Production keeps the 80 °C interface IGBT guard and a separate 210 °C bottom
   emergency cutoff. The power MCU's native E05 remains active.
 - Полный перебор редких fault paths и длительный web/network soak могут быть

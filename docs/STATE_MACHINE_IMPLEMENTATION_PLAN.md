@@ -4,9 +4,11 @@ Status: **in progress; the first bounded fix batch is implemented, while the rem
 
 Audit baseline: `0.2.10-dev`, commit `2b5784e` (`2026-08-28`)
 
-Current source: `0.2.14-dev`; the first five bounded findings, restricted-cookware
-response, power-board revision display, and unknown-`R20` warning policy are
-implemented and checked offline but have not been flashed
+Current source: `0.2.15-dev`. Version `0.2.14-dev` was flashed to the development
+cooker on 2026-08-29 and booted successfully; retained-session active zero works
+without unexpected relay switching. The source now also keeps the temporary I2C-loss
+OLED counter behind a disabled compile-time flag, so it is absent from the production
+menu and display without deleting the implementation.
 
 This document preserves the complete control-flow review so the findings can be
 discussed, prioritized, and implemented later without relying on chat history. It is
@@ -27,6 +29,39 @@ The audit covered:
 
 No flashing is authorized by this plan. Every implementation phase must be built and
 checked offline first, then flashed only after an explicit instruction.
+
+## Reassessment after the `0.2.14-dev` protocol findings
+
+The former Start/EST package mixed a real Start-confirmation requirement with an
+incorrect interpretation of power-board feedback. The following facts are now the
+baseline and must not be regressed:
+
+- `R26=01` and `R26=02` both confirm heating. `01` means restricted cookware and
+  requires the already-implemented gear-35/`A1` limit; `02` is unrestricted.
+- `R20=2B` is a silent relay-transition status and has no invented ten-second limit.
+- `R20=29/2A` are silent stock service events in ordinary cooking.
+- another unknown nonzero `R20` is a dismissible raw-value warning, not `EPB`, and
+  must not prevent an otherwise valid `R26=01/02` Start confirmation.
+- `R20=02` remains NoPan, and the known stock fault groups remain faults.
+- the sole cold-Start deadline is eight seconds, measured from the first transmitted
+  nonzero command heartbeat. If neither `R26=01` nor `R26=02` arrives, Start must
+  still fail and force Stop.
+
+Therefore the old “decouple `R26=02` from `R20=2B` and resolve 8/10 seconds” work is
+already complete. The remaining Start package is observability and deterministic
+simulation, not another protocol rewrite. A timeout must freeze an immutable first-
+cause RAM incident containing `R20`, `R26`, `R28`, valid mask, requested/transmitted
+gear and topology, the last `W0D/W00/W0C`, consecutive/bad I2C counters, lower state,
+and timestamp. Ordinary live registers may continue changing while repeated Stop is
+sent, but the incident record must not.
+
+The register audit also adds one prerequisite before using a second cooker revision:
+`R28` selects the stock NTC conversion family. The current firmware displays raw
+`R28` but still assumes the newer lookup path. That compatibility work must either
+select the matching conversion or explicitly reject an unsupported board before any
+heat request. Startup service registers `R2C`–`R2F` should not be mandatory for normal
+boot, and the stock per-code fault debounce should be modelled rather than applying
+one guessed filter to every known fault.
 
 ## 1. Executive conclusion
 
@@ -175,9 +210,9 @@ Acceptance tests:
 
 ### H1. Queued Set operations can race with synchronous Start
 
-Implementation status: **fixed in unflashed `0.2.12-dev`**. Mode, POWER and
-temperature changes are now synchronous under the cooking lock; Start is serialized
-through the intent queue after those changes.
+Implementation status: **implemented in `0.2.12-dev` and included in the deployed
+`0.2.14-dev`**. Mode, POWER and temperature changes are now synchronous under the
+cooking lock; Start is serialized through the intent queue after those changes.
 
 `cooking_set_mode()`, `cooking_set_power()` and `cooking_set_temperature()` post
 asynchronous intents. `cooking_start()` bypasses that queue and calls
@@ -211,9 +246,10 @@ Recommended change:
 
 ### H3. A temperature change during `STARTING` is applied late
 
-Implementation status: **fixed in unflashed `0.2.12-dev`**. A changed target now
-recomputes and applies output immediately in STARTING/COOKING. Invalid readings force
-active zero, and failure to request the safe output latches a fault and Stop.
+Implementation status: **implemented in `0.2.12-dev` and included in the deployed
+`0.2.14-dev`**. A changed target now recomputes and applies output immediately in
+STARTING/COOKING. Invalid readings force active zero, and failure to request the safe
+output latches a fault and Stop.
 
 The target field changes immediately, but `update_temperature_locked()` observes and
 returns without applying output until the cooking state becomes `COOKING`. A user can
@@ -227,6 +263,11 @@ Recommended change:
 - Test large downward edits near high-temperature targets.
 
 ### H4. A cold Start at active zero is reported as cooking before feedback confirms it
+
+Hardware status: retained-session active zero was successfully exercised on
+`0.2.14-dev` without unexpected relay switching. The remaining issue is truthful
+pending/confirmed state reporting and timeout behavior, not whether command
+`81/00/00` can produce active zero on the tested board.
 
 If the initial temperature output is zero, `begin_run_locked()` immediately selects
 `COOK_STATE_COOKING`, while the lower layer sets `PB_STATE_ACTIVE_ZERO` as soon as the
@@ -274,8 +315,9 @@ Recommended change:
 
 ### M1. Mode/profile selection can silently break a delayed Start
 
-Implementation status: **fixed in unflashed `0.2.12-dev`**. Mode, profile, POWER and
-temperature mutation are rejected while the schedule remains in `DELAYED`.
+Implementation status: **implemented in `0.2.12-dev` and included in the deployed
+`0.2.14-dev`**. Mode, profile, POWER and temperature mutation are rejected while the
+schedule remains in `DELAYED`.
 
 `INTENT_SET_MODE` is accepted in `DELAYED` because that state is not classified as
 active. It changes the cooking state to `READY` but does not consistently clear the
@@ -291,9 +333,10 @@ Recommended change:
 
 ### M2. Pausing from NoPan retains the old NoPan timestamp
 
-Implementation status: **fixed in unflashed `0.2.12-dev`**. The selected policy is
-to reset the elapsed NoPan window on entering manual Pause; a later Resume starts a
-fresh 60-second window if the pan is missing again.
+Implementation status: **implemented in `0.2.12-dev` and included in the deployed
+`0.2.14-dev`**. The selected policy is to reset the elapsed NoPan window on entering
+manual Pause; a later Resume starts a fresh 60-second window if the pan is missing
+again.
 
 The Pause path stops the NoPan sound, but it does not clearly reset
 `s_no_pan_since_us`. After Resume, a still-missing pan can inherit the previous elapsed
@@ -320,10 +363,10 @@ Recommended change:
 
 ### M4. Partial Start failure can temporarily leave the lower layer armed
 
-Implementation status: **fixed in unflashed `0.2.12-dev`**. If Arm succeeds and the
-following Start call fails, the cooking layer explicitly requests `START ROLLBACK`
-Stop before reporting Start blocked. Physical Stop confirmation remains part of the
-separate C1 work.
+Implementation status: **implemented in `0.2.12-dev` and included in the deployed
+`0.2.14-dev`**. If Arm succeeds and the following Start call fails, the cooking layer
+explicitly requests `START ROLLBACK` Stop before reporting Start blocked. Physical
+Stop confirmation remains part of the separate C1 work.
 
 `begin_run_locked()` calls Arm and then Start. If Arm succeeds but Start fails, the
 function returns an error without explicitly disarming. The lower layer eventually
@@ -528,61 +571,125 @@ Hardware tests remain necessary for relay/fan behavior, unknown stock responses,
 active-zero retention, topology changes and thermal overshoot. Software simulation is
 not a replacement for a supervised cookware test.
 
-## 10. Ordered implementation plan
+## 10. Revised ordered implementation packages
 
-### Phase 0 — Freeze behavior and add observability
+### Package 2 — Start confirmation, EST evidence and simulation
 
-- [ ] Record the exact current transition diagrams and UART frame definitions.
-- [ ] Add host-side mocks for time, input events and power-board feedback.
-- [ ] Convert the invariants in section 2.3 into failing tests.
-- [ ] Preserve compact transport while keeping full diagnostic coverage.
+Protocol correction is already complete; do not reintroduce an `R20=2B` timeout or
+require only `R26=02`.
 
-### Phase 1 — Make Stop transactional
+- [x] Accept `R26=01/02` as Start confirmation and apply the restricted-cookware
+  policy for `01` (`0.2.13-dev`).
+- [x] Keep `R20=2B/29/2A` silent, make other unknown values warnings, and remove the
+  former 8/10-second conflict (`0.2.14-dev`).
+- [ ] Retain one eight-second Start deadline beginning at the first transmitted
+  nonzero heartbeat; no acknowledgement must still force repeated Stop.
+- [ ] Add an immutable first-cause Start/EST incident record in RAM and expose it in
+  compact UART and authenticated status without periodic JSON transport.
+- [ ] Add a deterministic host model for: immediate and delayed `R26=01`, immediate
+  and delayed `R26=02`, persistent `R26=00`, `R20=2B` before/during/after
+  acknowledgement, `29/2A`, a generic warning value, NoPan `02`, every known fault
+  group, I2C gaps, and acknowledgements exactly around the timeout boundary.
+- [ ] Prove that a late acknowledgement cannot revive a Start after timeout and that
+  the preserved incident is not overwritten by subsequent Stop feedback.
 
-- [ ] Add `STOPPING`.
-- [ ] Make every terminal path request the same idempotent Stop transaction.
-- [ ] Confirm zero feedback before `IDLE`/`COMPLETE`/acknowledged Fault.
-- [ ] Keep communication and Stop-verification faults active while stopping.
-- [ ] Test all Stop origins and I2C fault injection.
+### Package 2B — Power-board revision compatibility before the second cooker
 
-### Phase 2 — Add the cooking lease
+- [ ] Read `R25/R28/R29` as normal startup capabilities and make `R2C`–`R2F`
+  best-effort service diagnostics rather than boot requirements.
+- [ ] Select the stock NTC conversion family from `R28`, or block Start with a clear
+  unsupported-board reason. Never silently apply the tested-board LUT to an
+  incompatible revision.
+- [ ] Model the stock immediate versus filtered behavior of each known `R20` fault
+  group before changing the current conservative two-sample filter.
+- [ ] Capture and compare the second cooker's raw startup register set before any
+  supervised heating test.
 
-- [ ] Add lease generation/renewal at the cooking-to-power boundary.
-- [ ] Force repeated Stop on expiry from the power task.
-- [ ] Distinguish cooking-task failure from power-task watchdog failure.
-- [ ] Test deliberate task suspension.
+### Package 3 — Transactional Stop (`C1`)
 
-### Phase 3 — Serialize commands and transitions
+- [ ] Add cooking `STOPPING` and a lower Stop transaction shared by user Stop,
+  Cancel, timer/profile completion, fault, pause timeout and hard-limit expiry.
+- [ ] Continue sending `W0D=00`, `W00=00`, `W0C=00` on every heartbeat until valid
+  consecutive feedback confirms `R26=00`.
+- [ ] Do not require `R20=00` for Stop confirmation: transition/service/unknown
+  warning values are orthogonal, while known faults and I2C loss remain recorded.
+- [ ] Enter `IDLE` or `COMPLETE` only after confirmed zero output. A second Stop is
+  idempotent; it neither restarts the deadline nor loses the original cause.
+- [ ] On timeout or I2C loss, preserve the first cause, remain in a forcing-Stop
+  state, and keep retrying rather than presenting a false completed Stop.
+- [ ] Test every Stop origin with failures before, between and after the three writes,
+  `R26` stuck nonzero, late recovery and repeated user input.
 
-- [x] Replace mixed asynchronous Set/synchronous Start behavior (`0.2.12-dev`).
-- [ ] Add explicit completion results and UI feedback.
-- [x] Add explicit Arm+Start failure cleanup (`0.2.12-dev`); full confirmed Stop is
-  tracked separately by C1.
-- [ ] Introduce pending confirmation for Start, active zero, Pause and Resume.
+### Package 4 — Cooking lease (`C2`)
 
-### Phase 4 — Repair edge-state context
+- [ ] Add a generation-tagged lease renewed only by the cooking task while a live
+  session legitimately exists: STARTING, heating, active-zero cooking, manual Pause,
+  NoPan recovery and profile zero-power waits.
+- [ ] Do not renew it in ordinary IDLE/READY/DELAYED or after STOPPING begins.
+- [ ] Let the independent 500-ms power task expire the lease and enter the same
+  repeated transactional Stop even if the cooking task is deadlocked.
+- [ ] Keep the existing power-task watchdog as a separate protection; report lease
+  expiry and power-task watchdog reset as different causes.
+- [ ] Test suspended cooking, UI and power tasks independently. A UI stall must not
+  stop valid cooking, but a cooking-task stall must stop it within the lease bound.
 
-- [ ] Centralize entry/exit helpers for Pause, NoPan, Fault and Stop.
-- [ ] Reset/recompute timers, trend, saturation flags and requested output explicitly.
-- [ ] Recompute output before pan return and Resume.
-- [ ] Define ramp behavior from retained zero.
+### Package 5 — Confirmed Start, active zero, Pause and Resume
 
-### Phase 5 — Resolve timers and delayed Start
+- [ ] Separate requested, transmitted and feedback-observed state/gear. A successful
+  API enqueue or I2C write is not yet a physical confirmation.
+- [ ] Preserve the proven `81/00/00` active-zero command and the observed no-click
+  behavior; do not wait for an invented reply code that the board does not provide.
+- [ ] Define confirmation from the evidence that does exist: successful command
+  transmission followed by fresh valid feedback, compatible `R20`, expected session
+  form of `R26`, and no Stop transaction.
+- [ ] Add explicit pending transitions or one generation-tagged transition object for
+  Start, active zero, Pause and Resume, with bounded deadlines and exact rejection
+  reasons.
+- [ ] Make repeated short presses idempotent while a transition is pending. A stale
+  acknowledgement from an earlier generation must not complete a newer transition.
+- [ ] Keep temperature Resume recomputation already implemented in `0.2.12-dev` and
+  deliberately choose/test the first resumed ramp step rather than inheriting it as
+  a side effect.
 
-- [ ] Separate heating time, session time, manual Pause time and profile wait time.
-- [ ] Make delayed configuration immutable or atomically editable.
-- [ ] Synchronize the UI view when a scheduled run begins.
-- [ ] Give long-center Stop priority over live editors.
+### Package 6 — NoPan, cookware return and output recovery
 
-### Phase 6 — Field validation
+- [ ] Treat only valid `R20=02` samples as NoPan. `R26=01` means restricted cookware,
+  not missing cookware; an unknown warning value alone must not prove pan return.
+- [ ] Move return ownership to the cooking layer: hold safe zero, refresh readings,
+  recompute POWER or temperature output, apply the `R26=01` limit if present, then
+  permit controlled resumption.
+- [ ] Reset/freeze the NoPan timer, cooking countdown, sound cycle, temperature trend,
+  PI state, saturation episode and transition generation through one entry/exit path.
+- [ ] Cover pan loss and return in PREHEAT, APPROACH, HOLD, active zero, Pause and each
+  profile-stage type, including a return near the 60-second boundary.
+- [ ] Verify that Stop or Pause during return cancels that generation and prevents a
+  late feedback sample from restoring heat.
 
-- [ ] Build and run all offline gates.
-- [ ] Review the exact binary and flash range; do not flash without explicit approval.
-- [ ] Perform no-heat UI/I2C transition testing first.
-- [ ] Perform short water-load POWER and TEMPERATURE tests.
-- [ ] Test NoPan, Pause/Resume, active zero and Stop confirmation.
-- [ ] Characterize high-temperature braking with conservative supervised steps.
-- [ ] Update this checklist with measured evidence, firmware version and logs.
+### Package 7 — Timers, profiles and Delayed Start UI
+
+- [ ] Separate user cooking countdown, accumulated heating-on time, retained-session
+  wall time, manual-Pause time, profile zero-power wait time and the safety lease.
+- [ ] Replace or scope the lower five-hour deadline only after the lease exists.
+  Manual Pause still stops after two hours; intentional active zero and profile waits
+  do not masquerade as Pause, but retain explicit safety bounds.
+- [x] Reject mode/profile/target mutation while Delayed Start is active
+  (`0.2.12-dev`).
+- [ ] Synchronize the physical UI to the actual POWER, temperature or profile view
+  when a delayed run starts; define whether profile encoder edits are rejected.
+- [ ] Give long-center Stop priority over timer/delayed editors during every live
+  state. Cancel and short presses retain their navigation roles.
+- [ ] Test delay expiry during every menu, timer completion while paused/NoPan,
+  multiple zero-duration profile cells, multi-hour active-zero stages, cancellation
+  at deadline boundaries and power loss without automatic heating restoration.
+
+### Final field validation after each package
+
+- [ ] Build and run all offline gates, inspect the exact app image and preserve compact
+  diagnostic coverage.
+- [ ] Flash only after a separate explicit instruction for that exact build.
+- [ ] Run no-heat transition tests before short water-load POWER and TEMPERATURE tests.
+- [ ] Record measured `R20/R26/R28`, commands, relay/fan observations, firmware hash
+  and pass/fail result in this document.
 
 ## 11. Definition of done
 

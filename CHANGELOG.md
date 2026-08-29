@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.15-dev — 2026-08-29
+
+- Removed the temporary I2C-loss counter from the production OLED and physical
+  Settings menu without deleting the implementation. A single disabled compile-time
+  flag retains the overlay, two-second peak hold, stored setting, and menu path for a
+  future diagnostic build.
+- Kept the internal consecutive-I2C-error counter, E09 threshold, compact UART
+  diagnostics, and authenticated status diagnostics unchanged.
+- Recorded the successful `0.2.14-dev` development-unit deployment and retained-
+  session active-zero test without unexpected relay switching.
+- Reassessed the deferred state-machine packages against the newly decoded
+  `R20/R26/R28` behavior: the obsolete `R20=2B` timeout work is closed, Start/EST now
+  focuses on immutable evidence and deterministic tests, and a separate power-board
+  revision compatibility package precedes work with a second cooker.
+
 ## 0.2.14-dev — 2026-08-29
 
 - Extended `SETUP → FIRMWARE → VERSION` with the live raw `R28` power-board

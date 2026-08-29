@@ -271,13 +271,13 @@ def main() -> int:
             "fault/live screens cannot be hidden behind a menu overlay")
     require("TIMER_SCREEN_ALWAYS" in display and "ui_oled_show_timer" in display,
             "TIMER SCREEN setting supports movable countdown or full OLED off")
-    require("#define SETTING_ITEMS 13" in ui and
+    require("#define SETTING_ITEMS 12" in ui and
             ui.count('"SHOW"') >= 4 and ui.count('"ПОКАЗАТЬ"') >= 4 and
             all(label in ui for label in ('"LIVE DATA"', '"IGBT T°C"',
                                           '"TIMER SCREEN"', '"SLEEP CLOCK"')),
             "Settings 3-6 use SHOW plus a descriptive second line")
-    require("#define SETTING_FIRMWARE_VERSION_INDEX 11U" in ui and
-            "#define SETTING_FACTORY_INDEX 12U" in ui and
+    require("#define SETTING_FIRMWARE_VERSION_INDEX 10U" in ui and
+            "#define SETTING_FACTORY_INDEX 11U" in ui and
             "VIEW_FIRMWARE_VERSION" in ui and
             "display_prod_set_version_overlay" in ui and
             "MCL02M_FIRMWARE_VERSION" in ui and
@@ -298,13 +298,16 @@ def main() -> int:
             "input_status.r20_warning_active && !true_urgent" in ui and
             'fault_locked("POWER TRANSITION")' not in power,
             "unknown R20 is dismissible warning while 2B/29/2A stay silent and nonfatal")
-    require("show_i2c_debug" in settings and
+    require("#define COOKER_I2C_DEBUG_DISPLAY_ENABLED  0U" in config and
+            "#if COOKER_I2C_DEBUG_DISPLAY_ENABLED" in display and
+            "#if !COOKER_I2C_DEBUG_DISPLAY_ENABLED" in settings and
+            "show_i2c_debug" in settings and
             "s_settings.show_i2c_debug = 0;" in settings and
             "if (stored.schema <= 4U) s_settings.show_i2c_debug = 0;" in settings and
-            'case 9: return "I2C ERRORS";' in ui and
-            "case 9: s_setting_value = settings.show_i2c_debug;" in ui and
-            "case 9: settings.show_i2c_debug = s_setting_value;" in ui,
-            "temporary I2C counter display is an opt-in persisted physical setting")
+            'case SETTING_I2C_DEBUG_INDEX: return "I2C ERRORS";' in ui and
+            "case SETTING_I2C_DEBUG_INDEX: s_setting_value = settings.show_i2c_debug;" in ui and
+            "case SETTING_I2C_DEBUG_INDEX: settings.show_i2c_debug = s_setting_value;" in ui,
+            "temporary I2C counter display remains in source but is compiled out of production")
     require("pb->consecutive_bad_cycles > COOKER_I2C_DEBUG_MAX" in engine and
             "s_status.i2c_bad_cycles" in engine and
             "i2c_debug_display_value(cooker.i2c_bad_cycles, now)" in display and
@@ -622,6 +625,9 @@ def main() -> int:
     require(binary.is_file(), "custom app binary exists")
     require(binary.stat().st_size <= SLOT_SIZE,
             f"custom app fits ota_1 ({binary.stat().st_size:#x} <= {SLOT_SIZE:#x})")
+    elf = BUILD / "mcl02m_custom.elf"
+    require(elf.is_file() and b"I2C ERRORS" not in elf.read_bytes(),
+            "production ELF excludes the temporary I2C-counter menu string")
     manifest = (ROOT / "BUILD_MANIFEST.md").read_text(encoding="utf-8")
     current_hash = sha256(binary)
     require(f"`{binary.stat().st_size}` bytes" in manifest,

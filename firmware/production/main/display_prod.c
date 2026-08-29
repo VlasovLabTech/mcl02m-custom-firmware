@@ -55,8 +55,10 @@ static int64_t s_transient_deadline_us;
 static cook_state_t s_previous_state;
 static bool s_previous_state_valid;
 static bool s_awake;
+#if COOKER_I2C_DEBUG_DISPLAY_ENABLED
 static unsigned s_i2c_debug_peak;
 static int64_t s_i2c_debug_hold_until_us;
+#endif
 static uint32_t s_cookware_notice_seq;
 static int64_t s_cookware_notice_deadline_us;
 
@@ -68,6 +70,7 @@ static bool active_picture_state(cook_state_t state)
     return state == COOK_STATE_STARTING || state == COOK_STATE_COOKING;
 }
 
+#if COOKER_I2C_DEBUG_DISPLAY_ENABLED
 static unsigned i2c_debug_display_value(unsigned current, int64_t now_us)
 {
     if (current > COOKER_I2C_DEBUG_MAX) current = COOKER_I2C_DEBUG_MAX;
@@ -82,6 +85,7 @@ static unsigned i2c_debug_display_value(unsigned current, int64_t now_us)
     }
     return current > s_i2c_debug_peak ? current : s_i2c_debug_peak;
 }
+#endif
 
 static void set_transient_locked(transient_image_t image, uint32_t duration_ms,
                                  int64_t now_us)
@@ -476,6 +480,7 @@ static void display_task(void *arg)
                 for (unsigned i = 0; i < UI_OLED_TEXT_LINES; ++i) pointers[i] = lines[i];
                 ui_oled_show_text(pointers);
             }
+#if COOKER_I2C_DEBUG_DISPLAY_ENABLED
             if (settings.show_i2c_debug) {
                 ui_oled_overlay_debug_counter(
                     i2c_debug_display_value(cooker.i2c_bad_cycles, now));
@@ -483,6 +488,7 @@ static void display_task(void *arg)
                 s_i2c_debug_peak = 0;
                 s_i2c_debug_hold_until_us = 0;
             }
+#endif
         }
         vTaskDelay(pdMS_TO_TICKS(250));
     }
