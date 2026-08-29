@@ -163,6 +163,7 @@ Use a compatible ESP-IDF environment:
 cd firmware\production
 idf.py set-target esp32
 idf.py build
+python tests\policy_tests.py
 python tests\safety_check.py
 python tests\localization_check.py
 ```
@@ -174,7 +175,7 @@ modified. See [Flashing and recovery](docs/FLASHING.md) before writing anything.
 
 ## Development status
 
-The current source version is `0.2.16-dev`; the development unit runs the
+The current source version is `0.2.17-dev`; the development unit runs the
 hash-verified `0.2.14-dev` image written only to stock `ota_1` at `0x170000` on
 2026-08-29. Supervised testing confirmed retained-session active zero without
 unexpected relay switching, Sleep/Wake, the temporary I2C debug display, and
@@ -191,10 +192,15 @@ the production menu and OLED while retaining its implementation behind a disable
 build flag. It also revises the deferred implementation packages around the observed
 protocol. Unflashed `0.2.16-dev` removes the queued timer-toggle race and changes the
 physical timer editor to `seconds → minutes → hours`, with an explicit confirmation
-for each field. The
+for each field. Unflashed `0.2.17-dev` completes the Start/EST evidence package: the
+eight-second acknowledgement window begins only after the first successfully
+transmitted nonzero heartbeat, closes strictly at its deadline, and preserves an
+immutable first-cause RAM incident in compact UART and authenticated status. Its host
+model covers accepted, delayed, missing, late, fault, NoPan, warning and I²C-gap
+responses. The
 remaining findings and proposed fix sequence are preserved in the
 [state-machine implementation plan](docs/STATE_MACHINE_IMPLEMENTATION_PLAN.md).
-The `0.2.16-dev` source is built and checked offline but has not been flashed.
+The `0.2.17-dev` source is built and checked offline but has not been flashed.
 
 This is an independent community project, not an official Xiaomi or Chunmi
 product. Use it at your own risk. Licensed under the [MIT License](LICENSE).

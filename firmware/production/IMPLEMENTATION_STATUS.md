@@ -1,7 +1,7 @@
 # MCL02M custom firmware — implementation status
 
 Дата: 2026-08-29
-Версия исходников: `0.2.16-dev`
+Версия исходников: `0.2.17-dev`
 Статус: the development unit runs the hash-verified `0.2.14-dev` app written only to
 stock `ota_1` at `0x170000` on 2026-08-29. It booted successfully, and supervised
 testing confirmed retained-session active zero without unwanted relay switching,
@@ -16,6 +16,10 @@ production menu and OLED while preserving that implementation behind a disabled
 compile-time flag. Internal E09 counting and compact diagnostics are unchanged. The
 unflashed `0.2.16-dev` source also replaces the queued timer toggle with synchronous
 Set/Disable and uses a seconds, minutes, hours confirmation sequence. The
+unflashed `0.2.17-dev` source completes the Start/EST evidence package: Start cannot
+be confirmed by stale or deadline-late `R26`, and an EST preserves the exact first
+cause in RAM, compact UART and authenticated status. The deterministic host model
+covers the complete known Start response matrix. The
 earlier one-time NVS refresh is complete and must not be repeated automatically.
 
 ## Реализованный пользовательский контур
@@ -28,7 +32,7 @@ earlier one-time NVS refresh is complete and must not be repeated automatically.
 | UNKNOWN R20 | `2B`, `29`, and `2A` remain silent nonfaults; another unrecognized nonzero value shows a persistent `WARNING / UNKNOWN / R20 XX`; the first physical input dismisses only the warning and the established session continues |
 | TEMPERATURE | `40…190 °C`; entering T°C immediately copies and clamps the setpoint into editor-owned state; PREHEAT uses `56/77/99`; braking reserve is `clamp(10 °C + positive four-second rise, 10…20 °C)`, with a 15 °C minimum from 170 °C and 5 °C phase hysteresis; APPROACH uses `8 + 2 × error`; PI uses `4 + 2 × error + 0.08 × integral`; APPROACH/HOLD remain capped at `35`; output is active zero at/above target and PI resumes one degree below |
 | HOLD SATURATED | gear `35` в течение 90 s при ошибке не менее 3 °C: orange, warning и сообщение; предел не повышается |
-| Start | только отдельным нажатием центра; силовой preflight и `STARTING` до `R26=01/02` |
+| Start | только отдельным нажатием центра; силовой preflight и `STARTING` до fresh `R26=01/02` received after the first successful nonzero heartbeat and strictly before the sole 8-s deadline; EST latches repeated Stop plus immutable first-cause evidence |
 | Pause/Resume | short center enters active zero and freezes the timer; temperature trend sampling continues while PI is frozen; Resume clears PI timing, calculates and installs a current output before resuming the retained session, and never intentionally pulses the old gear or performs Stop/re-arm; 2 h continuous manual Pause performs full Stop |
 | Stop/Sleep | hold центра 1,5 s с немедленным срабатыванием и звуком — Stop/Back; следующий hold в Idle — Sleep; Cancel всегда Stop/Back |
 | Sleep | default 1 min Idle; wake returns to Home/Power, or Home/Temperature when Sleep began from Temperature; secondary menu selections are never restored; heartbeat and safety continue at zero output |

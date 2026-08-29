@@ -53,6 +53,9 @@ static uint8_t s_r20_fault_value;
 static bool s_unknown_r20_present;
 static uint8_t s_unknown_r20_present_value;
 static unsigned s_stop_active_samples;
+static uint32_t s_start_incident_sequence;
+static uint8_t s_last_successful_command_0d;
+static uint8_t s_last_successful_command_0c;
 #if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
 static bool s_feedback_reported;
 static uint8_t s_reported_r20;
@@ -311,6 +314,49 @@ static esp_err_t read_and_store(uint8_t reg)
     return err;
 }
 
+static void capture_start_incident_locked(const char *reason,
+                                          powerboard_state_t previous_state)
+{
+    if (reason == NULL || strcmp(reason, "START TIMEOUT") != 0 ||
+        s_status.start_incident.valid) {
+        return;
+    }
+
+    powerboard_start_incident_t *incident = &s_status.start_incident;
+    incident->valid = true;
+    incident->sequence = ++s_start_incident_sequence;
+    incident->timestamp_ms = (uint64_t)(esp_timer_get_time() / 1000);
+    incident->lower_state = previous_state;
+    incident->r20 = s_status.registers[0];
+    incident->r26 = s_status.registers[6];
+    incident->r28 = s_status.registers[8];
+    incident->valid_mask = s_status.valid_mask;
+    incident->requested_gear = s_status.target_gear;
+    incident->transmitted_gear = s_last_successful_command_0c;
+    incident->transmitted_topology = s_last_successful_command_0d;
+    incident->command_0d = s_status.last_command_0d;
+    incident->command_00 = s_status.last_command_00;
+    incident->command_0c = s_status.last_command_0c;
+    incident->completed_cycles = s_status.completed_cycles;
+    incident->bad_cycles = s_status.bad_cycles;
+    incident->consecutive_bad_cycles = s_status.consecutive_bad_cycles;
+    strlcpy(incident->reason, reason, sizeof(incident->reason));
+
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+    ESP_LOGW(TAG,
+             "X,%" PRIu32 ",%" PRIu64 ",%s,%02X,%02X,%02X,%04X,"
+             "%u,%u,%02X,%02X,%02X,%02X,%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%s",
+             incident->sequence, incident->timestamp_ms,
+             powerboard_state_name(incident->lower_state), incident->r20,
+             incident->r26, incident->r28, incident->valid_mask,
+             incident->requested_gear, incident->transmitted_gear,
+             incident->transmitted_topology, incident->command_0d,
+             incident->command_00, incident->command_0c,
+             incident->completed_cycles, incident->bad_cycles,
+             incident->consecutive_bad_cycles, incident->reason);
+#endif
+}
+
 static void fault_locked(const char *reason)
 {
     if (s_status.state == PB_STATE_FAULT) {
@@ -318,10 +364,9 @@ static void fault_locked(const char *reason)
         s_force_stop = true;
         return;
     }
-#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
     const powerboard_state_t previous_state = s_status.state;
-#endif
     const char *fault_reason = reason == NULL ? "FAULT" : reason;
+    capture_start_incident_locked(fault_reason, previous_state);
     s_status.state = PB_STATE_FAULT;
     s_status.target_gear = 0;
     s_status.applied_gear = 0;
@@ -462,10 +507,16 @@ static void update_time_and_safety(int64_t now_us)
 static void update_status_feedback(void)
 {
     xSemaphoreTake(s_status_lock, portMAX_DELAY);
+    const int64_t now_us = esp_timer_get_time();
     const bool r20_valid = (s_status.valid_mask & (1U << 0)) != 0;
     const bool r26_valid = (s_status.valid_mask & (1U << 6)) != 0;
     const uint8_t r20 = s_status.registers[0];
     const uint8_t r26 = s_status.registers[6];
+    const bool start_confirmation_open =
+        s_status.state == PB_STATE_STARTING &&
+        s_start_confirm_deadline_us != 0 && now_us < s_start_confirm_deadline_us;
+    const bool heating_feedback_open =
+        s_status.state == PB_STATE_HEATING || start_confirmation_open;
 
 #if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
     if ((r20_valid || r26_valid) &&
@@ -480,8 +531,7 @@ static void update_status_feedback(void)
     }
 #endif
 
-    if (r20_valid && r20 == 0x02 &&
-        (s_status.state == PB_STATE_HEATING || s_status.state == PB_STATE_STARTING)) {
+    if (r20_valid && r20 == 0x02 && heating_feedback_open) {
         if (++s_no_pan_samples >= MCL02M_NO_PAN_SAMPLES) {
             s_status.state = PB_STATE_NO_PAN;
             s_start_confirm_deadline_us = 0;
@@ -503,7 +553,7 @@ static void update_status_feedback(void)
      * different meaning when W00 is zero.
      */
     if (r20_valid && r20_session_compatible(r20) && r26_valid &&
-        (s_status.state == PB_STATE_STARTING || s_status.state == PB_STATE_HEATING)) {
+        heating_feedback_open) {
         if (r26 == 0x01) {
             s_status.cookware_limited = true;
             if (s_status.applied_gear > MCL02M_SMALL_COOKWARE_MAX_GEAR)
@@ -514,8 +564,7 @@ static void update_status_feedback(void)
         }
     }
 
-    if (s_status.state == PB_STATE_STARTING && r20_valid &&
-        r20_session_compatible(r20) &&
+    if (start_confirmation_open && r20_valid && r20_session_compatible(r20) &&
         r26_valid && (r26 == 0x01 || r26 == 0x02)) {
         s_status.state = PB_STATE_HEATING;
         s_start_confirm_deadline_us = 0;
@@ -636,7 +685,7 @@ static void emit_status(void)
              s.cookware_limited ? 1U : 0U, s.registers[8],
              s.unknown_r20_value, s.unknown_r20_seq, s.fault);
 #endif
-    char json[768];
+    char json[1280];
     powerboard_control_status_json(json, sizeof(json));
     telemetry_emit(json);
 }
@@ -694,6 +743,7 @@ static void control_task(void *arg)
                 uint8_t command_0d = 0;
                 uint8_t command_00 = 0;
                 uint8_t command_0c = 0;
+                bool command_transmitted = true;
                 if (command_state == PB_STATE_STARTING || command_state == PB_STATE_HEATING) {
                     command_0d = topology;
                     command_00 = 1;
@@ -713,21 +763,30 @@ static void control_task(void *arg)
                 s_status.last_command_00 = command_00;
                 s_status.last_command_0c = command_0c;
                 xSemaphoreGive(s_status_lock);
-                if (write_register(0x0d, command_0d) != ESP_OK) ++cycle_errors;
+                if (write_register(0x0d, command_0d) != ESP_OK) {
+                    ++cycle_errors;
+                    command_transmitted = false;
+                }
                 if (!wait_until_or_stop(cycle_start, 450)) {
                     interrupted = true;
                 } else {
-                    if (write_register(0x00, command_00) != ESP_OK) ++cycle_errors;
+                    if (write_register(0x00, command_00) != ESP_OK) {
+                        ++cycle_errors;
+                        command_transmitted = false;
+                    }
                     if (!wait_until_or_stop(cycle_start, 454)) {
                         interrupted = true;
                     } else if (write_register(0x0c, command_0c) != ESP_OK) {
                         ++cycle_errors;
+                        command_transmitted = false;
                     }
                 }
 
-                if (!interrupted) {
+                if (!interrupted && command_transmitted) {
                     bool start_confirm_started = false;
                     xSemaphoreTake(s_status_lock, portMAX_DELAY);
+                    s_last_successful_command_0d = command_0d;
+                    s_last_successful_command_0c = command_0c;
                     if (s_status.state == PB_STATE_STARTING && command_00 == 1 &&
                         s_start_confirm_deadline_us == 0) {
                         s_start_confirm_deadline_us = esp_timer_get_time() +
@@ -831,7 +890,14 @@ size_t powerboard_control_status_json(char *output, size_t output_size)
         "\"consecutive_bad_cycles\":%" PRIu32 ","
         "\"active_zero_entries\":%" PRIu32 ",\"active_zero_resumes\":%" PRIu32 ","
         "\"active_zero_enabled\":%s,\"cookware_limited\":%s,"
-        "\"unknown_r20_value\":%u,\"unknown_r20_seq\":%" PRIu32 ",\"fault\":\"%s\"}",
+        "\"unknown_r20_value\":%u,\"unknown_r20_seq\":%" PRIu32 ",\"fault\":\"%s\","
+        "\"start_incident\":{\"valid\":%s,\"sequence\":%" PRIu32 ","
+        "\"t_ms\":%" PRIu64 ",\"state\":\"%s\",\"r20\":%u,\"r26\":%u,"
+        "\"r28\":%u,\"valid_mask\":%u,\"requested_gear\":%u,"
+        "\"transmitted_gear\":%u,\"transmitted_topology\":%u,"
+        "\"cmd_0d\":%u,\"cmd_00\":%u,\"cmd_0c\":%u,"
+        "\"cycles\":%" PRIu32 ",\"bad_cycles\":%" PRIu32 ","
+        "\"consecutive_bad_cycles\":%" PRIu32 ",\"reason\":\"%s\"}}",
         esp_timer_get_time() / 1000, powerboard_state_name(s.state),
         s.target_gear, s.applied_gear, s.topology,
         s.last_command_0d, s.last_command_00, s.last_command_0c,
@@ -846,7 +912,17 @@ size_t powerboard_control_status_json(char *output, size_t output_size)
         s.active_zero_entries, s.active_zero_resumes,
         MCL02M_ACTIVE_ZERO_ENABLED ? "true" : "false",
         s.cookware_limited ? "true" : "false", s.unknown_r20_value,
-        s.unknown_r20_seq, s.fault);
+        s.unknown_r20_seq, s.fault,
+        s.start_incident.valid ? "true" : "false", s.start_incident.sequence,
+        s.start_incident.timestamp_ms,
+        powerboard_state_name(s.start_incident.lower_state),
+        s.start_incident.r20, s.start_incident.r26, s.start_incident.r28,
+        s.start_incident.valid_mask, s.start_incident.requested_gear,
+        s.start_incident.transmitted_gear,
+        s.start_incident.transmitted_topology, s.start_incident.command_0d,
+        s.start_incident.command_00, s.start_incident.command_0c,
+        s.start_incident.completed_cycles, s.start_incident.bad_cycles,
+        s.start_incident.consecutive_bad_cycles, s.start_incident.reason);
 }
 
 esp_err_t powerboard_control_arm(unsigned window_ms)
@@ -879,6 +955,9 @@ esp_err_t powerboard_control_start(unsigned gear, unsigned duration_ms)
         return ESP_ERR_INVALID_STATE;
     }
     s_status.target_gear = (uint8_t)gear;
+    memset(&s_status.start_incident, 0, sizeof(s_status.start_incident));
+    s_last_successful_command_0d = 0;
+    s_last_successful_command_0c = 0;
     s_status.applied_gear = (uint8_t)(gear > 10 ? 10 : gear);
     s_status.topology = topology_for_gear(s_status.applied_gear);
     s_status.cookware_limited = false;

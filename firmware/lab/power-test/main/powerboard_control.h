@@ -20,6 +20,27 @@ typedef enum {
 } powerboard_state_t;
 
 typedef struct {
+    bool valid;
+    uint32_t sequence;
+    uint64_t timestamp_ms;
+    powerboard_state_t lower_state;
+    uint8_t r20;
+    uint8_t r26;
+    uint8_t r28;
+    uint16_t valid_mask;
+    uint8_t requested_gear;
+    uint8_t transmitted_gear;
+    uint8_t transmitted_topology;
+    uint8_t command_0d;
+    uint8_t command_00;
+    uint8_t command_0c;
+    uint32_t completed_cycles;
+    uint32_t bad_cycles;
+    uint32_t consecutive_bad_cycles;
+    char reason[24];
+} powerboard_start_incident_t;
+
+typedef struct {
     powerboard_state_t state;
     uint8_t target_gear;
     uint8_t applied_gear;
@@ -47,6 +68,7 @@ typedef struct {
     bool stop_verified;
     bool heartbeat_gap_observed_stop;
     char fault[24];
+    powerboard_start_incident_t start_incident;
 } powerboard_status_t;
 
 esp_err_t powerboard_control_init(void);

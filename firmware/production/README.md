@@ -13,7 +13,7 @@
 - `R26=01` restricted-cookware feedback is accepted as normal heating and caps every
   control path at real gear `35`/`A1`; POWER reports the permitted value, blocks only
   upward edits above 35, and displays a temporary explanatory message;
-- physical Settings shows both `0.2.16-dev` firmware and live raw `R28` power-board
+- physical Settings shows both `0.2.17-dev` firmware and live raw `R28` power-board
   revision/type with four left-aligned rows;
 - `R20=2B/29/2A` are silent nonfaults; another unknown nonzero `R20` shows its exact
   hex value as a persistent warning, and the first physical input dismisses only the
@@ -83,6 +83,11 @@
   The fixed `D` field order is: state, target/applied gear, topology, last commands,
   `R20…R27`, valid mask, temperatures, run/remaining/arm/start-confirm/heartbeat-gap
   timers, cycle/error/active-zero counters, stop/heartbeat/active-zero flags, fault.
+- Start acknowledgement is accepted only after a complete successful nonzero
+  heartbeat and strictly before its single eight-second deadline. EST captures one
+  immutable first-cause RAM record before repeated Stop changes live feedback. The
+  one-shot compact `X` frame and authenticated status include state, `R20/R26/R28`,
+  valid mask, requested/transmitted command, cycle counters, timestamp and cause.
 - Fault handling never writes runtime or LED state to NVS. Only explicit settings,
   profile, Wi-Fi, admin, and physical Factory actions use the custom namespace.
 - All nine white power LEDs run a 1.5-second all-on boot test. Serial LED writes end
@@ -102,6 +107,7 @@
 ```powershell
 idf.py set-target esp32
 idf.py build
+python tests/policy_tests.py
 python tests/safety_check.py
 python tests/localization_check.py
 ```

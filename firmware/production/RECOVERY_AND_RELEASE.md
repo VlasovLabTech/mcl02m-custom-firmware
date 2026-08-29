@@ -2,7 +2,7 @@
 
 Этот документ описывает будущую процедуру, но **не разрешает запись сейчас**.
 
-Current reference app artifact: `build/mcl02m_custom.bin` (`0.2.16-dev`). Its exact
+Current reference app artifact: `build/mcl02m_custom.bin` (`0.2.17-dev`). Its exact
 size and SHA-256 are recorded in `BUILD_MANIFEST.md`. This artifact has not been
 flashed. The development unit remains on the hash-verified `0.2.14-dev` image written
 to stock `ota_1` at `0x170000` on 2026-08-29. No other partition was written.
@@ -14,7 +14,8 @@ to stock `ota_1` at `0x170000` on 2026-08-29. No other partition was written.
 1. Проверить оригинальный полный dump:
    `16,777,216` bytes, SHA-256
    `e7d3ef41f6b5802558698589d5f3a6467d89e6838e8efa3bb040ffe4048bcc8e`.
-2. Выполнить `python tests/safety_check.py` и сохранить SHA-256 app image.
+2. Run `python tests/policy_tests.py` and `python tests/safety_check.py`, then record
+   the app-image SHA-256.
 3. Сохранить копию исходных `ota_1` и `otadata` из полного dump отдельно.
 4. Получить отдельное подтверждение пользователя на каждую flash-write операцию.
 5. Записывать только `build/mcl02m_custom.bin` в `0x170000`; общая команда

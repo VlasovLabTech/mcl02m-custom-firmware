@@ -169,7 +169,7 @@ static esp_err_t ws_handler(httpd_req_t *req)
 
 static esp_err_t status_handler(httpd_req_t *req)
 {
-    char response[768];
+    char response[1280];
     powerboard_control_status_json(response, sizeof(response));
     return send_json(req, response);
 }

@@ -13,7 +13,7 @@ from a request to edit or build software.
 - Xiaomi device model: `chunmi.ihcooker.v2`.
 - Interface controller: Espressif `ESP-WROOM-32D` (classic ESP32).
 - Display: monochrome 64×48 OLED, page-major 384-byte framebuffer.
-- Current custom source version: `0.2.16-dev`.
+- Current custom source version: `0.2.17-dev`.
 - Framework: ESP-IDF.
 - Public repository language: English for technical documents; the device UI
   supports English, Russian, and Simplified Chinese.
@@ -554,6 +554,7 @@ Production build:
 cd firmware\production
 idf.py set-target esp32
 idf.py build
+python tests\policy_tests.py
 python tests\safety_check.py
 python tests\localization_check.py
 ```
@@ -571,7 +572,7 @@ Before any release or hardware write:
 8. After flashing, first perform a no-heat boot/UI/I²C soak, then supervised short
    power tests with a water load.
 
-The reference `0.2.16-dev` artifact identified in
+The reference `0.2.17-dev` artifact identified in
 `firmware/production/BUILD_MANIFEST.md` is an offline build and has not been flashed.
 The development unit remains on hash-verified `0.2.14-dev` in stock `ota_1`, written
 at `0x170000` on 2026-08-29; that deployment did not touch the bootloader, partition

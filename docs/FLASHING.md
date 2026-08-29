@@ -31,6 +31,7 @@ internal power-board ground. `3V3` is not a 5 V power input.
 cd firmware\production
 idf.py set-target esp32
 idf.py build
+python tests\policy_tests.py
 python tests\safety_check.py
 python tests\localization_check.py
 python -m esptool --chip esp32 image_info build\mcl02m_custom.bin

@@ -23,7 +23,8 @@ API предназначен только для web-страницы самой
 - cooking state/mode/fault, selected/applied gear, temperature, timer/schedule;
 - raw power-board `R20…R27`, I²C cycle/error counters, topology, Stop/start
   confirmation, active-zero state, last `0D/00/0C` command, transition counters,
-  and manual-Pause time remaining;
+  manual-Pause time remaining, and the immutable first-cause Start/EST incident
+  (`R20/R26/R28`, valid mask, requested/transmitted command, counters and timestamp);
 - STA/AP/NTP state;
 - текущие Settings и пять Profiles по пять timed cells;
 - NVS availability и dropped telemetry count.

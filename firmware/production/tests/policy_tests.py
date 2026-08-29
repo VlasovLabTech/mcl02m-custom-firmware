@@ -4,6 +4,154 @@
 from dataclasses import dataclass
 
 
+KNOWN_R20_FAULTS = {
+    0x01, 0x0B, 0x0C, 0x15, 0x16, 0x17,
+    0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D,
+}
+
+
+@dataclass(frozen=True)
+class StartIncident:
+    state: str
+    r20: int
+    r26: int
+    requested_gear: int
+    transmitted_gear: int
+    transmitted_topology: int
+    completed_cycles: int
+    bad_cycles: int
+    consecutive_bad_cycles: int
+    reason: str
+
+
+@dataclass
+class StartProtocol:
+    """Deterministic model of the lower Start-confirmation boundary contract."""
+
+    state: str = "ARMED"
+    requested_gear: int = 0
+    transmitted_gear: int = 0
+    transmitted_topology: int = 0
+    deadline_ms: int | None = None
+    r20: int = 0
+    r26: int = 0
+    completed_cycles: int = 0
+    bad_cycles: int = 0
+    consecutive_bad_cycles: int = 0
+    no_pan_samples: int = 0
+    known_fault_samples: int = 0
+    known_fault_value: int = 0
+    cookware_limited: bool = False
+    warning: int | None = None
+    incident: StartIncident | None = None
+
+    def start(self, gear: int = 99) -> None:
+        assert self.state == "ARMED" and 0 < gear <= 99
+        self.state = "STARTING"
+        self.requested_gear = gear
+        self.transmitted_gear = min(gear, 10)
+        self.transmitted_topology = 0xA1
+        self.deadline_ms = None
+        self.incident = None
+
+    def heartbeat(self, now_ms: int) -> None:
+        if self.state == "STARTING" and self.deadline_ms is None:
+            self.deadline_ms = now_ms + 8_000
+
+    def _confirmation_open(self, now_ms: int) -> bool:
+        return (
+            self.state == "STARTING"
+            and self.deadline_ms is not None
+            and now_ms < self.deadline_ms
+        )
+
+    def _fault(self, reason: str) -> None:
+        if self.state == "FAULT":
+            return
+        if reason == "START TIMEOUT" and self.incident is None:
+            self.incident = StartIncident(
+                state=self.state,
+                r20=self.r20,
+                r26=self.r26,
+                requested_gear=self.requested_gear,
+                transmitted_gear=self.transmitted_gear,
+                transmitted_topology=self.transmitted_topology,
+                completed_cycles=self.completed_cycles,
+                bad_cycles=self.bad_cycles,
+                consecutive_bad_cycles=self.consecutive_bad_cycles,
+                reason=reason,
+            )
+        self.state = "FAULT"
+
+    def sample(self, now_ms: int, r20: int = 0, r26: int = 0,
+               *, i2c_ok: bool = True) -> None:
+        self.completed_cycles += 1
+        if i2c_ok:
+            self.r20 = r20
+            self.r26 = r26
+            self.consecutive_bad_cycles = 0
+            feedback_valid = True
+        else:
+            self.bad_cycles += 1
+            self.consecutive_bad_cycles += 1
+            feedback_valid = False
+
+        confirmation_open = self._confirmation_open(now_ms)
+        heating_feedback_open = self.state == "HEATING" or confirmation_open
+
+        if feedback_valid and r20 == 0x02 and heating_feedback_open:
+            self.no_pan_samples += 1
+            if self.no_pan_samples >= 3:
+                self.state = "NO_PAN"
+                self.deadline_ms = None
+        elif feedback_valid and r20 != 0x02:
+            self.no_pan_samples = 0
+
+        if feedback_valid and heating_feedback_open and r20_policy(r20) not in {
+            "known_fault", "no_pan"
+        } and r26 in {1, 2}:
+            self.cookware_limited = r26 == 1
+            if self.cookware_limited:
+                self.transmitted_gear = min(self.transmitted_gear, 35)
+                self.transmitted_topology = 0xA1
+            if confirmation_open:
+                self.state = "HEATING"
+                self.deadline_ms = None
+
+        if feedback_valid and r20 in KNOWN_R20_FAULTS:
+            if r20 == self.known_fault_value:
+                self.known_fault_samples += 1
+            else:
+                self.known_fault_value = r20
+                self.known_fault_samples = 1
+            if self.known_fault_samples >= 2 and self.state in {
+                "STARTING", "HEATING", "ACTIVE_ZERO", "PAUSED", "NO_PAN"
+            }:
+                self._fault("KNOWN R20")
+        elif feedback_valid:
+            self.known_fault_samples = 0
+            if r20_policy(r20) == "dismissible_warning":
+                self.warning = r20
+
+        if (
+            self.state == "STARTING"
+            and self.deadline_ms is not None
+            and now_ms >= self.deadline_ms
+        ):
+            self._fault("START TIMEOUT")
+
+        if (
+            self.consecutive_bad_cycles >= 6
+            and self.state not in {"STOPPED", "FAULT"}
+        ):
+            self._fault("I2C LOST")
+
+    def observe_stop_feedback(self, r20: int, r26: int) -> None:
+        """Later Stop feedback may change live registers, never the EST incident."""
+        self.r20 = r20
+        self.r26 = r26
+
+
 @dataclass
 class Timer:
     remaining: int
@@ -94,15 +242,13 @@ def user_power_step(selected: int, delta: int, cookware_limited: bool) -> tuple[
 
 def r20_policy(value: int) -> str:
     """Classify stock-known statuses without inventing faults for unknown values."""
-    known_faults = {0x01, 0x0B, 0x0C, 0x15, 0x16, 0x17,
-                    0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D}
     if value == 0:
         return "normal"
     if value == 0x02:
         return "no_pan"
     if value in {0x2B, 0x29, 0x2A}:
         return "silent_nonfault"
-    if value in known_faults:
+    if value in KNOWN_R20_FAULTS:
         return "known_fault"
     return "dismissible_warning"
 
@@ -277,6 +423,103 @@ def run() -> None:
     assert r20_policy(0x17) == "known_fault"
     assert r20_policy(0x7F) == "dismissible_warning"
     assert r20_warning_events([0x7F, 0x7F, 0x00, 0x7F, 0x29, 0x7F]) == [0x7F] * 3
+
+    # Start acknowledgement is accepted only after the first transmitted nonzero
+    # heartbeat and strictly before its sole eight-second deadline.
+    for r26, limited in ((0x01, True), (0x02, False)):
+        immediate = StartProtocol()
+        immediate.start()
+        immediate.heartbeat(100)
+        immediate.sample(101, r20=0, r26=r26)
+        assert immediate.state == "HEATING"
+        assert immediate.cookware_limited is limited
+
+        delayed = StartProtocol()
+        delayed.start()
+        delayed.heartbeat(100)
+        delayed.sample(8_099, r20=0, r26=r26)
+        assert delayed.state == "HEATING"
+
+    stale = StartProtocol()
+    stale.start()
+    stale.sample(50, r20=0x2B, r26=0x02)
+    assert stale.state == "STARTING" and stale.deadline_ms is None
+    stale.heartbeat(100)
+    stale.sample(101, r20=0x2B, r26=0x02)
+    assert stale.state == "HEATING"
+
+    for transition_r20 in (0x2B, 0x29, 0x2A):
+        before = StartProtocol()
+        before.start()
+        before.sample(0, r20=transition_r20, r26=0)
+        before.heartbeat(100)
+        before.sample(101, r20=transition_r20, r26=2)
+        before.sample(500, r20=transition_r20, r26=2)
+        assert before.state == "HEATING" and before.warning is None
+
+    warning = StartProtocol()
+    warning.start()
+    warning.heartbeat(0)
+    warning.sample(500, r20=0x7F, r26=2)
+    assert warning.state == "HEATING" and warning.warning == 0x7F
+
+    no_pan = StartProtocol()
+    no_pan.start()
+    no_pan.heartbeat(0)
+    for timestamp in (500, 1_000, 1_500):
+        no_pan.sample(timestamp, r20=0x02, r26=0)
+    assert no_pan.state == "NO_PAN" and no_pan.incident is None
+
+    for known_fault in sorted(KNOWN_R20_FAULTS):
+        faulted = StartProtocol()
+        faulted.start()
+        faulted.heartbeat(0)
+        faulted.sample(500, r20=known_fault, r26=0)
+        faulted.sample(1_000, r20=known_fault, r26=0)
+        assert faulted.state == "FAULT" and faulted.incident is None
+
+    recovered_i2c = StartProtocol()
+    recovered_i2c.start()
+    recovered_i2c.heartbeat(0)
+    for timestamp in (500, 1_000, 1_500, 2_000, 2_500):
+        recovered_i2c.sample(timestamp, i2c_ok=False)
+    recovered_i2c.sample(3_000, r20=0, r26=2)
+    assert recovered_i2c.state == "HEATING"
+
+    lost_i2c = StartProtocol()
+    lost_i2c.start()
+    lost_i2c.heartbeat(0)
+    for timestamp in (500, 1_000, 1_500, 2_000, 2_500, 3_000):
+        lost_i2c.sample(timestamp, i2c_ok=False)
+    assert lost_i2c.state == "FAULT" and lost_i2c.incident is None
+
+    before_boundary = StartProtocol()
+    before_boundary.start()
+    before_boundary.heartbeat(0)
+    before_boundary.sample(7_999, r20=0x2B, r26=2)
+    assert before_boundary.state == "HEATING"
+
+    at_boundary = StartProtocol()
+    at_boundary.start()
+    at_boundary.heartbeat(0)
+    at_boundary.sample(8_000, r20=0x2B, r26=2)
+    assert at_boundary.state == "FAULT"
+    assert at_boundary.incident is not None
+    assert at_boundary.incident.r20 == 0x2B
+    assert at_boundary.incident.r26 == 0x02
+    frozen_incident = at_boundary.incident
+    at_boundary.observe_stop_feedback(0, 0)
+    at_boundary.sample(8_500, r20=0, r26=2)
+    assert at_boundary.state == "FAULT" and at_boundary.incident == frozen_incident
+
+    no_ack = StartProtocol()
+    no_ack.start()
+    no_ack.heartbeat(0)
+    no_ack.sample(8_000, r20=0, r26=0)
+    assert no_ack.state == "FAULT"
+    assert no_ack.incident is not None and no_ack.incident.reason == "START TIMEOUT"
+    no_ack.sample(8_001, r20=0, r26=2)
+    assert no_ack.state == "FAULT" and no_ack.incident.reason == "START TIMEOUT"
     assert profile_sequence([2400, 1500, 0, 300, 0]) == [1, 2, 4]
     assert profile_sequence([0, 0, 0, 0, 0]) == []
     assert active_zero_command("ACTIVE_ZERO") == (0x81, 0, 0)

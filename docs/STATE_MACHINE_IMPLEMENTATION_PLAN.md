@@ -4,7 +4,7 @@ Status: **in progress; the first bounded fix batch is implemented, while the rem
 
 Audit baseline: `0.2.10-dev`, commit `2b5784e` (`2026-08-28`)
 
-Current source: `0.2.16-dev`. Version `0.2.14-dev` was flashed to the development
+Current source: `0.2.17-dev`. Version `0.2.14-dev` was flashed to the development
 cooker on 2026-08-29 and booted successfully; retained-session active zero works
 without unexpected relay switching. The source now also keeps the temporary I2C-loss
 OLED counter behind a disabled compile-time flag, so it is absent from the production
@@ -597,16 +597,18 @@ require only `R26=02`.
   policy for `01` (`0.2.13-dev`).
 - [x] Keep `R20=2B/29/2A` silent, make other unknown values warnings, and remove the
   former 8/10-second conflict (`0.2.14-dev`).
-- [ ] Retain one eight-second Start deadline beginning at the first transmitted
-  nonzero heartbeat; no acknowledgement must still force repeated Stop.
-- [ ] Add an immutable first-cause Start/EST incident record in RAM and expose it in
+- [x] Retain one eight-second Start deadline beginning at the first successfully
+  transmitted nonzero heartbeat; no acknowledgement still forces repeated Stop
+  (`0.2.17-dev`).
+- [x] Add an immutable first-cause Start/EST incident record in RAM and expose it in
   compact UART and authenticated status without periodic JSON transport.
-- [ ] Add a deterministic host model for: immediate and delayed `R26=01`, immediate
+- [x] Add a deterministic host model for: immediate and delayed `R26=01`, immediate
   and delayed `R26=02`, persistent `R26=00`, `R20=2B` before/during/after
   acknowledgement, `29/2A`, a generic warning value, NoPan `02`, every known fault
   group, I2C gaps, and acknowledgements exactly around the timeout boundary.
-- [ ] Prove that a late acknowledgement cannot revive a Start after timeout and that
-  the preserved incident is not overwritten by subsequent Stop feedback.
+- [x] Prove that a late acknowledgement cannot revive a Start after timeout and that
+  the preserved incident is not overwritten by subsequent Stop feedback
+  (`0.2.17-dev`).
 
 ### Package 2B — Power-board revision compatibility before the second cooker
 

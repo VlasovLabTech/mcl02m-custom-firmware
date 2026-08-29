@@ -54,6 +54,7 @@ def main() -> int:
     defaults = (ROOT / "sdkconfig.defaults").read_text(encoding="utf-8")
     settings = (MAIN / "settings.c").read_text(encoding="utf-8")
     power = (SHARED_POWER / "powerboard_control.c").read_text(encoding="utf-8")
+    power_header = (SHARED_POWER / "powerboard_control.h").read_text(encoding="utf-8")
     power_safety = (SHARED_POWER / "safety.h").read_text(encoding="utf-8")
     telemetry = (SHARED_UI / "telemetry.c").read_text(encoding="utf-8")
     inputs = (SHARED_UI / "ui_inputs.c").read_text(encoding="utf-8")
@@ -88,6 +89,21 @@ def main() -> int:
             '"SMALL COOKWARE"' in engine and
             "COOKER_SMALL_COOKWARE_NOTICE_MS" in display,
             "R26=01 confirms heating, enforces the stock gear-35/A1 cookware limit, and explains it")
+    require("s_start_confirm_deadline_us != 0 && now_us < s_start_confirm_deadline_us" in power and
+            "if (!interrupted && command_transmitted)" in power and
+            'fault_locked("START TIMEOUT")' in power and
+            "MCL02M_START_CONFIRM_TIMEOUT_MS * 1000" in power,
+            "Start confirmation opens only after a successful nonzero heartbeat and closes strictly at one eight-second deadline")
+    require("powerboard_start_incident_t" in power_header and
+            "capture_start_incident_locked" in power and
+            'strcmp(reason, "START TIMEOUT")' in power and
+            "s_status.start_incident.valid" in power and
+            "incident->transmitted_gear = s_last_successful_command_0c" in power and
+            "incident->transmitted_topology = s_last_successful_command_0d" in power and
+            '"X,%" PRIu32' in power and
+            '\\"start_incident\\"' in power and
+            "char powerboard[1280]" in web,
+            "EST preserves one first-cause RAM incident and exposes compact UART plus authenticated status evidence")
     require("#define COOKER_MAX_TIMER_S              (5U * 60U * 60U)" in config,
             "cooking timer is capped at five hours")
     require("COOKER_HOLD_MAX_GEAR" in (MAIN / "temperature_ctrl.c").read_text(encoding="utf-8"),
