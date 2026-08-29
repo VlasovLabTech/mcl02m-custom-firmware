@@ -512,6 +512,23 @@ def delayed_deadline(cancel_queued: bool, due: bool) -> str:
     return "STARTING" if due else "DELAYED"
 
 
+def delayed_start_tick(due: bool, stale_power: str, fresh_power: str,
+                       start_pending: bool) -> tuple[str, str]:
+    """A due schedule must classify a post-Start snapshot, never the stale one."""
+    state = "DELAYED"
+    power = stale_power
+    if due:
+        state = "STARTING"
+        power = fresh_power
+    if state == "STARTING" and power == "STOPPED" and not start_pending:
+        state = "FAULT"
+    return state, power
+
+
+def delayed_screen_lines(mode: str, value: str, remaining: str) -> tuple[str, ...]:
+    return mode, value, "DELAY", remaining
+
+
 def delayed_after_restart(was_scheduled: bool) -> bool:
     del was_scheduled
     return False  # Schedule state is deliberately RAM-only.
@@ -757,6 +774,16 @@ def run() -> None:
     assert long_center_action("IDLE", True) == "CLOSE_TIMER"
     assert delayed_deadline(cancel_queued=True, due=True) == "IDLE"
     assert delayed_deadline(cancel_queued=False, due=True) == "STARTING"
+    assert delayed_start_tick(False, "STOPPED", "STOPPED", False) == (
+        "DELAYED", "STOPPED")
+    assert delayed_start_tick(True, "STOPPED", "STARTING", True) == (
+        "STARTING", "STARTING")
+    assert delayed_start_tick(True, "STOPPED", "STOPPED", True) == (
+        "STARTING", "STOPPED")
+    assert delayed_start_tick(True, "STOPPED", "STOPPED", False) == (
+        "FAULT", "STOPPED")
+    assert delayed_screen_lines("POWER", "10", "00:42") == (
+        "POWER", "10", "DELAY", "00:42")
     assert not delayed_after_restart(was_scheduled=True)
 
     assert temperature_step("PREHEAT", 100, 20) == ("PREHEAT", 99)

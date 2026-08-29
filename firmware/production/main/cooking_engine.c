@@ -894,7 +894,11 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
         strlcpy(s_status.detail, "COOKING", sizeof(s_status.detail));
         emit_status("heating_confirmed");
     }
-    if (pb->state == PB_STATE_STOPPED && state_active(s_status.state)) {
+    const bool start_pending = s_status.state == COOK_STATE_STARTING &&
+        s_status.transition_pending &&
+        s_status.transition_kind == PB_TRANSITION_START;
+    if (pb->state == PB_STATE_STOPPED && state_active(s_status.state) &&
+        !start_pending) {
         if (pb->lease_expired)
             set_fault_locked(FAULT_COOKING_LEASE, "COOK LEASE");
         else
@@ -1074,11 +1078,11 @@ static void handle_intent_locked(const intent_t *intent)
     }
 }
 
-static void update_schedule_locked(int64_t now_us)
+static bool update_schedule_locked(int64_t now_us)
 {
     const time_t wall = time(NULL);
     s_status.clock_valid = wall > 1700000000;
-    if (!s_status.delayed_start || s_status.state != COOK_STATE_DELAYED) return;
+    if (!s_status.delayed_start || s_status.state != COOK_STATE_DELAYED) return false;
     bool due = false;
     if (s_status.delayed_absolute) {
         const int64_t remaining = s_status.delayed_epoch_s - wall;
@@ -1109,7 +1113,9 @@ static void update_schedule_locked(int64_t now_us)
                 set_fault_locked(FAULT_START_TIMEOUT, "SCHEDULE START BLOCKED");
             }
         }
+        return err == ESP_OK;
     }
+    return false;
 }
 
 static void engine_task(void *arg)
@@ -1129,7 +1135,10 @@ static void engine_task(void *arg)
         xSemaphoreTake(s_lock, portMAX_DELAY);
         const int64_t delta = now - s_last_tick_us;
         s_last_tick_us = now;
-        update_schedule_locked(now);
+        if (update_schedule_locked(now)) {
+            /* The pre-schedule snapshot still describes the stopped delay period. */
+            powerboard_control_get_status(&pb);
+        }
         apply_power_status_locked(&pb, now);
         update_manual_pause_timeout_locked(now);
         update_session_time_buckets_locked(&pb, delta, now);

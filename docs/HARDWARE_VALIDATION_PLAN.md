@@ -3,9 +3,9 @@
 Status: prepared for the next explicitly authorized app-only flash. This document
 does not authorize flashing or heating by itself.
 
-The objective is to validate the unflashed state-machine packages with one passive
-UART capture. The operator performs all physical actions; the monitor only reads the
-serial port. No remote heating commands are added.
+The objective is to validate the current unflashed fix and regression-sensitive
+state-machine paths with one passive UART capture. The operator performs all physical
+actions; the monitor only reads the serial port. No remote heating commands are added.
 
 ## 1. Evidence available in the validation build
 
@@ -68,7 +68,7 @@ Perform the steps in order. Do not continue after a failed prerequisite.
 | 4. Pause/Resume | Short-center Pause, wait three seconds, short-center Resume. Repeat one short press while a transition is pending. | Input `B` frame exists for every press. One `C,manual_pause_requested`, one confirmed Pause, one Resume generation. A repeated press is ignored/idempotent rather than inverted. No full Stop command during retained Pause/Resume. |
 | 5. User Stop | Long-center Stop and wait for completion. | `S,BEGIN`, repeated Stop heartbeats as needed, two valid zero-feedback samples, `S,DONE`; only then cooking enters `IDLE`. |
 | 6. Timer editing | Set seconds, confirm; set minutes, confirm; set hours, confirm. Disable it, then set a short timer again. | Each field is independently editable; set → disable → set is immediately visible. Timer expiry enters `STOPPING`, and completion is reported only after `S,DONE`. |
-| 7. Delayed Start UI | Schedule a short relative Start, visit a different menu, and wait for expiry. Then repeat once and cancel near (but before) its deadline. | Expiry selects the actual live POWER/TEMPERATURE/profile view. Cancel remains stopped and cannot be revived by the elapsed deadline. |
+| 7. Delayed Start UI | Schedule a short relative Start, visit a different menu, and wait for expiry. Then repeat once and cancel near (but before) its deadline. | The waiting screen orders mode, selected value, delay label and countdown. Expiry selects the actual live POWER/TEMPERATURE/profile view, and pending Start feedback cannot produce stale-snapshot `ETM`. Cancel remains stopped and cannot be revived by the elapsed deadline. |
 
 If the 15-minute serial window ends, stop safely and start a new passive capture
 before the next group. Logs from separate windows may be correlated by the firmware

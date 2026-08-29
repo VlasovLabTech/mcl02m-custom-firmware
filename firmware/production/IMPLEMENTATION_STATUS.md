@@ -1,9 +1,9 @@
 # MCL02M custom firmware — implementation status
 
-Дата: 2026-08-29
-Версия исходников: `0.2.23-dev`
-Статус: the development unit runs the hash-verified `0.2.17-dev` app written only to
-stock `ota_1` at `0x170000` on 2026-08-29. It booted successfully, and supervised
+Дата: 2026-08-30
+Версия исходников: `0.2.24-dev`
+Статус: the development unit runs the hash-verified `0.2.23-dev` app written only to
+stock `ota_1` at `0x170000` on 2026-08-30. It booted successfully, and supervised
 testing confirmed retained-session active zero without unwanted relay switching,
 Sleep/Wake, the temporary I2C debug display, and temperature operation. At a 125 °C
 empty-pan setpoint, initial heating overshot by approximately
@@ -11,33 +11,33 @@ empty-pan setpoint, initial heating overshot by approximately
 braking, pause-safe output recomputation, and direct low/high topology crossing. Its
 physical Settings menu exposes both the compile-time firmware version and live raw
 power-board `R28` on a dedicated four-line, left-aligned OLED screen. The
-unflashed `0.2.15-dev` source excludes the temporary I2C-loss counter from the
+`0.2.15-dev` source excludes the temporary I2C-loss counter from the
 production menu and OLED while preserving that implementation behind a disabled
 compile-time flag. Internal E09 counting and compact diagnostics are unchanged. The
-unflashed `0.2.16-dev` source also replaces the queued timer toggle with synchronous
+`0.2.16-dev` source also replaces the queued timer toggle with synchronous
 Set/Disable and uses a seconds, minutes, hours confirmation sequence. The
-deployed `0.2.17-dev` source completes the Start/EST evidence package: Start cannot
+`0.2.17-dev` source completes the Start/EST evidence package: Start cannot
 be confirmed by stale or deadline-late `R26`, and an EST preserves the exact first
 cause in RAM, compact UART and authenticated status. The deterministic host model
-covers the complete known Start response matrix. Unflashed `0.2.18-dev` implements
+covers the complete known Start response matrix. Version `0.2.18-dev` implements
 the transactional Stop package: all Stop origins converge on `STOPPING`, complete
 zero commands continue until two fresh `R26=00` samples, and late recovery remains
 possible after timeout or I²C loss without losing the first recorded cause. The
-unflashed `0.2.19-dev` source adds a generation-tagged three-second cooking lease.
+`0.2.19-dev` source adds a generation-tagged three-second cooking lease.
 Only the cooking task renews it in live sessions; the independent power task expires
 it into transactional Stop and retains a distinct `ECL / COOK LEASE` diagnosis. The
-unflashed `0.2.20-dev` source implements confirmed Start, active zero, Pause and
+`0.2.20-dev` source implements confirmed Start, active zero, Pause and
 Resume transactions. Requested, transmitted, feedback-observed and confirmed state
 are distinct; a transition completes only after the matching command and a later
 fresh compatible `R20/R26` sample, with generation checks, bounded deadlines and
 exact rejection evidence. Active-zero confirmation remains an explicitly documented
-inference because the power board does not report the selected gear. Unflashed
+inference because the power board does not report the selected gear. Version
 `0.2.21-dev` adds a two-phase cookware-return transaction: recognized pan-present
 feedback first confirms active zero, then the cooking layer refreshes temperatures,
 resets PI/trend/saturation context, applies the small-cookware cap, recomputes output
 and requests a separately confirmed Resume. Unknown `R20` values cannot prove return;
 Stop and Pause replace or cancel the return generation. The
-unflashed `0.2.23-dev` source separates the five-hour user/profile countdown from
+`0.2.23-dev` source separates the five-hour user/profile countdown from
 the eight-hour retained-session wall bound, two-hour manual Pause and three-second
 cooking lease, and exposes distinct heating, ordinary active-zero, profile POWER-0,
 Pause and NoPan elapsed counters. Delayed expiry synchronizes the physical UI to the
@@ -47,7 +47,12 @@ same `0.2.23-dev` batch separates required startup capabilities from best-effort
 `R2C`–`R2F` service reads, emits compact boot/cooking evidence for supervised UART
 capture, invalidates stale temperature-trend samples after a sensor-data gap, defers
 profile-cell completion across pending power transactions, and clears Pause-only
-diagnostic state on every terminal/non-Pause transition. The
+diagnostic state on every terminal/non-Pause transition. Hardware validation then
+reproduced a Delayed Start `ETM`: the deadline began Start after the loop had already
+captured a stopped power-board snapshot. Unflashed `0.2.24-dev` refreshes that snapshot
+after a successful scheduled Start, ignores stopped feedback while the Start
+transaction is still pending, and orders the waiting OLED as mode, selected value,
+delay label, countdown. The
 earlier one-time NVS refresh is complete and must not be repeated automatically.
 
 ## Реализованный пользовательский контур

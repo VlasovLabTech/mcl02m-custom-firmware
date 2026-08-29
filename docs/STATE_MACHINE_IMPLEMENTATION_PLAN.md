@@ -392,6 +392,12 @@ Recommended change:
 
 ### M6. A scheduled run leaves the UI view unsuitable for live encoder adjustment
 
+Implementation status: **fixed in `0.2.23-dev`**. Delayed expiry synchronizes the
+view to the effective POWER, TEMPERATURE, or PROFILE mode. The supervised
+`0.2.23-dev` test then exposed a separate stale-snapshot race; `0.2.24-dev` refreshes
+the power-board snapshot after scheduled Start and does not classify stopped
+transitional feedback as `ETM` while that Start remains pending.
+
 When the delayed Start becomes due, the cooking state goes live but the UI's internal
 view can remain `VIEW_HOME`. The live display overlay is cleared, yet encoder events
 are still interpreted by `VIEW_HOME`, so rotation changes the menu selection instead
@@ -433,7 +439,7 @@ Recommended change:
 
 ### M9. Queued timer Toggle can race immediate disable/re-enable actions
 
-Implementation status: **fixed in unflashed `0.2.16-dev`**.
+Implementation status: **fixed in `0.2.16-dev`**.
 
 The former Timer disable prompt posted `INTENT_TIMER_TOGGLE` and immediately closed
 the editor. Reopening before the cooking task consumed the queue read stale
@@ -464,7 +470,7 @@ Reset it on confirmed Stop or explicitly retain it as `last_run_elapsed_s`.
 
 ### L3. `paused_gear` can become stale across unusual transitions
 
-Implementation status: **fixed in unflashed `0.2.23-dev`**. Fault, Stop, NoPan,
+Implementation status: **fixed in `0.2.23-dev`**. Fault, Stop, NoPan,
 confirmed Start/active-zero/Resume/pan-return and fault acknowledgement now clear the
 field; only a real Pause context retains it.
 
@@ -479,7 +485,7 @@ it as `unknown / present / absent` when I2C data is missing.
 
 ### L5. Temperature trend samples do not carry individual timestamps
 
-Implementation status: **fixed conservatively in unflashed `0.2.23-dev`**. The first
+Implementation status: **fixed conservatively in `0.2.23-dev`**. The first
 valid-to-invalid sensor transition clears only the four-second trend window and its
 derived braking evidence, while preserving the active controller phase and PI state.
 Fresh valid samples must rebuild a complete trend window after communication returns.
@@ -639,7 +645,7 @@ until a genuinely different board tuple is observed.
 - [ ] Capture and compare the second cooker's raw startup register set before any
   supervised heating test.
 
-The first item is implemented in unflashed `0.2.23-dev`. Required startup reads and
+The first item is implemented in `0.2.23-dev`. Required startup reads and
 best-effort service reads now have independent masks. One compact `B` frame and the
 authenticated status preserve the complete tuple and service failure count. No LUT
 or `R29` behavior is guessed from that evidence.
@@ -688,7 +694,7 @@ or `R29` behavior is guessed from that evidence.
   acknowledgement from an earlier generation must not complete a newer transition.
 - [x] Keep temperature Resume recomputation already implemented in `0.2.12-dev` and
   deliberately choose/test the first resumed ramp step rather than inheriting it as
-  a side effect. Package 5 is implemented in unflashed `0.2.20-dev`: Start uses an
+  a side effect. Package 5 is implemented in `0.2.20-dev`: Start uses an
   eight-second confirmation deadline, the retained-session transitions use three
   seconds, exact rejection and timeout reasons remain observable, and the resumed
   output deliberately starts at the freshly recomputed target because the power
@@ -710,7 +716,7 @@ or `R29` behavior is guessed from that evidence.
 - [x] Verify that Stop or Pause during return cancels that generation and prevents a
   late feedback sample from restoring heat.
 
-Package 6 is implemented in unflashed `0.2.21-dev` as two transitions. The power
+Package 6 is implemented in `0.2.21-dev` as two transitions. The power
 layer accepts only recognized pan-present `R20` values with `R26=01/02`, confirms
 active zero first, and leaves the cooking state and countdown frozen. The cooking
 layer then uses current readings to reset and recompute POWER, TEMPERATURE, or profile
@@ -739,7 +745,7 @@ after Stop or Pause.
   multiple zero-duration profile cells, multi-hour active-zero stages, cancellation
   at deadline boundaries and power loss without automatic heating restoration.
 
-Package 7 is implemented in unflashed `0.2.22-dev`. The user/profile countdown keeps
+Package 7 is implemented in `0.2.22-dev`. The user/profile countdown keeps
 its five-hour limit and freezes in Pause and NoPan. The lower deadline is now an
 independent eight-hour retained-session wall guard, long enough for a maximum profile
 plus one full manual-Pause window and the NoPan boundary; the three-second cooking
@@ -753,7 +759,7 @@ Policy tests cover all menu-to-mode synchronization, frozen countdowns, skipped
 zero-duration cells, multi-hour profile zero, the exact cancel boundary, and RAM-only
 schedule loss on restart.
 
-Unflashed `0.2.23-dev` also closes a deterministic profile-boundary race: a timer
+Version `0.2.23-dev` also closes a deterministic profile-boundary race: a timer
 that reaches zero waits for any already-pending output transition to settle before
 preparing and applying the next cell. This prevents transition contention from being
 misreported as `PROFILE STAGE FAILED` without changing cell durations.

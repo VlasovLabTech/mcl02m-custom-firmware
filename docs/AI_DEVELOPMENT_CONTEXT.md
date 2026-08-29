@@ -13,7 +13,11 @@ from a request to edit or build software.
 - Xiaomi device model: `chunmi.ihcooker.v2`.
 - Interface controller: Espressif `ESP-WROOM-32D` (classic ESP32).
 - Display: monochrome 64×48 OLED, page-major 384-byte framebuffer.
-- Current custom source version: `0.2.23-dev`.
+- Current custom source version: `0.2.24-dev`.
+- `0.2.24-dev` fixes a hardware-reproduced Delayed Start race: expiry refreshes the
+  power-board snapshot created before the scheduled Start, and pending Start feedback
+  cannot classify the preceding stopped state as `ETM / UNEXPECTED STOP`. The delayed
+  OLED orders mode, selected value, delay label, then remaining time.
 - `0.2.23-dev` keeps `R24/R25/R28/R29/R2A/R2B` as required startup evidence but
   treats `R2C`–`R2F` as best-effort service diagnostics; compact `B` and `C` frames
   plus `tools/monitor_uart.py` support the next supervised read-only UART capture.
@@ -600,9 +604,9 @@ Before any release or hardware write:
 
 The unflashed reference artifact identified in
 `firmware/production/BUILD_MANIFEST.md` follows the current source. The deployed
-`0.2.17-dev` app (886160 bytes; SHA-256
-`4a55956e05cc41cbeda34e78a724119a38659ed74217e7e70471fbf5ccbe7296`) was flashed
-to stock `ota_1` at `0x170000` on 2026-08-29 after explicit owner authorization.
+`0.2.23-dev` app (897808 bytes; SHA-256
+`5a4af047e96059114ac8a75baa53d4b9facd09cc4ce520b0ba6e300ef9ea2a0b`) was flashed
+to stock `ota_1` at `0x170000` on 2026-08-30 after explicit owner authorization.
 Esptool verified the written data; that deployment did not touch the bootloader,
 partition table, NVS, `otadata`, `ota_0`, PHY or eFuse. This status is not permission
 for another flash operation.
@@ -613,7 +617,7 @@ for another flash operation.
   temperature holding have passed supervised checks. A 125 °C empty-pan trial on
   `0.2.9-dev` held accurately after an approximately 5 °C initial overshoot. The
   adaptive braking, Pause recomputation, and direct topology crossing present in the
-  deployed `0.2.14-dev` still require complete supervised cookware characterization.
+  deployed `0.2.23-dev` still require complete supervised cookware characterization.
 - Production retains the 80 °C interface-side IGBT guard and uses 210 °C for
   the separate interface-side bottom cutoff; the power MCU's native E05 also
   remains active.

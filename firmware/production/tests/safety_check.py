@@ -557,6 +557,24 @@ def main() -> int:
     require("status.state == COOK_STATE_DELAYED" in ui and "cooking_schedule_cancel();" in ui and
             "VIEW_START_IN_MINUTES" in ui and "VIEW_START_IN_HOURS" in ui,
             "center hold cancels delayed Start and START IN edits minutes then hours")
+    require("static bool update_schedule_locked" in engine and
+            "if (update_schedule_locked(now))" in engine and
+            "powerboard_control_get_status(&pb);" in
+            engine[engine.find("if (update_schedule_locked(now))"):
+                   engine.find("apply_power_status_locked(&pb, now);")],
+            "delayed expiry refreshes the stale stopped power-board snapshot before classification")
+    require("const bool start_pending = s_status.state == COOK_STATE_STARTING" in engine and
+            "s_status.transition_kind == PB_TRANSITION_START" in engine and
+            "!start_pending" in engine,
+            "pending Start feedback cannot be misclassified as an unexpected Stop")
+    delayed_screen = display[display.find("if (s->delayed_start)"):
+                             display.find("return;", display.find("if (s->delayed_start)"))]
+    require('snprintf(lines[1], DISPLAY_LINE_BYTES, "%u", s->selected_gear);' in
+            delayed_screen and
+            'snprintf(lines[2], DISPLAY_LINE_BYTES, "%s", tr(lang, "DELAY"' in
+            delayed_screen and
+            delayed_screen.find("lines[1]") < delayed_screen.find('tr(lang, "DELAY"'),
+            "delayed screen places the selected POWER/TEMPERATURE value directly below its mode")
     long_branch = ui[ui.find("static bool central_long"):
                      ui.find("static void cancel_action")]
     require("synchronize_delayed_start_view" in ui and

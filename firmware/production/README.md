@@ -13,7 +13,7 @@
 - `R26=01` restricted-cookware feedback is accepted as normal heating and caps every
   control path at real gear `35`/`A1`; POWER reports the permitted value, blocks only
   upward edits above 35, and displays a temporary explanatory message;
-- physical Settings shows both `0.2.23-dev` firmware and live raw `R28` power-board
+- physical Settings shows both `0.2.24-dev` firmware and live raw `R28` power-board
   revision/type with four left-aligned rows;
 - `R20=2B/29/2A` are silent nonfaults; another unknown nonzero `R20` shows its exact
   hex value as a persistent warning, and the first physical input dismisses only the
@@ -40,8 +40,11 @@
   guard, actual heating, ordinary active zero, profile POWER-0 waits, manual Pause,
   NoPan and the independent cooking lease;
 - Delayed Start synchronizes the panel to POWER, TEMPERATURE or the selected PROFILE
-  after expiry; profile selection remains immutable during the delay, and long-center
-  Stop/Cancel outranks an open timer editor;
+  after expiry, refreshes the post-Start power-board snapshot before classifying
+  feedback, and keeps a pending Start from misreading the preceding stopped state as
+  `ETM`; the waiting screen shows mode, selected value, delay label, then countdown;
+  profile selection remains immutable during the delay, and long-center Stop/Cancel
+  outranks an open timer editor;
 - `START IN` и `START AT`, только после физического задания/разрешения;
 - OLED-off/wake guard, 9 LED мощности, timer LED, blue/orange status, buzzer;
 - полноэкранные `64×48` turn-on/wake/cooking/confirm/cancel/ready/no-pan/error/
@@ -117,8 +120,6 @@
   with an explicit STB latch and changed white/orange/blue/timer requests emit one
   compact `L` frame. If the test remains invisible while the log requests nine LEDs,
   inspect the common panel-driver supply, connector, flex and STB/CLK/DATA path.
-  The development unit's all-channel LED outage is recorded as a pre-existing
-  hardware problem, not a regression caused by the current firmware changes.
 - GPIO32 не имеет подтверждённого эффекта и всегда оставлен LOW.
 - Ventilator полностью принадлежит силовой плате, custom ESP им не управляет.
 - HTTP предназначен для доверенной локальной сети и не содержит управления

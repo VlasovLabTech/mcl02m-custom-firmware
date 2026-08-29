@@ -175,9 +175,9 @@ modified. See [Flashing and recovery](docs/FLASHING.md) before writing anything.
 
 ## Development status
 
-The current source version is `0.2.23-dev`; the development unit runs the
-hash-verified `0.2.17-dev` image written only to stock `ota_1` at `0x170000` on
-2026-08-29. Supervised testing confirmed retained-session active zero without
+The current source version is `0.2.24-dev`; the development unit runs the
+hash-verified `0.2.23-dev` image written only to stock `ota_1` at `0x170000` on
+2026-08-30. Supervised testing confirmed retained-session active zero without
 unexpected relay switching, Sleep/Wake, the temporary I2C debug display, and
 temperature operation with water. A 125 °C empty-pan test then showed about 5 °C of first-heat
 overshoot while subsequent holding remained accurate. Source `0.2.10-dev` adds
@@ -187,36 +187,36 @@ transiently requesting gears 36…55. Source `0.2.11-dev` also adds a physical S
 screen for the firmware version. Versions `0.2.12-dev` through `0.2.14-dev` add five
 bounded state-integrity fixes, restricted-cookware handling, a complete power-board
 response/register re-audit, live `R28`, and physical-input-acknowledged unknown-`R20`
-warnings. Unflashed source `0.2.15-dev` excludes the temporary I2C-error counter from
+warnings. The `0.2.15-dev` source excludes the temporary I2C-error counter from
 the production menu and OLED while retaining its implementation behind a disabled
 build flag. It also revises the deferred implementation packages around the observed
-protocol. Unflashed `0.2.16-dev` removes the queued timer-toggle race and changes the
+protocol. Version `0.2.16-dev` removes the queued timer-toggle race and changes the
 physical timer editor to `seconds → minutes → hours`, with an explicit confirmation
-for each field. Deployed `0.2.17-dev` completes the Start/EST evidence package: the
+for each field. Version `0.2.17-dev` completes the Start/EST evidence package: the
 eight-second acknowledgement window begins only after the first successfully
 transmitted nonzero heartbeat, closes strictly at its deadline, and preserves an
 immutable first-cause RAM incident in compact UART and authenticated status. Its host
 model covers accepted, delayed, missing, late, fault, NoPan, warning and I²C-gap
-responses. Unflashed `0.2.18-dev` adds a transactional `STOPPING` state shared by
+responses. Version `0.2.18-dev` adds a transactional `STOPPING` state shared by
 normal completion and every safety origin. It continues sending the complete zero
 command until two fresh `R26=00` samples confirm output-off, and it preserves timeout
 or I²C-loss evidence while retrying instead of reporting a false `IDLE/COMPLETE`.
-Unflashed `0.2.19-dev` adds a generation-tagged three-second cooking lease. Only the
+Version `0.2.19-dev` adds a generation-tagged three-second cooking lease. Only the
 cooking task renews it in a legitimate live session; expiry is detected by the
 independent 500-ms power task and enters the same repeated Stop transaction with a
 distinct `ECL / COOK LEASE` cause. The
-unflashed `0.2.20-dev` source makes Start, active zero, Pause and Resume explicit
+`0.2.20-dev` source makes Start, active zero, Pause and Resume explicit
 generation-tagged transactions. It separates requested, successfully transmitted,
 feedback-observed and inferred-confirmed state, accepts confirmation only from a
 fresh compatible `R20/R26` sample after the matching command, preserves the proven
 `81/00/00` active-zero command, and reports bounded timeout or rejection reasons
-without pretending that the power board reports a gear value. Unflashed
+without pretending that the power board reports a gear value. Version
 `0.2.21-dev` makes cookware return transactional. Recognized pan-present feedback
 first confirms active zero; the cooking layer then refreshes readings, resets the
 interrupted temperature-control episode, applies the small-cookware cap, recomputes
 output, and confirms a separate Resume generation. Unknown `R20` warnings cannot
 prove return, and Stop or Pause invalidates an in-flight return generation. The
-unflashed `0.2.23-dev` source separates the five-hour user/profile countdown from
+`0.2.23-dev` source separates the five-hour user/profile countdown from
 an eight-hour retained-session wall guard, the two-hour manual-Pause limit, the
 three-second cooking lease, and diagnostic heating/active-zero/profile-zero/NoPan
 time buckets. Delayed Start now returns the physical UI to the actual POWER,
@@ -226,11 +226,15 @@ same `0.2.23-dev` batch makes `R2C`–`R2F` nonfatal best-effort startup diagnos
 adds one-shot boot and cooking-event compact UART records, clears stale temperature
 trend evidence after an actual reading gap, prevents profile-cell completion from
 racing an in-flight output transaction, and normalizes the Pause-only diagnostic
-gear lifetime. The supervised operator/monitor sequence is documented in the
+gear lifetime. Unflashed `0.2.24-dev` fixes the supervised-test Delayed Start race:
+after expiry the engine refreshes the power-board snapshot before classifying
+feedback, and a still-pending Start cannot mistake the prior stopped state for
+`ETM`. Its waiting screen orders the selected value directly below `POWER` or
+`T°C`, before the delay label and countdown. The supervised operator/monitor sequence is documented in the
 [hardware validation plan](docs/HARDWARE_VALIDATION_PLAN.md). The
 remaining findings and proposed fix sequence are preserved in the
 [state-machine implementation plan](docs/STATE_MACHINE_IMPLEMENTATION_PLAN.md).
-The `0.2.17-dev` app was flashed after explicit owner authorization. Esptool verified
+The `0.2.23-dev` app was flashed after explicit owner authorization. Esptool verified
 the written data; no bootloader, partition table, `otadata`, NVS or other partition
 was written.
 

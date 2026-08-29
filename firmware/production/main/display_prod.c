@@ -212,13 +212,13 @@ static void normal_screen(const cooker_snapshot_t *s, const app_settings_t *sett
     if (s->delayed_start) {
         char time_text[16];
         format_time(s->delayed_remaining_s, time_text);
-        snprintf(lines[1], DISPLAY_LINE_BYTES, "%s", tr(lang, "DELAY", "ОТЛОЖ", "延时"));
         if (s->mode == COOK_MODE_TEMPERATURE)
-            snprintf(lines[2], DISPLAY_LINE_BYTES,
+            snprintf(lines[1], DISPLAY_LINE_BYTES,
                      tr(lang, "SET %u°C", "ЦЕЛЬ %u°C", "目标 %u°C"),
                      s->target_temperature_c);
         else
-            snprintf(lines[2], DISPLAY_LINE_BYTES, "%u", s->selected_gear);
+            snprintf(lines[1], DISPLAY_LINE_BYTES, "%u", s->selected_gear);
+        snprintf(lines[2], DISPLAY_LINE_BYTES, "%s", tr(lang, "DELAY", "ОТЛОЖ", "延时"));
         snprintf(lines[3], DISPLAY_LINE_BYTES, "%s", time_text);
         return;
     }
