@@ -4,8 +4,8 @@ Status: **in progress; the first bounded fix batch is implemented, while the rem
 
 Audit baseline: `0.2.10-dev`, commit `2b5784e` (`2026-08-28`)
 
-Current source: `0.2.17-dev`. Version `0.2.14-dev` was flashed to the development
-cooker on 2026-08-29 and booted successfully; retained-session active zero works
+Current source: `0.2.17-dev`. Version `0.2.17-dev` was flashed to the development
+cooker on 2026-08-29 after explicit authorization; retained-session active zero works
 without unexpected relay switching. The source now also keeps the temporary I2C-loss
 OLED counter behind a disabled compile-time flag, so it is absent from the production
 menu and display without deleting the implementation.
@@ -705,7 +705,8 @@ require only `R26=02`.
 
 - [ ] Build and run all offline gates, inspect the exact app image and preserve compact
   diagnostic coverage.
-- [ ] Flash only after a separate explicit instruction for that exact build.
+- [x] Flash `0.2.17-dev` only after a separate explicit instruction for that exact
+  build; esptool verified the app-only `0x170000` write.
 - [ ] Run no-heat transition tests before short water-load POWER and TEMPERATURE tests.
 - [ ] Record measured `R20/R26/R28`, commands, relay/fan observations, firmware hash
   and pass/fail result in this document.

@@ -2,7 +2,7 @@
 
 Дата: 2026-08-29
 Версия исходников: `0.2.17-dev`
-Статус: the development unit runs the hash-verified `0.2.14-dev` app written only to
+Статус: the development unit runs the hash-verified `0.2.17-dev` app written only to
 stock `ota_1` at `0x170000` on 2026-08-29. It booted successfully, and supervised
 testing confirmed retained-session active zero without unwanted relay switching,
 Sleep/Wake, the temporary I2C debug display, and temperature operation. At a 125 °C
@@ -16,7 +16,7 @@ production menu and OLED while preserving that implementation behind a disabled
 compile-time flag. Internal E09 counting and compact diagnostics are unchanged. The
 unflashed `0.2.16-dev` source also replaces the queued timer toggle with synchronous
 Set/Disable and uses a seconds, minutes, hours confirmation sequence. The
-unflashed `0.2.17-dev` source completes the Start/EST evidence package: Start cannot
+deployed `0.2.17-dev` source completes the Start/EST evidence package: Start cannot
 be confirmed by stale or deadline-late `R26`, and an EST preserves the exact first
 cause in RAM, compact UART and authenticated status. The deterministic host model
 covers the complete known Start response matrix. The

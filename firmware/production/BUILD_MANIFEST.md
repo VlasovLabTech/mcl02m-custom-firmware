@@ -45,10 +45,10 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 
 ## Development-unit deployment
 
-This `0.2.17-dev` artifact has not been flashed. The development unit remains on the
-hash-verified `0.2.14-dev` image in stock `ota_1`, written at `0x170000` on
-2026-08-29. That deployment changed only the application slot. Building and
-documenting `0.2.17-dev` did not write any device partition.
+This exact `0.2.17-dev` artifact was flashed to the development unit's stock `ota_1`
+at `0x170000` on 2026-08-29 after explicit owner authorization. Esptool verified the
+written data. The operation wrote only the application image and did not write the
+bootloader, partition table, `otadata`, NVS, PHY, `ota_0` or eFuse.
 
 ESP-IDF prints a generic `idf.py flash` suggestion after building. Project procedure
 forbids that broad command on this cooker. A successful build is not authorization

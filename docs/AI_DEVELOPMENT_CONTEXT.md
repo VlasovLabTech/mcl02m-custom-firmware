@@ -573,11 +573,10 @@ Before any release or hardware write:
    power tests with a water load.
 
 The reference `0.2.17-dev` artifact identified in
-`firmware/production/BUILD_MANIFEST.md` is an offline build and has not been flashed.
-The development unit remains on hash-verified `0.2.14-dev` in stock `ota_1`, written
-at `0x170000` on 2026-08-29; that deployment did not touch the bootloader, partition
-table, NVS, `otadata`, `ota_0`, PHY or eFuse. This status is not permission for
-another flash operation.
+`firmware/production/BUILD_MANIFEST.md` was flashed to stock `ota_1` at `0x170000` on
+2026-08-29 after explicit owner authorization. Esptool verified the written data;
+that deployment did not touch the bootloader, partition table, NVS, `otadata`,
+`ota_0`, PHY or eFuse. This status is not permission for another flash operation.
 
 ## 13. Remaining uncertainties and optional characterization
 
