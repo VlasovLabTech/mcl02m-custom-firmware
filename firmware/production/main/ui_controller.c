@@ -14,6 +14,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "network_prod.h"
+#include "powerboard_control.h"
 #include "settings.h"
 #include "sound.h"
 #include "ui_inputs.h"
@@ -749,7 +750,10 @@ static void central_short(void)
         return;
     }
     if (status.state == COOK_STATE_STOPPING) return;
-    if (status.transition_pending) return;
+    const bool pausable_pan_return = status.state == COOK_STATE_NO_PAN &&
+        (status.transition_kind == PB_TRANSITION_PAN_RETURN_HOLD ||
+         status.transition_kind == PB_TRANSITION_PAN_RETURN_RESUME);
+    if (status.transition_pending && !pausable_pan_return) return;
     if (s_timer_editing) {
         if (s_view == VIEW_TIMER_DISABLE) {
             if (cooking_timer_disable() == ESP_OK) close_timer_editor();

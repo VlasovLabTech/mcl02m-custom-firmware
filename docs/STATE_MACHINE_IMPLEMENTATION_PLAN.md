@@ -4,7 +4,7 @@ Status: **in progress; the first bounded fix batch is implemented, while the rem
 
 Audit baseline: `0.2.10-dev`, commit `2b5784e` (`2026-08-28`)
 
-Current source: `0.2.20-dev`. Version `0.2.17-dev` was flashed to the development
+Current source: `0.2.21-dev`. Version `0.2.17-dev` was flashed to the development
 cooker on 2026-08-29 after explicit authorization; retained-session active zero works
 without unexpected relay switching. The source now also keeps the temporary I2C-loss
 OLED counter behind a disabled compile-time flag, so it is absent from the production
@@ -684,17 +684,27 @@ until a genuinely different board tuple is observed.
 
 ### Package 6 — NoPan, cookware return and output recovery
 
-- [ ] Treat only valid `R20=02` samples as NoPan. `R26=01` means restricted cookware,
+- [x] Treat only valid `R20=02` samples as NoPan. `R26=01` means restricted cookware,
   not missing cookware; an unknown warning value alone must not prove pan return.
-- [ ] Move return ownership to the cooking layer: hold safe zero, refresh readings,
+- [x] Move return ownership to the cooking layer: hold safe zero, refresh readings,
   recompute POWER or temperature output, apply the `R26=01` limit if present, then
   permit controlled resumption.
-- [ ] Reset/freeze the NoPan timer, cooking countdown, sound cycle, temperature trend,
+- [x] Reset/freeze the NoPan timer, cooking countdown, sound cycle, temperature trend,
   PI state, saturation episode and transition generation through one entry/exit path.
-- [ ] Cover pan loss and return in PREHEAT, APPROACH, HOLD, active zero, Pause and each
+- [x] Cover pan loss and return in PREHEAT, APPROACH, HOLD, active zero, Pause and each
   profile-stage type, including a return near the 60-second boundary.
-- [ ] Verify that Stop or Pause during return cancels that generation and prevents a
+- [x] Verify that Stop or Pause during return cancels that generation and prevents a
   late feedback sample from restoring heat.
+
+Package 6 is implemented in unflashed `0.2.21-dev` as two transitions. The power
+layer accepts only recognized pan-present `R20` values with `R26=01/02`, confirms
+active zero first, and leaves the cooking state and countdown frozen. The cooking
+layer then uses current readings to reset and recompute POWER, TEMPERATURE, or profile
+output, applies the cookware cap, and requests a separately confirmed Resume. A
+renewed `R20=02`, Stop, or Pause invalidates the recovery generation; unknown warnings
+do not advance it. Executable policy tests cover strict return evidence,
+small-cookware capping, active-zero output, deadline boundaries, and stale feedback
+after Stop or Pause.
 
 ### Package 7 — Timers, profiles and Delayed Start UI
 

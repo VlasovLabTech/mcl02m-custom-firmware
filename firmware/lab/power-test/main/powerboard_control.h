@@ -26,6 +26,8 @@ typedef enum {
     PB_TRANSITION_ACTIVE_ZERO,
     PB_TRANSITION_PAUSE,
     PB_TRANSITION_RESUME,
+    PB_TRANSITION_PAN_RETURN_HOLD,
+    PB_TRANSITION_PAN_RETURN_RESUME,
 } powerboard_transition_t;
 
 typedef enum {
@@ -133,6 +135,7 @@ esp_err_t powerboard_control_start(unsigned gear, unsigned duration_ms);
 esp_err_t powerboard_control_set_gear(unsigned gear);
 esp_err_t powerboard_control_pause(void);
 esp_err_t powerboard_control_resume(void);
+esp_err_t powerboard_control_pan_return_resume(unsigned gear);
 esp_err_t powerboard_control_stop(const char *reason);
 esp_err_t powerboard_control_lease_begin(uint32_t *generation);
 esp_err_t powerboard_control_lease_renew(uint32_t generation);

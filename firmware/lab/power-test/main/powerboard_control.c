@@ -176,6 +176,11 @@ static bool r20_session_compatible(uint8_t value)
     return value != 0x02 && !r20_known_fault(value);
 }
 
+static bool r20_proves_pan_present(uint8_t value)
+{
+    return value == 0 || value == 0x2b || value == 0x29 || value == 0x2a;
+}
+
 static bool state_can_energize(powerboard_state_t state)
 {
     return state == PB_STATE_STARTING || state == PB_STATE_HEATING ||
@@ -224,6 +229,8 @@ const char *powerboard_transition_name(powerboard_transition_t transition)
     case PB_TRANSITION_ACTIVE_ZERO: return "ACTIVE_ZERO";
     case PB_TRANSITION_PAUSE: return "PAUSE";
     case PB_TRANSITION_RESUME: return "RESUME";
+    case PB_TRANSITION_PAN_RETURN_HOLD: return "PAN_RETURN_HOLD";
+    case PB_TRANSITION_PAN_RETURN_RESUME: return "PAN_RETURN_RESUME";
     default: return "UNKNOWN";
     }
 }
@@ -486,15 +493,6 @@ static void begin_transition_locked(powerboard_transition_t kind,
 #endif
 }
 
-static void reset_transition_transmission_locked(void)
-{
-    if (!s_status.transition_pending) return;
-    s_status.transition_command_transmitted = false;
-    s_transition_feedback_baseline = s_status.feedback_sequence;
-    s_transition_deadline_us = 0;
-    s_start_confirm_deadline_us = 0;
-}
-
 static void finish_transition_locked(void)
 {
     const powerboard_transition_t kind = s_status.transition_kind;
@@ -516,9 +514,11 @@ static void finish_transition_locked(void)
     strlcpy(s_status.transition_result, "CONFIRMED",
             sizeof(s_status.transition_result));
     if (kind == PB_TRANSITION_ACTIVE_ZERO || kind == PB_TRANSITION_PAUSE ||
+        kind == PB_TRANSITION_PAN_RETURN_HOLD ||
         (kind == PB_TRANSITION_START && requested_state == PB_STATE_ACTIVE_ZERO))
         ++s_status.active_zero_entries;
-    if (kind == PB_TRANSITION_RESUME && confirmed_gear != 0)
+    if ((kind == PB_TRANSITION_RESUME ||
+         kind == PB_TRANSITION_PAN_RETURN_RESUME) && confirmed_gear != 0)
         ++s_status.active_zero_resumes;
 #if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
     ESP_LOGI(TAG, "T,DONE,%" PRIu32 ",%s,%s,%u,%02X,%02X",
@@ -527,6 +527,17 @@ static void finish_transition_locked(void)
              powerboard_state_name(requested_state), confirmed_gear,
              s_status.feedback_r20, s_status.feedback_r26);
 #endif
+}
+
+static void enter_no_pan_locked(const char *reason)
+{
+    cancel_transition_locked(reason == NULL ? "NO PAN" : reason);
+    s_status.state = PB_STATE_NO_PAN;
+    s_status.applied_gear = 0;
+    s_status.confirmed_state = PB_STATE_NO_PAN;
+    s_status.confirmed_gear = 0;
+    s_status.confirmation_inferred = false;
+    s_no_pan_samples = MCL02M_NO_PAN_SAMPLES;
 }
 
 static void fault_locked(const char *reason)
@@ -735,6 +746,8 @@ static void update_time_and_safety(int64_t now_us)
         case PB_TRANSITION_ACTIVE_ZERO: reason = "ZERO ACK TIMEOUT"; break;
         case PB_TRANSITION_PAUSE: reason = "PAUSE ACK TIMEOUT"; break;
         case PB_TRANSITION_RESUME: reason = "RESUME TIMEOUT"; break;
+        case PB_TRANSITION_PAN_RETURN_HOLD: reason = "PAN HOLD TIMEOUT"; break;
+        case PB_TRANSITION_PAN_RETURN_RESUME: reason = "PAN RESUME TIMEOUT"; break;
         default: break;
         }
         fault_locked(reason);
@@ -802,7 +815,8 @@ static void update_status_feedback(void)
         s_transition_deadline_us != 0 && now_us < s_transition_deadline_us;
     const bool resume_heating_confirmation_open =
         s_status.transition_pending &&
-        s_status.transition_kind == PB_TRANSITION_RESUME &&
+        (s_status.transition_kind == PB_TRANSITION_RESUME ||
+         s_status.transition_kind == PB_TRANSITION_PAN_RETURN_RESUME) &&
         s_status.transition_requested_gear != 0 &&
         s_status.transition_command_transmitted;
     const bool heating_feedback_open =
@@ -849,14 +863,22 @@ static void update_status_feedback(void)
 
     if (r20_valid && r20 == 0x02 && heating_feedback_open) {
         if (++s_no_pan_samples >= MCL02M_NO_PAN_SAMPLES) {
-            s_status.state = PB_STATE_NO_PAN;
-            reset_transition_transmission_locked();
+            enter_no_pan_locked("NO PAN");
         }
-    } else if (r20_valid && r20_session_compatible(r20) &&
-               s_status.state == PB_STATE_NO_PAN) {
+    } else if (r20_valid && r20 == 0x02 &&
+               s_status.transition_pending &&
+               (s_status.transition_kind == PB_TRANSITION_PAN_RETURN_HOLD ||
+                s_status.transition_kind == PB_TRANSITION_PAN_RETURN_RESUME)) {
+        if (++s_no_pan_samples >= MCL02M_NO_PAN_SAMPLES)
+            enter_no_pan_locked("PAN LOST");
+    } else if (r20_valid && r20_proves_pan_present(r20) && r26_valid &&
+               (r26 == 0x01 || r26 == 0x02) &&
+               s_status.state == PB_STATE_NO_PAN &&
+               !s_status.transition_pending) {
         s_no_pan_samples = 0;
-        s_status.state = PB_STATE_STARTING;
-        reset_transition_transmission_locked();
+        s_status.cookware_limited = r26 == 0x01;
+        begin_transition_locked(PB_TRANSITION_PAN_RETURN_HOLD,
+                                PB_STATE_ACTIVE_ZERO, 0);
     } else if (r20_valid && r20 != 0x02) {
         s_no_pan_samples = 0;
     }
@@ -888,11 +910,18 @@ static void update_status_feedback(void)
     const bool zero_session_transition =
         s_status.transition_kind == PB_TRANSITION_ACTIVE_ZERO ||
         s_status.transition_kind == PB_TRANSITION_PAUSE ||
+        s_status.transition_kind == PB_TRANSITION_PAN_RETURN_HOLD ||
         ((s_status.transition_kind == PB_TRANSITION_START ||
-          s_status.transition_kind == PB_TRANSITION_RESUME) &&
+          s_status.transition_kind == PB_TRANSITION_RESUME ||
+          s_status.transition_kind == PB_TRANSITION_PAN_RETURN_RESUME) &&
          s_status.transition_requested_gear == 0);
-    const bool transition_r20_compatible = r20_session_compatible(r20) ||
-        (r20 == 0x02 && zero_session_transition);
+    const bool pan_return_transition =
+        s_status.transition_kind == PB_TRANSITION_PAN_RETURN_HOLD ||
+        s_status.transition_kind == PB_TRANSITION_PAN_RETURN_RESUME;
+    const bool transition_r20_compatible = pan_return_transition ?
+        r20_proves_pan_present(r20) :
+        (r20_session_compatible(r20) ||
+         (r20 == 0x02 && zero_session_transition));
     if (transition_confirmation_open && r20_valid && transition_r20_compatible &&
         r26_valid && (r26 == 0x01 || r26 == 0x02)) {
         finish_transition_locked();
@@ -1125,8 +1154,10 @@ static void control_task(void *arg)
                 if (transition_pending &&
                            (transition_kind == PB_TRANSITION_ACTIVE_ZERO ||
                             transition_kind == PB_TRANSITION_PAUSE ||
+                            transition_kind == PB_TRANSITION_PAN_RETURN_HOLD ||
                             ((transition_kind == PB_TRANSITION_START ||
-                              transition_kind == PB_TRANSITION_RESUME) &&
+                              transition_kind == PB_TRANSITION_RESUME ||
+                              transition_kind == PB_TRANSITION_PAN_RETURN_RESUME) &&
                              transition_requested_gear == 0))) {
 #if MCL02M_ACTIVE_ZERO_ENABLED
                     command_0d = PB_ACTIVE_ZERO_0D;
@@ -1137,7 +1168,8 @@ static void control_task(void *arg)
                     command_0c = target_gear;
                 } else if (transition_pending &&
                            (transition_kind == PB_TRANSITION_START ||
-                            transition_kind == PB_TRANSITION_RESUME)) {
+                            transition_kind == PB_TRANSITION_RESUME ||
+                            transition_kind == PB_TRANSITION_PAN_RETURN_RESUME)) {
                     command_0d = topology_for_gear(transition_requested_gear);
                     command_00 = 1;
                     command_0c = transition_requested_gear;
@@ -1200,6 +1232,7 @@ static void control_task(void *arg)
                         const bool zero_transition =
                             transition_kind == PB_TRANSITION_ACTIVE_ZERO ||
                             transition_kind == PB_TRANSITION_PAUSE ||
+                            transition_kind == PB_TRANSITION_PAN_RETURN_HOLD ||
                             transition_requested_gear == 0;
                         const bool command_matches = zero_transition ?
                             (command_0d == PB_ACTIVE_ZERO_0D && command_00 == 0 &&
@@ -1555,7 +1588,7 @@ esp_err_t powerboard_control_set_gear(unsigned gear)
     const uint8_t effective_gear = cookware_limited_gear(
         new_gear, s_status.cookware_limited);
     s_status.target_gear = new_gear;
-    if (previous == PB_STATE_PAUSED) {
+    if (previous == PB_STATE_PAUSED || previous == PB_STATE_NO_PAN) {
         /* Stage the Resume request without claiming that the output changed. */
     } else if (new_gear == 0) {
         if (previous != PB_STATE_ACTIVE_ZERO)
@@ -1596,6 +1629,15 @@ esp_err_t powerboard_control_pause(void)
     xSemaphoreTake(s_status_lock, portMAX_DELAY);
     if (s_status.transition_pending) {
         const bool same = s_status.transition_kind == PB_TRANSITION_PAUSE;
+        const bool replaces_pan_return =
+            s_status.transition_kind == PB_TRANSITION_PAN_RETURN_HOLD ||
+            s_status.transition_kind == PB_TRANSITION_PAN_RETURN_RESUME;
+        if (replaces_pan_return) {
+            begin_transition_locked(PB_TRANSITION_PAUSE, PB_STATE_PAUSED, 0);
+            xSemaphoreGive(s_status_lock);
+            if (s_control_task != NULL) xTaskNotifyGive(s_control_task);
+            return ESP_OK;
+        }
         if (!same) reject_transition_locked("PAUSE TRANSITION BUSY");
         xSemaphoreGive(s_status_lock);
         return same ? ESP_OK : ESP_ERR_INVALID_STATE;
@@ -1613,6 +1655,49 @@ esp_err_t powerboard_control_pause(void)
                     "\"source\":\"manual_pause\",\"cmd_0d\":%u}",
                     esp_timer_get_time() / 1000, PB_ACTIVE_ZERO_0D);
     ESP_LOGI(TAG, "Z,REQ,PAUSE,81,00,00");
+#endif
+    return ESP_OK;
+}
+
+esp_err_t powerboard_control_pan_return_resume(unsigned gear)
+{
+    if (gear > MCL02M_MAX_GEAR) return ESP_ERR_INVALID_ARG;
+    xSemaphoreTake(s_status_lock, portMAX_DELAY);
+    const int64_t now = esp_timer_get_time();
+    const char *retained_issue = retained_session_issue_locked();
+    const bool hold_confirmed =
+        !s_status.transition_pending &&
+        s_status.transition_kind == PB_TRANSITION_PAN_RETURN_HOLD &&
+        s_status.transition_confirmed_generation == s_status.transition_generation;
+    if (!hold_confirmed || s_status.state != PB_STATE_ACTIVE_ZERO ||
+        s_run_deadline_us <= now || retained_issue != NULL ||
+        !r20_proves_pan_present(s_status.registers[0])) {
+        if (!hold_confirmed || s_status.state != PB_STATE_ACTIVE_ZERO)
+            reject_transition_locked("PAN RETURN STATE");
+        else if (s_run_deadline_us <= now)
+            reject_transition_locked("PAN RETURN EXPIRED");
+        else if (!r20_proves_pan_present(s_status.registers[0]))
+            reject_transition_locked("PAN RETURN R20");
+        else {
+            char reason[32];
+            snprintf(reason, sizeof(reason), "PAN RETURN %s", retained_issue);
+            reject_transition_locked(reason);
+        }
+        xSemaphoreGive(s_status_lock);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    const uint8_t requested = (uint8_t)gear;
+    const uint8_t effective = cookware_limited_gear(
+        requested, s_status.cookware_limited);
+    s_status.target_gear = requested;
+    begin_transition_locked(PB_TRANSITION_PAN_RETURN_RESUME,
+                            effective == 0 ? PB_STATE_ACTIVE_ZERO : PB_STATE_HEATING,
+                            effective);
+    xSemaphoreGive(s_status_lock);
+    if (s_control_task != NULL) xTaskNotifyGive(s_control_task);
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+    ESP_LOGI(TAG, "N,RESUME,%02X,01,%02X", topology_for_gear(effective), effective);
 #endif
     return ESP_OK;
 }

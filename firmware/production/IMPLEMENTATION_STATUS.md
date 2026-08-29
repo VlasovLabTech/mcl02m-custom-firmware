@@ -1,7 +1,7 @@
 # MCL02M custom firmware — implementation status
 
 Дата: 2026-08-29
-Версия исходников: `0.2.20-dev`
+Версия исходников: `0.2.21-dev`
 Статус: the development unit runs the hash-verified `0.2.17-dev` app written only to
 stock `ota_1` at `0x170000` on 2026-08-29. It booted successfully, and supervised
 testing confirmed retained-session active zero without unwanted relay switching,
@@ -31,7 +31,12 @@ Resume transactions. Requested, transmitted, feedback-observed and confirmed sta
 are distinct; a transition completes only after the matching command and a later
 fresh compatible `R20/R26` sample, with generation checks, bounded deadlines and
 exact rejection evidence. Active-zero confirmation remains an explicitly documented
-inference because the power board does not report the selected gear. The
+inference because the power board does not report the selected gear. Unflashed
+`0.2.21-dev` adds a two-phase cookware-return transaction: recognized pan-present
+feedback first confirms active zero, then the cooking layer refreshes temperatures,
+resets PI/trend/saturation context, applies the small-cookware cap, recomputes output
+and requests a separately confirmed Resume. Unknown `R20` values cannot prove return;
+Stop and Pause replace or cancel the return generation. The
 earlier one-time NVS refresh is complete and must not be repeated automatically.
 
 ## Реализованный пользовательский контур
@@ -58,7 +63,7 @@ earlier one-time NVS refresh is complete and must not be repeated automatically.
 | Languages | English / Русский / `简体中文`; китайский использует встроенный 8×8 subset из фактически нужных глифов, UTF-8 decoder поддерживает трёхбайтовые code points, все текстовые строки статичны и проходят 64-px width/coverage gate; полноэкранные картинки не содержат языкового текста |
 | Sounds | Утверждённые PWM-таблицы: boot, wake, complete, NoPan, critical и sleep; normal duty 50%, sleep около 18%; Main, Timer и Cancel сохраняют UI click, encoder беззвучен, STAGE/WARNING остаются короткими; `SOUND OFF` не отключает NoPan и critical |
 | Critical | Stop + latched `error.png` с фактическим E-кодом; один мотив 2,5 s проигрывается дважды на burst, всего 3 bursts с паузами 4 s; ACK немедленно вызывает `sound_stop()`; Sleep запрещён до ACK |
-| NoPan | три последовательных отсчёта по 500 ms; отдельный `nopan.png`, orange blink, обязательный цикл `мелодия 2,74 s → тишина 3 s` даже при `SOUND OFF`, timer freeze, окно возврата 60 s, затем E02 fault; возврат/Stop/Pause немедленно прерывает цикл |
+| NoPan | три последовательных отсчёта по 500 ms; отдельный `nopan.png`, orange blink, обязательный цикл `мелодия 2,74 s → тишина 3 s` даже при `SOUND OFF`, timer freeze, окно возврата 60 s, затем E02 fault; recognized return first confirms active zero, then refreshes readings and recomputes POWER/TEMPERATURE/profile output under a new generation; unknown R20 cannot prove return; Stop/Pause cancel recovery |
 | Stock E-groups | известные устойчивые raw-группы сохраняют E03/E04/E05/E07/E08/E10/E12; communication — E09; неизвестные остаются generic |
 | I²C debug | The internal consecutive-bad-cycle counter, E09 threshold and diagnostic transport remain active. The temporary physical setting and OLED `0…6` overlay are compiled out of the production build with `COOKER_I2C_DEBUG_DISPLAY_ENABLED=0`; their source and two-second peak-hold implementation remain available for a future diagnostic build |
 | Active-zero debug | Compile-time removable compact UART frames retain full state, `R20…R27`, last `0D/00/0C`, temperatures, faults and counters, plus input and Pause/Resume decisions; authenticated Wi-Fi keeps the readable JSON snapshot |

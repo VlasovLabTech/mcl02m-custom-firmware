@@ -330,7 +330,7 @@ class ConfirmedTransition:
     def transmit(self, generation: int, now_ms: int, command: tuple[int, int, int]) -> bool:
         if not self.pending or generation != self.generation:
             return False
-        if self.kind in {"ACTIVE_ZERO", "PAUSE"} or self.requested_gear == 0:
+        if self.kind in {"ACTIVE_ZERO", "PAUSE", "PAN_RETURN_HOLD"} or self.requested_gear == 0:
             expected = (0x81, 0, 0)
         elif self.requested_gear <= 35:
             expected = (0xA1, 1, self.requested_gear)
@@ -373,8 +373,15 @@ class ConfirmedTransition:
             return False
         if self.feedback_sequence <= self.feedback_baseline:
             return False
-        r20_ok = r20 not in KNOWN_R20_FAULTS and r20 != 0x02
-        if (self.kind in {"ACTIVE_ZERO", "PAUSE"} or self.requested_gear == 0) and r20 == 0x02:
+        if self.kind in {"PAN_RETURN_HOLD", "PAN_RETURN_RESUME"}:
+            r20_ok = r20 in {0, 0x2B, 0x29, 0x2A}
+        else:
+            r20_ok = r20 not in KNOWN_R20_FAULTS and r20 != 0x02
+        if (
+            self.kind not in {"PAN_RETURN_HOLD", "PAN_RETURN_RESUME"}
+            and (self.kind in {"ACTIVE_ZERO", "PAUSE"} or self.requested_gear == 0)
+            and r20 == 0x02
+        ):
             r20_ok = True
         if not r20_ok or r26 not in {1, 2}:
             return False
@@ -397,6 +404,8 @@ class ConfirmedTransition:
             "ACTIVE_ZERO": "ZERO ACK TIMEOUT",
             "PAUSE": "PAUSE ACK TIMEOUT",
             "RESUME": "RESUME TIMEOUT",
+            "PAN_RETURN_HOLD": "PAN HOLD TIMEOUT",
+            "PAN_RETURN_RESUME": "PAN RESUME TIMEOUT",
         }
         self.pending = False
         self.command_transmitted = False
@@ -409,6 +418,19 @@ class ConfirmedTransition:
             self.command_transmitted = False
             self.deadline_ms = None
             self.result = reason
+
+    def replace_pan_return_with_pause(self) -> int | None:
+        if not self.pending or self.kind not in {"PAN_RETURN_HOLD", "PAN_RETURN_RESUME"}:
+            return None
+        self.generation += 1
+        self.kind = "PAUSE"
+        self.requested_state = "PAUSED"
+        self.requested_gear = 0
+        self.command_transmitted = False
+        self.feedback_baseline = self.feedback_sequence
+        self.deadline_ms = None
+        self.result = "PENDING"
+        return self.generation
 
 
 @dataclass
@@ -979,6 +1001,43 @@ def run() -> None:
     assert rejected_feedback.pending
     rejected_feedback.stop()
     assert not rejected_feedback.pending and rejected_feedback.result == "USER STOP"
+
+    # Pan return is deliberately two-phase. Only recognized pan-present R20
+    # values can confirm the safe active-zero hold; an unknown warning cannot.
+    pan_return = ConfirmedTransition()
+    hold_generation = pan_return.request("PAN_RETURN_HOLD", "ACTIVE_ZERO", 0)
+    assert pan_return.transmit(hold_generation, 0, (0x81, 0, 0))
+    assert not pan_return.feedback(250, r20=0x33, r26=2)
+    assert pan_return.pending
+    assert pan_return.feedback(500, r20=0x2B, r26=1)
+    assert pan_return.confirmed_state == "ACTIVE_ZERO"
+    resume_generation = pan_return.request("PAN_RETURN_RESUME", "HEATING", 35)
+    assert resume_generation != hold_generation
+    assert pan_return.transmit(resume_generation, 750, (0xA1, 1, 35))
+    assert not pan_return.feedback(1_000, r20=0x02, r26=2)
+    assert pan_return.pending
+    assert pan_return.feedback(1_250, r20=0, r26=1)
+    assert pan_return.confirmed_state == "HEATING"
+    assert pan_return.confirmed_gear == 35
+
+    # Stop and Pause replace/cancel a recovery generation, so late feedback
+    # from the old generation can never restore output.
+    cancelled_return = ConfirmedTransition()
+    cancelled_generation = cancelled_return.request(
+        "PAN_RETURN_RESUME", "HEATING", 35
+    )
+    assert cancelled_return.transmit(cancelled_generation, 0, (0xA1, 1, 35))
+    cancelled_return.stop()
+    assert not cancelled_return.feedback(500, r20=0, r26=2)
+    paused_return = ConfirmedTransition()
+    old_generation = paused_return.request("PAN_RETURN_HOLD", "ACTIVE_ZERO", 0)
+    assert paused_return.transmit(old_generation, 0, (0x81, 0, 0))
+    pause_generation = paused_return.replace_pan_return_with_pause()
+    assert pause_generation != old_generation
+    assert not paused_return.transmit(old_generation, 100, (0x81, 0, 0))
+    assert paused_return.transmit(pause_generation, 200, (0x81, 0, 0))
+    assert paused_return.feedback(500, r20=0x02, r26=2)
+    assert paused_return.confirmed_state == "PAUSED"
 
     # A retained session deliberately resumes at the freshly recomputed target;
     # it does not inherit the cold-start gear-10 ramp as an accidental side effect.

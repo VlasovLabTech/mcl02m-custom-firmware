@@ -13,7 +13,7 @@ from a request to edit or build software.
 - Xiaomi device model: `chunmi.ihcooker.v2`.
 - Interface controller: Espressif `ESP-WROOM-32D` (classic ESP32).
 - Display: monochrome 64×48 OLED, page-major 384-byte framebuffer.
-- Current custom source version: `0.2.20-dev`.
+- Current custom source version: `0.2.21-dev`.
 - Framework: ESP-IDF.
 - Public repository language: English for technical documents; the device UI
   supports English, Russian, and Simplified Chinese.
@@ -279,8 +279,14 @@ Custom behavior:
 2. Send `W0D=80`, keep `W00=01`, and retain the requested `W0C` gear.
 3. Freeze the cooking timer, show the NoPan image, blink orange, and repeat the
    mandatory NoPan melody followed by a full 3-second silent pause.
-4. If `R20=00` returns within 60 seconds, restore the correct topology and resume.
-5. Otherwise Stop and latch `E02`.
+4. A valid recognized pan-present `R20` (`00`, `2B`, `29`, or `2A`) together with
+   `R26=01/02` starts a generation-tagged safe-hold transaction. An unknown warning
+   value never proves cookware return.
+5. Confirm `W0D/W00/W0C=81/00/00`, refresh the NTC readings, reset temperature
+   trend/PI/saturation context, recompute POWER/TEMPERATURE/profile output, apply the
+   `R26=01` gear-35 cap, and confirm a separate Resume generation. Stop or Pause
+   cancels or replaces either recovery generation.
+6. Otherwise Stop and latch `E02` after the 60-second NoPan window.
 
 NoPan and critical sounds ignore the normal Sound OFF setting.
 

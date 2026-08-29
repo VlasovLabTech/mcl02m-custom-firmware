@@ -59,6 +59,7 @@ static bool s_saturation_announced;
 static bool s_no_pan_announced;
 static bool s_waiting_pan_before_start;
 static bool s_active_zero;
+static bool s_pan_return_waiting_output;
 static uint32_t s_lease_generation;
 static uint32_t s_applied_transition_generation;
 static cooker_profile_t s_active_profile;
@@ -112,6 +113,33 @@ static void no_pan_sound_locked(void)
         s_no_pan_announced = true;
         sound_play(SOUND_NO_PAN);
     }
+}
+
+static void reset_temperature_after_interruption_locked(bool observe)
+{
+    temperature_ctrl_reset(&s_temperature);
+    if (observe && s_status.readings_valid)
+        temperature_ctrl_observe(&s_temperature, s_status.bottom_c);
+    s_status.temp_phase = s_temperature.phase;
+    s_status.hold_saturated = false;
+    s_saturation_announced = false;
+    s_last_temp_update_us = 0;
+}
+
+static void enter_no_pan_context_locked(int64_t now_us)
+{
+    if (s_status.state != COOK_STATE_NO_PAN) {
+        s_status.state = COOK_STATE_NO_PAN;
+        s_no_pan_since_us = now_us;
+        reset_temperature_after_interruption_locked(false);
+    } else if (s_no_pan_since_us == 0) {
+        s_no_pan_since_us = now_us;
+    }
+    s_pan_return_waiting_output = false;
+    s_active_zero = false;
+    s_status.active_zero = false;
+    s_status.applied_gear = 0;
+    strlcpy(s_status.detail, "NO PAN", sizeof(s_status.detail));
 }
 
 const char *cooking_state_name(cook_state_t state)
@@ -188,6 +216,7 @@ static void set_fault_locked(cooker_fault_t fault, const char *detail)
     s_status.delayed_start = false;
     s_status.timer_enabled = false;
     s_waiting_pan_before_start = false;
+    s_pan_return_waiting_output = false;
     s_active_zero = false;
     s_lease_generation = 0;
     s_status.active_zero = false;
@@ -319,6 +348,7 @@ static esp_err_t begin_run_locked(void)
     s_saturation_announced = false;
     s_no_pan_announced = false;
     s_waiting_pan_before_start = false;
+    s_pan_return_waiting_output = false;
     s_no_pan_since_us = 0;
     s_run_started_us = esp_timer_get_time();
     s_timer_accumulator_us = 0;
@@ -348,6 +378,7 @@ static void begin_normal_stop_locked(const char *reason, bool complete)
     s_status.timer_enabled = false;
     s_status.transition_pending = false;
     s_waiting_pan_before_start = false;
+    s_pan_return_waiting_output = false;
     s_active_zero = false;
     s_lease_generation = 0;
     s_status.active_zero = false;
@@ -605,9 +636,71 @@ static void apply_confirmed_transition_locked(const powerboard_status_t *pb,
                 sizeof(s_status.detail));
         emit_status("manual_resume_confirmed");
         break;
+    case PB_TRANSITION_PAN_RETURN_HOLD:
+        s_active_zero = true;
+        s_status.active_zero = true;
+        s_status.state = COOK_STATE_NO_PAN;
+        if (s_no_pan_announced) sound_stop();
+        s_no_pan_announced = false;
+        s_no_pan_since_us = 0;
+        s_pan_return_waiting_output = true;
+        reset_temperature_after_interruption_locked(true);
+        strlcpy(s_status.detail, "PAN RETURN HOLD", sizeof(s_status.detail));
+        emit_status("pan_return_safe_hold_confirmed");
+        break;
+    case PB_TRANSITION_PAN_RETURN_RESUME:
+        s_pan_return_waiting_output = false;
+        s_active_zero = pb->confirmed_state == PB_STATE_ACTIVE_ZERO;
+        s_status.active_zero = s_active_zero;
+        s_status.state = COOK_STATE_COOKING;
+        s_no_pan_since_us = 0;
+        s_no_pan_announced = false;
+        s_last_temp_update_us = now_us;
+        strlcpy(s_status.detail, s_active_zero ? "ACTIVE ZERO" : "COOKING",
+                sizeof(s_status.detail));
+        emit_status("pan_return_confirmed");
+        break;
     default:
         break;
     }
+}
+
+static void request_pan_return_output_locked(const powerboard_status_t *pb,
+                                             int64_t now_us)
+{
+    if (!s_pan_return_waiting_output || pb->transition_pending ||
+        pb->state != PB_STATE_ACTIVE_ZERO)
+        return;
+    if (!s_status.readings_valid) {
+        strlcpy(s_status.detail, "PAN RETURN READINGS", sizeof(s_status.detail));
+        return;
+    }
+
+    uint8_t gear = s_status.selected_gear;
+    if (control_mode_locked() == COOK_MODE_TEMPERATURE) {
+        temperature_ctrl_reset(&s_temperature);
+        temperature_ctrl_observe(&s_temperature, s_status.bottom_c);
+        gear = temperature_ctrl_update(&s_temperature,
+                                       s_status.target_temperature_c,
+                                       s_status.bottom_c,
+                                       COOKER_TEMP_UPDATE_MS);
+        s_status.temp_phase = s_temperature.phase;
+        s_status.hold_saturated = s_temperature.saturated;
+        s_last_temp_update_us = now_us;
+    }
+    gear = cookware_limited_gear_locked(gear);
+    const esp_err_t err = powerboard_control_pan_return_resume(gear);
+    if (err != ESP_OK) {
+        strlcpy(s_status.detail, "PAN RETURN WAIT", sizeof(s_status.detail));
+        return;
+    }
+
+    powerboard_status_t updated;
+    powerboard_control_get_status(&updated);
+    copy_transition_status_locked(&updated);
+    s_pan_return_waiting_output = false;
+    strlcpy(s_status.detail, "PAN RETURN PENDING", sizeof(s_status.detail));
+    emit_status("pan_return_resume_requested");
 }
 
 static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now_us)
@@ -655,7 +748,8 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
             s_status.selected_gear = COOKER_HOLD_MAX_GEAR;
             if (s_status.state == COOK_STATE_PAUSED)
                 s_status.paused_gear = COOKER_HOLD_MAX_GEAR;
-            (void)powerboard_control_set_gear(COOKER_HOLD_MAX_GEAR);
+            if (s_status.state != COOK_STATE_NO_PAN)
+                (void)powerboard_control_set_gear(COOKER_HOLD_MAX_GEAR);
         }
         announce_cookware_limit_locked("small_cookware_limit");
     } else if (!s_status.cookware_limited && was_cookware_limited) {
@@ -680,6 +774,7 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
         return;
     }
     apply_confirmed_transition_locked(pb, now_us);
+    request_pan_return_output_locked(pb, now_us);
     if (s_waiting_pan_before_start) {
         const bool r20_valid = (pb->valid_mask & 1U) != 0;
         s_status.pan_present = r20_valid && pb->registers[0] == 0;
@@ -700,24 +795,24 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
     }
     if (!state_active(s_status.state)) return;
 
+    const bool pan_return_pending = pb->transition_pending &&
+        (pb->transition_kind == PB_TRANSITION_PAN_RETURN_HOLD ||
+         pb->transition_kind == PB_TRANSITION_PAN_RETURN_RESUME);
+    if (pan_return_pending) {
+        if (s_no_pan_announced) sound_stop();
+        s_no_pan_announced = false;
+        strlcpy(s_status.detail,
+                pb->transition_kind == PB_TRANSITION_PAN_RETURN_HOLD ?
+                "PAN RETURN HOLD PENDING" : "PAN RETURN PENDING",
+                sizeof(s_status.detail));
+        return;
+    }
     if (pb->state == PB_STATE_NO_PAN) {
-        if (s_no_pan_since_us == 0) {
-            s_no_pan_since_us = now_us;
-        }
+        enter_no_pan_context_locked(now_us);
         no_pan_sound_locked();
-        s_status.state = COOK_STATE_NO_PAN;
-        strlcpy(s_status.detail, "NO PAN", sizeof(s_status.detail));
         if (now_us - s_no_pan_since_us >= COOKER_NO_PAN_TIMEOUT_MS * 1000LL)
             set_fault_locked(FAULT_E02_NO_PAN_TIMEOUT, "E02 NO PAN TIMEOUT");
         return;
-    }
-    if (s_status.state == COOK_STATE_NO_PAN &&
-        (pb->state == PB_STATE_STARTING || pb->state == PB_STATE_HEATING)) {
-        if (s_no_pan_announced) sound_stop();
-        s_no_pan_since_us = 0;
-        s_no_pan_announced = false;
-        s_status.state = pb->state == PB_STATE_HEATING ? COOK_STATE_COOKING : COOK_STATE_STARTING;
-        strlcpy(s_status.detail, "PAN RETURNED", sizeof(s_status.detail));
     }
     if (pb->state == PB_STATE_HEATING && s_status.state == COOK_STATE_STARTING) {
         s_status.state = COOK_STATE_COOKING;
@@ -774,7 +869,10 @@ static void handle_intent_locked(const intent_t *intent)
 #if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
         ESP_LOGI(TAG, "C,PR,%s", cooking_state_name(s_status.state));
 #endif
-        if (s_status.transition_pending) {
+        const bool pan_return_transition = s_status.transition_pending &&
+            (s_status.transition_kind == PB_TRANSITION_PAN_RETURN_HOLD ||
+             s_status.transition_kind == PB_TRANSITION_PAN_RETURN_RESUME);
+        if (s_status.transition_pending && !pan_return_transition) {
             /* Repeated short presses cannot invert an unconfirmed transition. */
             break;
         }
@@ -794,6 +892,7 @@ static void handle_intent_locked(const intent_t *intent)
                 if (pausing_no_pan) {
                     s_no_pan_announced = false;
                     s_no_pan_since_us = 0;
+                    s_pan_return_waiting_output = false;
                 }
                 if (control_mode_locked() == COOK_MODE_TEMPERATURE) {
                     temperature_ctrl_restart(&s_temperature);

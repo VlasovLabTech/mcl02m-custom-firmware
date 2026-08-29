@@ -247,7 +247,6 @@ def main() -> int:
             "powerboard_feedback_state_t" in power_header and
             "#define MCL02M_TRANSITION_CONFIRM_TIMEOUT_MS 3000U" in power_safety and
             "begin_transition_locked" in power and
-            "reset_transition_transmission_locked" in power and
             "finish_transition_locked" in power and
             "s_status.transition_generation == transition_generation" in power and
             "s_transition_feedback_baseline = s_status.feedback_sequence" in power and
@@ -273,11 +272,26 @@ def main() -> int:
             "copy_transition_status_locked" in engine and
             "apply_confirmed_transition_locked" in engine and
             "Repeated short presses cannot invert an unconfirmed transition" in engine and
-            "if (status.transition_pending) return;" in ui and
+            "if (status.transition_pending && !pausable_pan_return) return;" in ui and
             '"PAUSE PENDING"' in engine and '"RESUME PENDING"' in engine and
             "class ConfirmedTransition" in
             (ROOT / "tests" / "policy_tests.py").read_text(encoding="utf-8"),
             "Start, active zero, Pause and Resume use generation-tagged transmitted-command plus fresh-feedback confirmation without claiming a reported gear")
+    require("PB_TRANSITION_PAN_RETURN_HOLD" in power_header and
+            "PB_TRANSITION_PAN_RETURN_RESUME" in power_header and
+            "r20_proves_pan_present" in power and
+            "begin_transition_locked(PB_TRANSITION_PAN_RETURN_HOLD" in power and
+            "powerboard_control_pan_return_resume" in power and
+            "s_status.state = PB_STATE_NO_PAN" in power and
+            "s_status.applied_gear = 0" in power and
+            "request_pan_return_output_locked" in engine and
+            "reset_temperature_after_interruption_locked(true)" in engine and
+            'emit_status("pan_return_safe_hold_confirmed")' in engine and
+            'emit_status("pan_return_resume_requested")' in engine and
+            "const bool pan_return_transition" in engine and
+            "replace_pan_return_with_pause" in
+            (ROOT / "tests" / "policy_tests.py").read_text(encoding="utf-8"),
+            "NoPan return first confirms active zero, then recomputes and confirms fresh output; Stop/Pause generations cannot be undone by stale feedback")
     require("status_buffers_t *buffers = calloc" in web and
             "free(buffers);" in web and
             "component json overflow" in web and
