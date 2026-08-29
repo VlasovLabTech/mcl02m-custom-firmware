@@ -4,9 +4,10 @@ Status: **in progress; the first bounded fix batch is implemented, while the rem
 
 Audit baseline: `0.2.10-dev`, commit `2b5784e` (`2026-08-28`)
 
-Current source: `0.2.23-dev`. Version `0.2.17-dev` was flashed to the development
-cooker on 2026-08-29 after explicit authorization; retained-session active zero works
-without unexpected relay switching. The source now also keeps the temporary I2C-loss
+Current source: `0.2.24-dev`. Version `0.2.24-dev` was flashed to the development
+cooker on 2026-08-30 after explicit authorization; retained-session active zero works
+without unexpected relay switching, and the targeted Delayed Start regression passed
+without `ETM`. The source also keeps the temporary I2C-loss
 OLED counter behind a disabled compile-time flag, so it is absent from the production
 menu and display without deleting the implementation.
 

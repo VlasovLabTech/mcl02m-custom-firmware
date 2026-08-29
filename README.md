@@ -176,7 +176,7 @@ modified. See [Flashing and recovery](docs/FLASHING.md) before writing anything.
 ## Development status
 
 The current source version is `0.2.24-dev`; the development unit runs the
-hash-verified `0.2.23-dev` image written only to stock `ota_1` at `0x170000` on
+hash-verified `0.2.24-dev` image written only to stock `ota_1` at `0x170000` on
 2026-08-30. Supervised testing confirmed retained-session active zero without
 unexpected relay switching, Sleep/Wake, the temporary I2C debug display, and
 temperature operation with water. A 125 °C empty-pan test then showed about 5 °C of first-heat
@@ -226,7 +226,7 @@ same `0.2.23-dev` batch makes `R2C`–`R2F` nonfatal best-effort startup diagnos
 adds one-shot boot and cooking-event compact UART records, clears stale temperature
 trend evidence after an actual reading gap, prevents profile-cell completion from
 racing an in-flight output transaction, and normalizes the Pause-only diagnostic
-gear lifetime. Unflashed `0.2.24-dev` fixes the supervised-test Delayed Start race:
+gear lifetime. Version `0.2.24-dev` fixes the supervised-test Delayed Start race:
 after expiry the engine refreshes the power-board snapshot before classifying
 feedback, and a still-pending Start cannot mistake the prior stopped state for
 `ETM`. Its waiting screen orders the selected value directly below `POWER` or
@@ -234,7 +234,7 @@ feedback, and a still-pending Start cannot mistake the prior stopped state for
 [hardware validation plan](docs/HARDWARE_VALIDATION_PLAN.md). The
 remaining findings and proposed fix sequence are preserved in the
 [state-machine implementation plan](docs/STATE_MACHINE_IMPLEMENTATION_PLAN.md).
-The `0.2.23-dev` app was flashed after explicit owner authorization. Esptool verified
+The `0.2.24-dev` app was flashed after explicit owner authorization. Esptool verified
 the written data; no bootloader, partition table, `otadata`, NVS or other partition
 was written.
 

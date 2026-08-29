@@ -69,9 +69,9 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 
 ## Development-unit deployment
 
-This `0.2.24-dev` artifact has not been flashed. The development unit runs the
-hash-verified `0.2.23-dev` app written only to stock `ota_1` at `0x170000` on
-2026-08-30 after explicit owner authorization. That operation did not write the
+This hash-verified `0.2.24-dev` artifact was written only to stock `ota_1` at
+`0x170000` on 2026-08-30 after explicit owner authorization. Esptool verified the
+written data. That operation did not write the
 bootloader, partition table, `otadata`, NVS, PHY, `ota_0` or eFuse.
 
 ESP-IDF prints a generic `idf.py flash` suggestion after building. Project procedure

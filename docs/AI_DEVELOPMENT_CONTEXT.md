@@ -602,10 +602,9 @@ Before any release or hardware write:
 8. After flashing, first perform a no-heat boot/UI/I²C soak, then supervised short
    power tests with a water load.
 
-The unflashed reference artifact identified in
-`firmware/production/BUILD_MANIFEST.md` follows the current source. The deployed
-`0.2.23-dev` app (897808 bytes; SHA-256
-`5a4af047e96059114ac8a75baa53d4b9facd09cc4ce520b0ba6e300ef9ea2a0b`) was flashed
+The reference artifact identified in `firmware/production/BUILD_MANIFEST.md` follows
+the current source. The deployed `0.2.24-dev` app (897856 bytes; SHA-256
+`f547b7dd4ba9bddb1a50b5ff6a9ad9d920a579b77a55acac8e06d3c8571fd21c`) was flashed
 to stock `ota_1` at `0x170000` on 2026-08-30 after explicit owner authorization.
 Esptool verified the written data; that deployment did not touch the bootloader,
 partition table, NVS, `otadata`, `ota_0`, PHY or eFuse. This status is not permission
@@ -617,7 +616,7 @@ for another flash operation.
   temperature holding have passed supervised checks. A 125 °C empty-pan trial on
   `0.2.9-dev` held accurately after an approximately 5 °C initial overshoot. The
   adaptive braking, Pause recomputation, and direct topology crossing present in the
-  deployed `0.2.23-dev` still require complete supervised cookware characterization.
+  deployed `0.2.24-dev` still require complete supervised cookware characterization.
 - Production retains the 80 °C interface-side IGBT guard and uses 210 °C for
   the separate interface-side bottom cutoff; the power MCU's native E05 also
   remains active.

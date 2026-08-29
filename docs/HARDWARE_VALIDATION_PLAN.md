@@ -1,9 +1,10 @@
 # Supervised Hardware Validation Plan
 
-Status: prepared for the next explicitly authorized app-only flash. This document
-does not authorize flashing or heating by itself.
+Status: `0.2.24-dev` was flashed app-only after explicit authorization; the targeted
+boot, Delayed Start and transactional Stop validation passed. This document does not
+authorize another flash or heating session by itself.
 
-The objective is to validate the current unflashed fix and regression-sensitive
+The objective is to validate the current fix and regression-sensitive
 state-machine paths with one passive UART capture. The operator performs all physical
 actions; the monitor only reads the serial port. No remote heating commands are added.
 
@@ -140,7 +141,7 @@ Append one row per supervised session:
 
 | Date/time | Firmware version | App SHA-256 | Cooker | Boot `B` tuple | Steps | Result | Log path | Physical observations |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| 2026-08-30 01:51 MSK | `0.2.24-dev` | `f547b7dd4ba9bddb1a50b5ff6a9ad9d920a579b77a55acac8e06d3c8571fd21c` | Development unit | required `0F30`; service `F000/0`; `R25/R28/R29=0A/0B/32` | Boot, version, delayed POWER 10 Start, user Stop | PASS | `_local_private/validation/uart-20260830-015103.log` | Delayed Start reached confirmed `COOKING` without `ETM`; Stop reached confirmed `R26=00`, `S,DONE`, `IDLE` |
 
 Keep these decisions open until hardware evidence exists:
 

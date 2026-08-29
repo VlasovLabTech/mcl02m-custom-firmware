@@ -2,7 +2,7 @@
 
 Дата: 2026-08-30
 Версия исходников: `0.2.24-dev`
-Статус: the development unit runs the hash-verified `0.2.23-dev` app written only to
+Статус: the development unit runs the hash-verified `0.2.24-dev` app written only to
 stock `ota_1` at `0x170000` on 2026-08-30. It booted successfully, and supervised
 testing confirmed retained-session active zero without unwanted relay switching,
 Sleep/Wake, the temporary I2C debug display, and temperature operation. At a 125 °C
@@ -49,10 +49,11 @@ capture, invalidates stale temperature-trend samples after a sensor-data gap, de
 profile-cell completion across pending power transactions, and clears Pause-only
 diagnostic state on every terminal/non-Pause transition. Hardware validation then
 reproduced a Delayed Start `ETM`: the deadline began Start after the loop had already
-captured a stopped power-board snapshot. Unflashed `0.2.24-dev` refreshes that snapshot
+captured a stopped power-board snapshot. Version `0.2.24-dev` refreshes that snapshot
 after a successful scheduled Start, ignores stopped feedback while the Start
 transaction is still pending, and orders the waiting OLED as mode, selected value,
-delay label, countdown. The
+delay label, countdown. A targeted supervised test confirmed Delayed Start reached
+`COOKING` without `ETM`, followed by a confirmed transactional user Stop. The
 earlier one-time NVS refresh is complete and must not be repeated automatically.
 
 ## Реализованный пользовательский контур
