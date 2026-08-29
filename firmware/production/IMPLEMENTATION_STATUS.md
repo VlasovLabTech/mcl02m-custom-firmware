@@ -1,7 +1,7 @@
 # MCL02M custom firmware — implementation status
 
 Дата: 2026-08-29
-Версия исходников: `0.2.17-dev`
+Версия исходников: `0.2.18-dev`
 Статус: the development unit runs the hash-verified `0.2.17-dev` app written only to
 stock `ota_1` at `0x170000` on 2026-08-29. It booted successfully, and supervised
 testing confirmed retained-session active zero without unwanted relay switching,
@@ -19,7 +19,10 @@ Set/Disable and uses a seconds, minutes, hours confirmation sequence. The
 deployed `0.2.17-dev` source completes the Start/EST evidence package: Start cannot
 be confirmed by stale or deadline-late `R26`, and an EST preserves the exact first
 cause in RAM, compact UART and authenticated status. The deterministic host model
-covers the complete known Start response matrix. The
+covers the complete known Start response matrix. Unflashed `0.2.18-dev` implements
+the transactional Stop package: all Stop origins converge on `STOPPING`, complete
+zero commands continue until two fresh `R26=00` samples, and late recovery remains
+possible after timeout or I²C loss without losing the first recorded cause. The
 earlier one-time NVS refresh is complete and must not be repeated automatically.
 
 ## Реализованный пользовательский контур

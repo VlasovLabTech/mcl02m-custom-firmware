@@ -175,7 +175,7 @@ modified. See [Flashing and recovery](docs/FLASHING.md) before writing anything.
 
 ## Development status
 
-The current source version is `0.2.17-dev`; the development unit runs the
+The current source version is `0.2.18-dev`; the development unit runs the
 hash-verified `0.2.17-dev` image written only to stock `ota_1` at `0x170000` on
 2026-08-29. Supervised testing confirmed retained-session active zero without
 unexpected relay switching, Sleep/Wake, the temporary I2C debug display, and
@@ -192,12 +192,15 @@ the production menu and OLED while retaining its implementation behind a disable
 build flag. It also revises the deferred implementation packages around the observed
 protocol. Unflashed `0.2.16-dev` removes the queued timer-toggle race and changes the
 physical timer editor to `seconds → minutes → hours`, with an explicit confirmation
-for each field. Unflashed `0.2.17-dev` completes the Start/EST evidence package: the
+for each field. Deployed `0.2.17-dev` completes the Start/EST evidence package: the
 eight-second acknowledgement window begins only after the first successfully
 transmitted nonzero heartbeat, closes strictly at its deadline, and preserves an
 immutable first-cause RAM incident in compact UART and authenticated status. Its host
 model covers accepted, delayed, missing, late, fault, NoPan, warning and I²C-gap
-responses. The
+responses. Unflashed `0.2.18-dev` adds a transactional `STOPPING` state shared by
+normal completion and every safety origin. It continues sending the complete zero
+command until two fresh `R26=00` samples confirm output-off, and it preserves timeout
+or I²C-loss evidence while retrying instead of reporting a false `IDLE/COMPLETE`. The
 remaining findings and proposed fix sequence are preserved in the
 [state-machine implementation plan](docs/STATE_MACHINE_IMPLEMENTATION_PLAN.md).
 The `0.2.17-dev` app was flashed after explicit owner authorization. Esptool verified

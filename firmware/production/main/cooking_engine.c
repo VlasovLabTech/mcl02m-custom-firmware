@@ -62,6 +62,14 @@ static bool s_active_zero;
 static cooker_profile_t s_active_profile;
 static bool s_profile_selected;
 
+typedef enum {
+    STOP_TERMINAL_IDLE = 0,
+    STOP_TERMINAL_COMPLETE,
+} stop_terminal_t;
+
+static stop_terminal_t s_stop_terminal;
+static char s_stop_reason[32];
+
 static uint8_t cookware_limited_gear_locked(uint8_t gear)
 {
     return s_status.cookware_limited && gear > COOKER_HOLD_MAX_GEAR ?
@@ -86,7 +94,7 @@ const char *cooking_state_name(cook_state_t state)
 {
     static const char *names[] = {
         "SLEEP", "IDLE", "READY", "DELAYED", "STARTING", "COOKING",
-        "PAUSED", "NO_PAN", "COMPLETE", "FAULT"
+        "PAUSED", "NO_PAN", "STOPPING", "COMPLETE", "FAULT"
     };
     return state <= COOK_STATE_FAULT ? names[state] : "UNKNOWN";
 }
@@ -241,7 +249,8 @@ static esp_err_t select_profile_locked(unsigned index)
 
 static esp_err_t begin_run_locked(void)
 {
-    if (s_status.state == COOK_STATE_FAULT || state_active(s_status.state))
+    if (s_status.state == COOK_STATE_FAULT || s_status.state == COOK_STATE_STOPPING ||
+        state_active(s_status.state))
         return ESP_ERR_INVALID_STATE;
 
     if (s_status.mode == COOK_MODE_PROFILE && !prepare_profile_stage_locked(0, true))
@@ -284,11 +293,18 @@ static esp_err_t begin_run_locked(void)
     return ESP_OK;
 }
 
-static void normal_stop_locked(const char *reason, bool complete)
+static void begin_normal_stop_locked(const char *reason, bool complete)
 {
+    if (s_status.state == COOK_STATE_STOPPING) {
+        /* Repeated Stop keeps the original destination and lower transaction. */
+        (void)powerboard_control_stop(s_stop_reason);
+        return;
+    }
     if (s_no_pan_announced) sound_stop();
     powerboard_control_stop(reason);
-    s_status.state = complete ? COOK_STATE_COMPLETE : COOK_STATE_IDLE;
+    s_stop_terminal = complete ? STOP_TERMINAL_COMPLETE : STOP_TERMINAL_IDLE;
+    strlcpy(s_stop_reason, reason == NULL ? "STOP" : reason, sizeof(s_stop_reason));
+    s_status.state = COOK_STATE_STOPPING;
     s_status.applied_gear = 0;
     s_status.paused_gear = 0;
     s_status.temp_phase = TEMP_PHASE_OFF;
@@ -305,9 +321,20 @@ static void normal_stop_locked(const char *reason, bool complete)
     if (!complete) s_status.timer_remaining_s = s_status.timer_last_s;
     s_no_pan_since_us = 0;
     s_no_pan_announced = false;
+    strlcpy(s_status.detail, "STOPPING", sizeof(s_status.detail));
+    emit_status(complete ? "complete_stop_requested" : "stop_requested");
+}
+
+static void finish_normal_stop_locked(void)
+{
+    const bool complete = s_stop_terminal == STOP_TERMINAL_COMPLETE;
+    s_status.state = complete ? COOK_STATE_COMPLETE : COOK_STATE_IDLE;
+    s_run_started_us = 0;
+    s_status.run_elapsed_s = 0;
     if (complete) sound_play(SOUND_COMPLETE);
-    strlcpy(s_status.detail, reason == NULL ? "STOP" : reason, sizeof(s_status.detail));
-    emit_status(complete ? "complete" : "stop");
+    strlcpy(s_status.detail, s_stop_reason[0] == '\0' ? "STOP" : s_stop_reason,
+            sizeof(s_status.detail));
+    emit_status(complete ? "complete" : "stop_confirmed");
 }
 
 static esp_err_t apply_output_locked(uint8_t gear)
@@ -357,7 +384,8 @@ static esp_err_t set_mode_locked(cook_mode_t mode)
 
 static esp_err_t set_power_locked(uint8_t gear)
 {
-    if (s_status.state == COOK_STATE_DELAYED || s_status.state == COOK_STATE_FAULT)
+    if (s_status.state == COOK_STATE_DELAYED || s_status.state == COOK_STATE_FAULT ||
+        s_status.state == COOK_STATE_STOPPING)
         return ESP_ERR_INVALID_STATE;
     if (state_active(s_status.state) && s_status.mode != COOK_MODE_POWER)
         return ESP_ERR_INVALID_STATE;
@@ -381,7 +409,8 @@ static esp_err_t set_power_locked(uint8_t gear)
 
 static esp_err_t set_temperature_locked(uint16_t temperature_c)
 {
-    if (s_status.state == COOK_STATE_DELAYED || s_status.state == COOK_STATE_FAULT)
+    if (s_status.state == COOK_STATE_DELAYED || s_status.state == COOK_STATE_FAULT ||
+        s_status.state == COOK_STATE_STOPPING)
         return ESP_ERR_INVALID_STATE;
     if (state_active(s_status.state) && control_mode_locked() != COOK_MODE_TEMPERATURE)
         return ESP_ERR_INVALID_STATE;
@@ -418,7 +447,7 @@ static void update_manual_pause_timeout_locked(int64_t now_us)
     const int64_t timeout_us = (int64_t)COOKER_MANUAL_PAUSE_TIMEOUT_MS * 1000LL;
     const int64_t elapsed_us = now_us - s_manual_pause_since_us;
     if (elapsed_us >= timeout_us) {
-        normal_stop_locked("PAUSE TIMEOUT", false);
+        begin_normal_stop_locked("PAUSE TIMEOUT", false);
         return;
     }
     s_status.pause_remaining_s = (uint32_t)((timeout_us - elapsed_us + 999999LL) / 1000000LL);
@@ -450,11 +479,11 @@ static void update_timer_locked(int64_t delta_us)
                 emit_status("profile_stage");
             } else {
                 s_status.timer_enabled = false;
-                normal_stop_locked("PROFILE COMPLETE", true);
+                begin_normal_stop_locked("PROFILE COMPLETE", true);
             }
         } else {
             s_status.timer_enabled = false;
-            normal_stop_locked("TIMER COMPLETE", true);
+            begin_normal_stop_locked("TIMER COMPLETE", true);
         }
     }
 }
@@ -504,6 +533,9 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
     s_status.active_zero = pb->state == PB_STATE_ACTIVE_ZERO || pb->state == PB_STATE_PAUSED;
     s_status.run_elapsed_s = s_run_started_us == 0 ? 0 :
                              (uint32_t)((now_us - s_run_started_us) / 1000000);
+    s_status.stop_elapsed_ms = pb->stop_elapsed_ms;
+    s_status.stop_generation = pb->stop_generation;
+    s_status.stop_timed_out = pb->stop_timed_out;
 
     if (pb->unknown_r20_seq != s_status.r20_warning_seq) {
         s_status.r20_warning_seq = pb->unknown_r20_seq;
@@ -531,6 +563,15 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
 
     if (pb->state == PB_STATE_FAULT) {
         set_fault_locked(map_power_fault(pb), pb->fault);
+        return;
+    }
+    if (pb->state == PB_STATE_STOPPING && state_active(s_status.state)) {
+        set_fault_locked(FAULT_HARD_RUN_LIMIT, "RUN LIMIT");
+        return;
+    }
+    if (s_status.state == COOK_STATE_STOPPING) {
+        if (pb->state == PB_STATE_STOPPED && pb->stop_verified)
+            finish_normal_stop_locked();
         return;
     }
     if (s_waiting_pan_before_start) {
@@ -596,8 +637,9 @@ static void handle_intent_locked(const intent_t *intent)
         break;
     }
     case INTENT_STOP:
-        if (state_active(s_status.state) || s_status.state == COOK_STATE_DELAYED)
-            normal_stop_locked(intent->reason, false);
+        if (state_active(s_status.state) || s_status.state == COOK_STATE_DELAYED ||
+            s_status.state == COOK_STATE_STOPPING)
+            begin_normal_stop_locked(intent->reason, false);
         else if (s_status.state == COOK_STATE_COMPLETE) s_status.state = COOK_STATE_IDLE;
         break;
     case INTENT_PAUSE_RESUME:
@@ -663,7 +705,8 @@ static void handle_intent_locked(const intent_t *intent)
         break;
     case INTENT_SLEEP:
         if (!state_active(s_status.state) && s_status.state != COOK_STATE_FAULT &&
-            s_status.state != COOK_STATE_DELAYED) s_status.state = COOK_STATE_SLEEP;
+            s_status.state != COOK_STATE_DELAYED &&
+            s_status.state != COOK_STATE_STOPPING) s_status.state = COOK_STATE_SLEEP;
         break;
     case INTENT_WAKE:
         if (s_status.state == COOK_STATE_SLEEP) {
@@ -680,7 +723,8 @@ static void handle_intent_locked(const intent_t *intent)
             powerboard_control_get_status(&pb);
             const esp_err_t clear = pb.state == PB_STATE_FAULT ?
                                     powerboard_control_clear_fault() :
-                                    (pb.state == PB_STATE_STOPPED ? ESP_OK : ESP_ERR_INVALID_STATE);
+                                    (pb.state == PB_STATE_STOPPED && pb.stop_verified ?
+                                     ESP_OK : ESP_ERR_INVALID_STATE);
             if (clear == ESP_OK) {
                 sound_stop();
                 s_status.fault = FAULT_NONE;
@@ -843,6 +887,8 @@ size_t cooking_engine_status_json(char *output, size_t output_size)
         "\"r20_warning_active\":%s,\"r20_warning_value\":%u,"
         "\"r20_warning_seq\":%" PRIu32 ","
         "\"active_zero\":%s,\"pause_remaining_s\":%" PRIu32 ","
+        "\"stop_elapsed_ms\":%" PRIu32 ",\"stop_generation\":%" PRIu32 ","
+        "\"stop_timed_out\":%s,"
         "\"timer_enabled\":%s,\"timer_s\":%" PRIu32 ","
         "\"timer_last_s\":%" PRIu32 ",\"delayed\":%s,\"delayed_s\":%" PRIu32 ","
         "\"clock_valid\":%s,\"hold_saturated\":%s,"
@@ -859,6 +905,7 @@ size_t cooking_engine_status_json(char *output, size_t output_size)
         s.r20_warning_active ? "true" : "false", s.r20_warning_value,
         s.r20_warning_seq,
         s.active_zero ? "true" : "false", s.pause_remaining_s,
+        s.stop_elapsed_ms, s.stop_generation, s.stop_timed_out ? "true" : "false",
         s.timer_enabled ? "true" : "false", s.timer_remaining_s, s.timer_last_s,
         s.delayed_start ? "true" : "false", s.delayed_remaining_s,
         s.clock_valid ? "true" : "false", s.hold_saturated ? "true" : "false",

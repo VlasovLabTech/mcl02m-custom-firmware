@@ -46,6 +46,8 @@ static int64_t s_arm_deadline_us;
 static int64_t s_run_started_us;
 static int64_t s_run_deadline_us;
 static int64_t s_start_confirm_deadline_us;
+static int64_t s_stop_started_us;
+static int64_t s_stop_confirm_deadline_us;
 static int64_t s_heartbeat_gap_deadline_us;
 static unsigned s_no_pan_samples;
 static unsigned s_r20_fault_samples;
@@ -53,6 +55,7 @@ static uint8_t s_r20_fault_value;
 static bool s_unknown_r20_present;
 static uint8_t s_unknown_r20_present_value;
 static unsigned s_stop_active_samples;
+static unsigned s_stop_zero_samples;
 static uint32_t s_start_incident_sequence;
 static uint8_t s_last_successful_command_0d;
 static uint8_t s_last_successful_command_0c;
@@ -200,6 +203,7 @@ const char *powerboard_state_name(powerboard_state_t state)
     case PB_STATE_PAUSED: return "PAUSED";
     case PB_STATE_NO_PAN: return "NO_PAN";
     case PB_STATE_HEARTBEAT_GAP: return "HB_GAP";
+    case PB_STATE_STOPPING: return "STOPPING";
     case PB_STATE_FAULT: return "FAULT";
     default: return "UNKNOWN";
     }
@@ -357,6 +361,43 @@ static void capture_start_incident_locked(const char *reason,
 #endif
 }
 
+static void start_stop_evidence_locked(const char *reason)
+{
+    ++s_status.stop_generation;
+    s_status.stop_confirm_samples = 0;
+    s_status.stop_verified = false;
+    s_status.stop_timed_out = false;
+    s_status.stop_elapsed_ms = 0;
+    s_stop_zero_samples = 0;
+    s_stop_started_us = esp_timer_get_time();
+    s_stop_confirm_deadline_us = s_stop_started_us +
+        (int64_t)MCL02M_STOP_CONFIRM_TIMEOUT_MS * 1000;
+    strlcpy(s_status.stop_reason, reason == NULL ? "STOP" : reason,
+            sizeof(s_status.stop_reason));
+    strlcpy(s_status.stop_issue, "NONE", sizeof(s_status.stop_issue));
+}
+
+static void freeze_stop_evidence_locked(void)
+{
+    if (s_stop_started_us != 0) {
+        const int64_t now_us = esp_timer_get_time();
+        s_status.stop_elapsed_ms =
+            (uint32_t)((now_us - s_stop_started_us) / 1000);
+        s_stop_started_us = 0;
+    }
+    s_stop_confirm_deadline_us = 0;
+}
+
+static void record_stop_issue_locked(const char *issue)
+{
+    if (issue == NULL || strcmp(s_status.stop_issue, "NONE") != 0) return;
+    strlcpy(s_status.stop_issue, issue, sizeof(s_status.stop_issue));
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+    ESP_LOGW(TAG, "S,WAIT,%" PRIu32 ",%s", s_status.stop_generation,
+             s_status.stop_issue);
+#endif
+}
+
 static void fault_locked(const char *reason)
 {
     if (s_status.state == PB_STATE_FAULT) {
@@ -367,6 +408,7 @@ static void fault_locked(const char *reason)
     const powerboard_state_t previous_state = s_status.state;
     const char *fault_reason = reason == NULL ? "FAULT" : reason;
     capture_start_incident_locked(fault_reason, previous_state);
+    start_stop_evidence_locked(fault_reason);
     s_status.state = PB_STATE_FAULT;
     s_status.target_gear = 0;
     s_status.applied_gear = 0;
@@ -386,9 +428,18 @@ static void fault_locked(const char *reason)
 #endif
 }
 
-static void stop_locked(const char *reason)
+static void begin_stop_locked(const char *reason)
 {
-    s_status.state = PB_STATE_STOPPED;
+    if (s_status.state == PB_STATE_STOPPING || s_status.state == PB_STATE_FAULT) {
+        /* Repeated Stop is idempotent and keeps the first origin/deadline. */
+        s_force_stop = true;
+        return;
+    }
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+    const powerboard_state_t previous_state = s_status.state;
+#endif
+    start_stop_evidence_locked(reason);
+    s_status.state = PB_STATE_STOPPING;
     s_status.target_gear = 0;
     s_status.applied_gear = 0;
     s_status.topology = 0;
@@ -402,6 +453,27 @@ static void stop_locked(const char *reason)
     s_r20_fault_samples = 0;
     s_force_stop = true;
     strlcpy(s_status.fault, reason == NULL ? "STOP" : reason, sizeof(s_status.fault));
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+    ESP_LOGI(TAG, "S,BEGIN,%" PRIu32 ",%s,%s", s_status.stop_generation,
+             powerboard_state_name(previous_state), s_status.stop_reason);
+#endif
+}
+
+static void finish_stop_locked(void)
+{
+    s_status.state = PB_STATE_STOPPED;
+    s_status.target_gear = 0;
+    s_status.applied_gear = 0;
+    s_status.topology = 0;
+    s_status.stop_verified = true;
+    s_status.stop_confirm_samples = MCL02M_STOP_CONFIRM_SAMPLES;
+    freeze_stop_evidence_locked();
+    s_stop_zero_samples = MCL02M_STOP_CONFIRM_SAMPLES;
+    s_force_stop = false;
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+    ESP_LOGI(TAG, "S,DONE,%" PRIu32 ",%s", s_status.stop_generation,
+             s_status.stop_reason);
+#endif
 }
 
 static bool preflight_healthy_locked(void)
@@ -478,7 +550,7 @@ static void update_time_and_safety(int64_t now_us)
     }
     if (s_run_deadline_us != 0 && now_us >= s_run_deadline_us &&
         state_session_open(s_status.state)) {
-        stop_locked("COMPLETE");
+        begin_stop_locked("RUN LIMIT");
     }
     if (s_status.state == PB_STATE_STARTING && s_start_confirm_deadline_us != 0 &&
         now_us >= s_start_confirm_deadline_us) {
@@ -486,6 +558,14 @@ static void update_time_and_safety(int64_t now_us)
     }
     if (s_status.state == PB_STATE_HEARTBEAT_GAP && now_us >= s_heartbeat_gap_deadline_us) {
         fault_locked("HB GAP END");
+    }
+    if ((s_status.state == PB_STATE_STOPPING || s_status.state == PB_STATE_FAULT) &&
+        s_stop_confirm_deadline_us != 0 &&
+        now_us >= s_stop_confirm_deadline_us) {
+        s_status.stop_timed_out = true;
+        s_stop_confirm_deadline_us = 0;
+        record_stop_issue_locked("STOP TIMEOUT");
+        s_force_stop = true;
     }
 
     if (state_session_open(s_status.state)) {
@@ -517,6 +597,27 @@ static void update_status_feedback(void)
         s_start_confirm_deadline_us != 0 && now_us < s_start_confirm_deadline_us;
     const bool heating_feedback_open =
         s_status.state == PB_STATE_HEATING || start_confirmation_open;
+
+    if ((s_status.state == PB_STATE_STOPPING || s_status.state == PB_STATE_FAULT) &&
+        r26_valid) {
+        if (r26 == 0) {
+            if (s_stop_zero_samples < MCL02M_STOP_CONFIRM_SAMPLES)
+                ++s_stop_zero_samples;
+            s_status.stop_confirm_samples = (uint8_t)s_stop_zero_samples;
+            if (s_stop_zero_samples >= MCL02M_STOP_CONFIRM_SAMPLES) {
+                s_status.stop_verified = true;
+                if (s_status.state == PB_STATE_STOPPING) {
+                    finish_stop_locked();
+                } else {
+                    freeze_stop_evidence_locked();
+                }
+            }
+        } else {
+            s_stop_zero_samples = 0;
+            s_status.stop_confirm_samples = 0;
+            s_status.stop_verified = false;
+        }
+    }
 
 #if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
     if ((r20_valid || r26_valid) &&
@@ -586,6 +687,9 @@ static void update_status_feedback(void)
         if (s_r20_fault_samples >= MCL02M_KNOWN_R20_FAULT_SAMPLES &&
             state_session_open(s_status.state)) {
             fault_locked(r20_fault_name(r20));
+        } else if (s_r20_fault_samples >= MCL02M_KNOWN_R20_FAULT_SAMPLES &&
+                   s_status.state == PB_STATE_STOPPING) {
+            record_stop_issue_locked(r20_fault_name(r20));
         }
     } else if (r20_valid && !r20_silent_nonfault(r20)) {
         s_r20_fault_samples = 0;
@@ -609,12 +713,15 @@ static void update_status_feedback(void)
         s_status.heartbeat_gap_observed_stop = true;
     }
 
-    if (!state_session_open(s_status.state) && r26_valid && r26 != 0) {
+    if ((s_status.state == PB_STATE_STOPPED || s_status.state == PB_STATE_ARMED) &&
+        r26_valid && r26 != 0) {
         if (++s_stop_active_samples >= 4) fault_locked("STOP VERIFY");
     } else {
         s_stop_active_samples = 0;
     }
-    s_status.stop_verified = r26_valid && r26 == 0;
+    if (s_status.state != PB_STATE_STOPPING && s_status.state != PB_STATE_FAULT &&
+        r26_valid)
+        s_status.stop_verified = r26 == 0;
     xSemaphoreGive(s_status_lock);
 }
 
@@ -670,7 +777,8 @@ static void emit_status(void)
              "%02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X,"
              "%04X,%u,%u,%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ","
              "%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ","
-             "%" PRIu32 ",%u,%u,%u,%u,%02X,%02X,%" PRIu32 ",%s",
+             "%" PRIu32 ",%u,%u,%u,%u,%02X,%02X,%" PRIu32 ",%s,"
+             "%" PRIu32 ",%u,%u,%u,%" PRIu32 ",%s,%s",
              powerboard_state_name(s.state), s.target_gear, s.applied_gear, s.topology,
              s.last_command_0d, s.last_command_00, s.last_command_0c,
              s.registers[0], s.registers[1], s.registers[2], s.registers[3],
@@ -683,9 +791,12 @@ static void emit_status(void)
              s.heartbeat_gap_observed_stop ? 1U : 0U,
              MCL02M_ACTIVE_ZERO_ENABLED ? 1U : 0U,
              s.cookware_limited ? 1U : 0U, s.registers[8],
-             s.unknown_r20_value, s.unknown_r20_seq, s.fault);
+             s.unknown_r20_value, s.unknown_r20_seq, s.fault,
+             s.stop_generation, s.stop_verified ? 1U : 0U,
+             s.stop_confirm_samples, s.stop_timed_out ? 1U : 0U,
+             s.stop_elapsed_ms, s.stop_reason, s.stop_issue);
 #endif
-    char json[1280];
+    char json[1536];
     powerboard_control_status_json(json, sizeof(json));
     telemetry_emit(json);
 }
@@ -826,7 +937,12 @@ static void control_task(void *arg)
         }
         if (s_status.consecutive_bad_cycles >= MCL02M_I2C_BAD_CYCLES_TO_FAULT &&
             s_status.state != PB_STATE_STOPPED && s_status.state != PB_STATE_FAULT) {
-            fault_locked("I2C LOST");
+            if (s_status.state == PB_STATE_STOPPING) {
+                record_stop_issue_locked("I2C LOST");
+                s_force_stop = true;
+            } else {
+                fault_locked("I2C LOST");
+            }
         }
         xSemaphoreGive(s_status_lock);
 
@@ -847,6 +963,8 @@ esp_err_t powerboard_control_init(void)
     memset(&s_status, 0, sizeof(s_status));
     s_status.state = PB_STATE_BOOT;
     strlcpy(s_status.fault, "BOOT", sizeof(s_status.fault));
+    strlcpy(s_status.stop_reason, "BOOT", sizeof(s_status.stop_reason));
+    strlcpy(s_status.stop_issue, "NONE", sizeof(s_status.stop_issue));
 
     esp_err_t err = bus_init();
     if (err != ESP_OK) return err;
@@ -864,7 +982,10 @@ void powerboard_control_get_status(powerboard_status_t *status)
     *status = s_status;
     status->arm_remaining_ms = remaining_ms(s_arm_deadline_us, now);
     status->start_confirm_remaining_ms = remaining_ms(s_start_confirm_deadline_us, now);
+    status->stop_confirm_remaining_ms = remaining_ms(s_stop_confirm_deadline_us, now);
     status->heartbeat_gap_remaining_ms = remaining_ms(s_heartbeat_gap_deadline_us, now);
+    if (s_stop_started_us != 0 && now >= s_stop_started_us)
+        status->stop_elapsed_ms = (uint32_t)((now - s_stop_started_us) / 1000);
     if (s_run_started_us != 0 && now >= s_run_started_us) {
         status->run_elapsed_ms = (uint32_t)((now - s_run_started_us) / 1000);
     }
@@ -885,7 +1006,11 @@ size_t powerboard_control_status_json(char *output, size_t output_size)
         "\"r26\":%u,\"r27\":%u,\"r28\":%u,\"igbt_c\":%u,\"bottom_c\":%u,"
         "\"valid_mask\":%u,\"run_ms\":%" PRIu32 ",\"remaining_ms\":%" PRIu32 ","
         "\"arm_ms\":%" PRIu32 ",\"start_confirm_ms\":%" PRIu32 ","
-        "\"hb_gap_ms\":%" PRIu32 ",\"stop_verified\":%s,"
+        "\"stop_elapsed_ms\":%" PRIu32 ",\"stop_confirm_ms\":%" PRIu32 ","
+        "\"stop_generation\":%" PRIu32 ",\"stop_confirm_samples\":%u,"
+        "\"stop_verified\":%s,\"stop_timed_out\":%s,"
+        "\"stop_reason\":\"%s\",\"stop_issue\":\"%s\","
+        "\"hb_gap_ms\":%" PRIu32 ","
         "\"hb_gap_observed_stop\":%s,\"cycles\":%" PRIu32 ",\"bad_cycles\":%" PRIu32 ","
         "\"consecutive_bad_cycles\":%" PRIu32 ","
         "\"active_zero_entries\":%" PRIu32 ",\"active_zero_resumes\":%" PRIu32 ","
@@ -905,8 +1030,11 @@ size_t powerboard_control_status_json(char *output, size_t output_size)
         s.registers[4], s.registers[6], s.registers[7], s.registers[8],
         s.igbt_c, s.bottom_c,
         s.valid_mask, s.run_elapsed_ms, s.run_remaining_ms, s.arm_remaining_ms,
-        s.start_confirm_remaining_ms, s.heartbeat_gap_remaining_ms,
+        s.start_confirm_remaining_ms, s.stop_elapsed_ms,
+        s.stop_confirm_remaining_ms, s.stop_generation, s.stop_confirm_samples,
         s.stop_verified ? "true" : "false",
+        s.stop_timed_out ? "true" : "false", s.stop_reason, s.stop_issue,
+        s.heartbeat_gap_remaining_ms,
         s.heartbeat_gap_observed_stop ? "true" : "false", s.completed_cycles,
         s.bad_cycles, s.consecutive_bad_cycles,
         s.active_zero_entries, s.active_zero_resumes,
@@ -1103,7 +1231,7 @@ esp_err_t powerboard_control_stop(const char *reason)
         /* Preserve the fault latch so the control task keeps sending Stop. */
         s_force_stop = true;
     } else {
-        stop_locked(reason);
+        begin_stop_locked(reason);
     }
     xSemaphoreGive(s_status_lock);
     if (s_control_task != NULL) xTaskNotifyGive(s_control_task);
@@ -1132,7 +1260,8 @@ esp_err_t powerboard_control_heartbeat_gap(unsigned duration_ms)
 esp_err_t powerboard_control_clear_fault(void)
 {
     xSemaphoreTake(s_status_lock, portMAX_DELAY);
-    if (s_status.state != PB_STATE_FAULT || !preflight_healthy_locked()) {
+    if (s_status.state != PB_STATE_FAULT || !s_status.stop_verified ||
+        !preflight_healthy_locked()) {
         xSemaphoreGive(s_status_lock);
         return ESP_ERR_INVALID_STATE;
     }
@@ -1143,6 +1272,7 @@ esp_err_t powerboard_control_clear_fault(void)
     s_status.cookware_limited = false;
     s_status.consecutive_bad_cycles = 0;
     s_start_confirm_deadline_us = 0;
+    s_stop_confirm_deadline_us = 0;
     strlcpy(s_status.fault, "NONE", sizeof(s_status.fault));
     s_force_stop = true;
     xSemaphoreGive(s_status_lock);

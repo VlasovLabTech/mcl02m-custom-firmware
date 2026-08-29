@@ -4,7 +4,7 @@ Status: **in progress; the first bounded fix batch is implemented, while the rem
 
 Audit baseline: `0.2.10-dev`, commit `2b5784e` (`2026-08-28`)
 
-Current source: `0.2.17-dev`. Version `0.2.17-dev` was flashed to the development
+Current source: `0.2.18-dev`. Version `0.2.17-dev` was flashed to the development
 cooker on 2026-08-29 after explicit authorization; retained-session active zero works
 without unexpected relay switching. The source now also keeps the temporary I2C-loss
 OLED counter behind a disabled compile-time flag, so it is absent from the production
@@ -624,17 +624,17 @@ require only `R26=02`.
 
 ### Package 3 — Transactional Stop (`C1`)
 
-- [ ] Add cooking `STOPPING` and a lower Stop transaction shared by user Stop,
+- [x] Add cooking `STOPPING` and a lower Stop transaction shared by user Stop,
   Cancel, timer/profile completion, fault, pause timeout and hard-limit expiry.
-- [ ] Continue sending `W0D=00`, `W00=00`, `W0C=00` on every heartbeat until valid
+- [x] Continue sending `W0D=00`, `W00=00`, `W0C=00` on every heartbeat until valid
   consecutive feedback confirms `R26=00`.
-- [ ] Do not require `R20=00` for Stop confirmation: transition/service/unknown
+- [x] Do not require `R20=00` for Stop confirmation: transition/service/unknown
   warning values are orthogonal, while known faults and I2C loss remain recorded.
-- [ ] Enter `IDLE` or `COMPLETE` only after confirmed zero output. A second Stop is
+- [x] Enter `IDLE` or `COMPLETE` only after confirmed zero output. A second Stop is
   idempotent; it neither restarts the deadline nor loses the original cause.
-- [ ] On timeout or I2C loss, preserve the first cause, remain in a forcing-Stop
+- [x] On timeout or I2C loss, preserve the first cause, remain in a forcing-Stop
   state, and keep retrying rather than presenting a false completed Stop.
-- [ ] Test every Stop origin with failures before, between and after the three writes,
+- [x] Test every Stop origin with failures before, between and after the three writes,
   `R26` stuck nonzero, late recovery and repeated user input.
 
 ### Package 4 — Cooking lease (`C2`)

@@ -748,6 +748,7 @@ static void central_short(void)
         s_view = VIEW_HOME;
         return;
     }
+    if (status.state == COOK_STATE_STOPPING) return;
     if (s_timer_editing) {
         if (s_view == VIEW_TIMER_DISABLE) {
             if (cooking_timer_disable() == ESP_OK) close_timer_editor();
@@ -917,7 +918,8 @@ static bool central_long(void)
         cooking_acknowledge();
         s_view = VIEW_HOME;
     } else if (status.state == COOK_STATE_COOKING || status.state == COOK_STATE_STARTING ||
-               status.state == COOK_STATE_PAUSED || status.state == COOK_STATE_NO_PAN) {
+               status.state == COOK_STATE_PAUSED || status.state == COOK_STATE_NO_PAN ||
+               status.state == COOK_STATE_STOPPING) {
         cooking_stop("CENTER HOLD");
         s_view = VIEW_HOME;
     } else if (s_view == VIEW_FACTORY_CONFIRM) {
@@ -963,7 +965,8 @@ static void cancel_action(void)
         cooking_acknowledge();
     else if (status.state == COOK_STATE_DELAYED) cooking_schedule_cancel();
     else if (status.state == COOK_STATE_COOKING || status.state == COOK_STATE_STARTING ||
-             status.state == COOK_STATE_PAUSED || status.state == COOK_STATE_NO_PAN)
+             status.state == COOK_STATE_PAUSED || status.state == COOK_STATE_NO_PAN ||
+             status.state == COOK_STATE_STOPPING)
         cooking_stop("CANCEL");
     s_view = VIEW_HOME;
     display_prod_show_cancel();
@@ -978,6 +981,7 @@ static void input_event(const ui_input_event_t *event)
     const bool true_urgent = input_status.state == COOK_STATE_FAULT ||
                              input_status.state == COOK_STATE_COMPLETE ||
                              input_status.state == COOK_STATE_NO_PAN ||
+                             input_status.state == COOK_STATE_STOPPING ||
                              input_status.hold_saturated;
     if (input_status.r20_warning_active && !true_urgent) {
         if (event->type == UI_INPUT_MAIN_PRESSED ||
@@ -1077,6 +1081,7 @@ static void ui_task(void *arg)
                                    status.state == COOK_STATE_FAULT ||
                                    status.state == COOK_STATE_COMPLETE ||
                                    status.state == COOK_STATE_NO_PAN ||
+                                   status.state == COOK_STATE_STOPPING ||
                                    status.hold_saturated;
         if (urgent_screen) s_temperature_edit_deadline_us = 0;
         if (urgent_screen && s_timer_editing) {
@@ -1103,6 +1108,7 @@ static void ui_task(void *arg)
                               status.state == COOK_STATE_COOKING ||
                               status.state == COOK_STATE_PAUSED ||
                               status.state == COOK_STATE_NO_PAN ||
+                              status.state == COOK_STATE_STOPPING ||
                               status.state == COOK_STATE_COMPLETE ||
                               status.state == COOK_STATE_FAULT;
             const bool temperature_editing = s_temperature_edit_deadline_us != 0 &&

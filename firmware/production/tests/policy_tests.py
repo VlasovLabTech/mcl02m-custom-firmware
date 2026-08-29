@@ -153,6 +153,76 @@ class StartProtocol:
 
 
 @dataclass
+class StopTransaction:
+    """Model the idempotent Stop transaction and its first-cause evidence."""
+
+    state: str = "HEATING"
+    generation: int = 0
+    reason: str = "NONE"
+    issue: str = "NONE"
+    terminal: str = "IDLE"
+    deadline_ms: int | None = None
+    zero_samples: int = 0
+    verified: bool = False
+    timed_out: bool = False
+    write_attempts: int = 0
+    consecutive_i2c_bad: int = 0
+
+    def begin(self, reason: str, terminal: str, now_ms: int = 0) -> None:
+        if self.state in {"STOPPING", "FAULT"}:
+            return
+        self.state = "STOPPING"
+        self.generation += 1
+        self.reason = reason
+        self.issue = "NONE"
+        self.terminal = terminal
+        self.deadline_ms = now_ms + 8_000
+        self.zero_samples = 0
+        self.verified = False
+        self.timed_out = False
+
+    def write_heartbeat(self, results: tuple[bool, bool, bool]) -> None:
+        assert len(results) == 3
+        self.write_attempts += 1
+
+    def feedback(self, now_ms: int, *, r26: int = 1, valid: bool = True,
+                 i2c_bad: bool = False, r20: int = 0) -> None:
+        if self.state not in {"STOPPING", "FAULT"}:
+            return
+        if i2c_bad:
+            self.consecutive_i2c_bad += 1
+            if self.consecutive_i2c_bad >= 6 and self.issue == "NONE":
+                self.issue = "I2C LOST"
+        else:
+            self.consecutive_i2c_bad = 0
+
+        if r20 in KNOWN_R20_FAULTS and self.issue == "NONE":
+            self.issue = "KNOWN R20"
+
+        if valid:
+            if r26 == 0:
+                self.zero_samples = min(2, self.zero_samples + 1)
+                if self.zero_samples == 2:
+                    self.verified = True
+                    self.deadline_ms = None
+                    if self.state == "STOPPING":
+                        self.state = self.terminal
+            else:
+                self.zero_samples = 0
+                self.verified = False
+
+        if (
+            self.state in {"STOPPING", "FAULT"}
+            and self.deadline_ms is not None
+            and now_ms >= self.deadline_ms
+        ):
+            self.timed_out = True
+            self.deadline_ms = None
+            if self.issue == "NONE":
+                self.issue = "STOP TIMEOUT"
+
+
+@dataclass
 class Timer:
     remaining: int
 
@@ -520,6 +590,68 @@ def run() -> None:
     assert no_ack.incident is not None and no_ack.incident.reason == "START TIMEOUT"
     no_ack.sample(8_001, r20=0, r26=2)
     assert no_ack.state == "FAULT" and no_ack.incident.reason == "START TIMEOUT"
+
+    stop_origins = {
+        "USER STOP": "IDLE",
+        "CANCEL": "IDLE",
+        "TIMER COMPLETE": "COMPLETE",
+        "PROFILE COMPLETE": "COMPLETE",
+        "PAUSE TIMEOUT": "IDLE",
+        "RUN LIMIT": "FAULT",
+        "E05 BOTTOM": "FAULT",
+    }
+    for origin, terminal in stop_origins.items():
+        stop = StopTransaction()
+        stop.begin(origin, terminal)
+        stop.write_heartbeat((False, True, True))
+        stop.feedback(500, r26=1)
+        stop.write_heartbeat((True, False, True))
+        stop.feedback(1_000, r26=0)
+        assert stop.state == "STOPPING" and not stop.verified
+        stop.write_heartbeat((True, True, False))
+        stop.feedback(1_500, r26=1)
+        stop.write_heartbeat((True, True, True))
+        stop.feedback(2_000, r26=0)
+        stop.feedback(2_500, r26=0)
+        assert stop.state == terminal and stop.verified
+        assert stop.reason == origin and stop.write_attempts == 4
+
+    repeated_stop = StopTransaction()
+    repeated_stop.begin("USER STOP", "IDLE")
+    generation = repeated_stop.generation
+    repeated_stop.begin("CANCEL", "IDLE", 2_000)
+    assert repeated_stop.generation == generation
+    assert repeated_stop.reason == "USER STOP"
+
+    stuck_stop = StopTransaction()
+    stuck_stop.begin("USER STOP", "IDLE")
+    for timestamp in range(500, 8_001, 500):
+        stuck_stop.write_heartbeat((True, True, True))
+        stuck_stop.feedback(timestamp, r26=1)
+    assert stuck_stop.state == "STOPPING" and stuck_stop.timed_out
+    assert stuck_stop.reason == "USER STOP" and stuck_stop.issue == "STOP TIMEOUT"
+    stuck_stop.feedback(8_500, r26=0)
+    stuck_stop.feedback(9_000, r26=0)
+    assert stuck_stop.state == "IDLE" and stuck_stop.verified
+
+    lost_stop = StopTransaction()
+    lost_stop.begin("TIMER COMPLETE", "COMPLETE")
+    for timestamp in (500, 1_000, 1_500, 2_000, 2_500, 3_000):
+        lost_stop.write_heartbeat((False, False, False))
+        lost_stop.feedback(timestamp, valid=False, i2c_bad=True)
+    assert lost_stop.state == "STOPPING"
+    assert lost_stop.reason == "TIMER COMPLETE" and lost_stop.issue == "I2C LOST"
+    lost_stop.feedback(3_500, r26=0)
+    lost_stop.feedback(4_000, r26=0)
+    assert lost_stop.state == "COMPLETE"
+
+    orthogonal_stop = StopTransaction()
+    orthogonal_stop.begin("CANCEL", "IDLE")
+    orthogonal_stop.feedback(500, r26=1, r20=0x2B)
+    orthogonal_stop.feedback(1_000, r26=1, r20=0x7F)
+    assert orthogonal_stop.state == "STOPPING" and orthogonal_stop.issue == "NONE"
+    orthogonal_stop.feedback(1_500, r26=1, r20=0x17)
+    assert orthogonal_stop.issue == "KNOWN R20" and orthogonal_stop.reason == "CANCEL"
     assert profile_sequence([2400, 1500, 0, 300, 0]) == [1, 2, 4]
     assert profile_sequence([0, 0, 0, 0, 0]) == []
     assert active_zero_command("ACTIVE_ZERO") == (0x81, 0, 0)

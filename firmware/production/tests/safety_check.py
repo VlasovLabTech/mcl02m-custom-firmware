@@ -102,7 +102,7 @@ def main() -> int:
             "incident->transmitted_topology = s_last_successful_command_0d" in power and
             '"X,%" PRIu32' in power and
             '\\"start_incident\\"' in power and
-            "char powerboard[1280]" in web,
+            "char powerboard[1536]" in web,
             "EST preserves one first-cause RAM incident and exposes compact UART plus authenticated status evidence")
     require("#define COOKER_MAX_TIMER_S              (5U * 60U * 60U)" in config,
             "cooking timer is capped at five hours")
@@ -194,10 +194,29 @@ def main() -> int:
             "if (gear > MCL02M_MAX_GEAR)" in power and
             'normal_stop_locked("GEAR ZERO", false)' not in engine,
             "POWER and temperature gear zero use the diagnostic active-zero session command")
-    require("if (!state_session_open(s_status.state) && r26_valid && r26 != 0)" in power and
+    require("s_status.state == PB_STATE_STOPPED || s_status.state == PB_STATE_ARMED" in power and
             "if (!state_can_energize(s_status.state) && r26_valid && r26 != 0)" not in power and
             "Preserve the first cause" in power,
             "active-zero and Pause retain the session without a false STOP VERIFY fault")
+    require("PB_STATE_STOPPING" in power_header and
+            "COOK_STATE_STOPPING" in source and
+            "#define MCL02M_STOP_CONFIRM_TIMEOUT_MS 8000U" in power_safety and
+            "#define MCL02M_STOP_CONFIRM_SAMPLES 2U" in power_safety and
+            "begin_stop_locked" in power and "finish_stop_locked" in power and
+            "freeze_stop_evidence_locked" in power and
+            "s_stop_zero_samples < MCL02M_STOP_CONFIRM_SAMPLES" in power and
+            'record_stop_issue_locked("I2C LOST")' in power and
+            'record_stop_issue_locked("STOP TIMEOUT")' in power and
+            "begin_normal_stop_locked" in engine and
+            "finish_normal_stop_locked" in engine and
+            "pb->state == PB_STATE_STOPPED && pb->stop_verified" in engine and
+            "s_status.state != PB_STATE_FAULT || !s_status.stop_verified" in power and
+            'begin_normal_stop_locked("PROFILE COMPLETE", true)' in engine and
+            'begin_normal_stop_locked("TIMER COMPLETE", true)' in engine and
+            'begin_normal_stop_locked("PAUSE TIMEOUT", false)' in engine and
+            "class StopTransaction" in
+            (ROOT / "tests" / "policy_tests.py").read_text(encoding="utf-8"),
+            "all normal and safety Stop origins use one idempotent transaction confirmed by two fresh R26=00 samples")
     require("retained_session_healthy_locked" in power and
             "s_status.registers[6] != 0" in power and
             "!retained_session_healthy_locked()" in power and
@@ -227,7 +246,7 @@ def main() -> int:
             "UART diagnostics use complete compact frames instead of periodic JSON")
     require("#define COOKER_MANUAL_PAUSE_TIMEOUT_MS   (2U * 60U * 60U * 1000U)" in config and
             "update_manual_pause_timeout_locked" in engine and
-            'normal_stop_locked("PAUSE TIMEOUT", false)' in engine and
+            'begin_normal_stop_locked("PAUSE TIMEOUT", false)' in engine and
             "s_status.state != COOK_STATE_PAUSED" in engine and
             "powerboard_control_pause()" in engine and "PB_STATE_PAUSED" in power,
             "manual Pause uses active zero and performs a full Stop after two hours")

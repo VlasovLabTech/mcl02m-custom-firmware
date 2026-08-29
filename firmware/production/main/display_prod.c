@@ -159,6 +159,7 @@ static const char *state_name(cook_state_t state, app_language_t language)
         case COOK_STATE_COOKING: return "加热";
         case COOK_STATE_PAUSED: return "暂停";
         case COOK_STATE_NO_PAN: return "无锅";
+        case COOK_STATE_STOPPING: return "暂停";
         case COOK_STATE_COMPLETE: return "完成";
         case COOK_STATE_FAULT: return "故障";
         default: return "?";
@@ -173,6 +174,7 @@ static const char *state_name(cook_state_t state, app_language_t language)
     case COOK_STATE_COOKING: return "НАГРЕВ";
     case COOK_STATE_PAUSED: return "ПАУЗА";
     case COOK_STATE_NO_PAN: return "НЕТ ПОСУД";
+    case COOK_STATE_STOPPING: return "СТОП";
     case COOK_STATE_COMPLETE: return "ГОТОВО";
     case COOK_STATE_FAULT: return "ОШИБКА";
     default: return "?";

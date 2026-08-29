@@ -18,6 +18,7 @@ typedef enum {
     COOK_STATE_COOKING,
     COOK_STATE_PAUSED,
     COOK_STATE_NO_PAN,
+    COOK_STATE_STOPPING,
     COOK_STATE_COMPLETE,
     COOK_STATE_FAULT,
 } cook_state_t;
@@ -107,6 +108,9 @@ typedef struct {
     bool clock_valid;
     bool hold_saturated;
     uint32_t pause_remaining_s;
+    uint32_t stop_elapsed_ms;
+    uint32_t stop_generation;
+    bool stop_timed_out;
     uint32_t run_elapsed_s;
     uint8_t profile_index;
     uint8_t profile_stage_index;

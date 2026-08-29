@@ -16,6 +16,7 @@ typedef enum {
     PB_STATE_PAUSED,
     PB_STATE_NO_PAN,
     PB_STATE_HEARTBEAT_GAP,
+    PB_STATE_STOPPING,
     PB_STATE_FAULT,
 } powerboard_state_t;
 
@@ -56,6 +57,10 @@ typedef struct {
     uint32_t run_remaining_ms;
     uint32_t arm_remaining_ms;
     uint32_t start_confirm_remaining_ms;
+    uint32_t stop_elapsed_ms;
+    uint32_t stop_confirm_remaining_ms;
+    uint32_t stop_generation;
+    uint8_t stop_confirm_samples;
     uint32_t heartbeat_gap_remaining_ms;
     uint32_t completed_cycles;
     uint32_t bad_cycles;
@@ -66,8 +71,11 @@ typedef struct {
     uint8_t unknown_r20_value;
     bool cookware_limited;
     bool stop_verified;
+    bool stop_timed_out;
     bool heartbeat_gap_observed_stop;
     char fault[24];
+    char stop_reason[24];
+    char stop_issue[24];
     powerboard_start_incident_t start_incident;
 } powerboard_status_t;
 
