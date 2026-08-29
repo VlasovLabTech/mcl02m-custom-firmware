@@ -10,6 +10,9 @@
 - подтверждённый heartbeat и whitelist силовой I²C (`0x20…0x2f`, записи только
   `0x0d/0x00/0x0c`);
 - POWER `0…99`, TEMPERATURE с PREHEAT/APPROACH/HOLD и пределом HOLD `35`;
+- `R26=01` restricted-cookware feedback is accepted as normal heating and caps every
+  control path at real gear `35`/`A1`; POWER reports the permitted value, blocks only
+  upward edits above 35, and displays a temporary explanatory message;
 - active zero `0x81/0/0` for POWER 0, temperature coast and Pause; manual Pause
   performs a full Stop after 2 h while ordinary zero-power sessions continue;
 - Stop, Pause/Resume, NoPan `60 s` с обязательным циклом `мелодия → пауза 3 s`

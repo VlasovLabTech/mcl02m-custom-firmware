@@ -1,17 +1,18 @@
 # MCL02M custom firmware — implementation status
 
-Дата: 2026-08-28
-Версия исходников: `0.2.12-dev`
+Дата: 2026-08-29
+Версия исходников: `0.2.13-dev`
 Статус: the development unit remains on the hash-verified `0.2.11-dev` app
-written to stock `ota_1` on 2026-08-28. Unflashed source `0.2.12-dev` fixes the first
-five bounded state-integrity findings. Earlier
+written to stock `ota_1` on 2026-08-28. Unflashed source `0.2.13-dev` fixes the first
+five bounded state-integrity findings and implements stock-compatible restricted
+cookware handling. Earlier
 supervised tests confirmed retained-session active zero, Pause/Resume
 without unwanted relay switching, Sleep/Wake, I2C debug display, and temperature
 operation. At a 125 °C empty-pan setpoint, initial heating overshot by approximately
 5 °C and subsequent holding was accurate. The source includes adaptive initial
 braking, pause-safe output recomputation, and direct low/high topology crossing. Its
 physical Settings menu also exposes the compile-time firmware version on a dedicated
-two-line OLED screen. The `0.2.12-dev` image is built and checked offline but has not
+two-line OLED screen. The `0.2.13-dev` image is built and checked offline but has not
 been flashed. The earlier one-time NVS refresh is complete and must not be repeated
 automatically.
 
@@ -20,9 +21,10 @@ automatically.
 | Блок | Поведение |
 |---|---|
 | POWER | `0…99`; encoder slow `1`, fast `5`; вращение не запускает нагрев; gear 0 enters the active-zero session rather than full Stop |
+| SMALL COOKWARE | `R26=01` is accepted as normal heating, not a fault; every control mode is capped at real gear `35` and forced to `A1`; POWER shows the permitted value, rejects upward edits above 35 with a 3-s explanation, and still allows downward edits; `R26=02` clears the restriction |
 | TEMPERATURE | `40…190 °C`; entering T°C immediately copies and clamps the setpoint into editor-owned state; PREHEAT uses `56/77/99`; braking reserve is `clamp(10 °C + positive four-second rise, 10…20 °C)`, with a 15 °C minimum from 170 °C and 5 °C phase hysteresis; APPROACH uses `8 + 2 × error`; PI uses `4 + 2 × error + 0.08 × integral`; APPROACH/HOLD remain capped at `35`; output is active zero at/above target and PI resumes one degree below |
 | HOLD SATURATED | gear `35` в течение 90 s при ошибке не менее 3 °C: orange, warning и сообщение; предел не повышается |
-| Start | только отдельным нажатием центра; силовой preflight и `STARTING` до `R26=02` |
+| Start | только отдельным нажатием центра; силовой preflight и `STARTING` до `R26=01/02` |
 | Pause/Resume | short center enters active zero and freezes the timer; temperature trend sampling continues while PI is frozen; Resume clears PI timing, calculates and installs a current output before resuming the retained session, and never intentionally pulses the old gear or performs Stop/re-arm; 2 h continuous manual Pause performs full Stop |
 | Stop/Sleep | hold центра 1,5 s с немедленным срабатыванием и звуком — Stop/Back; следующий hold в Idle — Sleep; Cancel всегда Stop/Back |
 | Sleep | default 1 min Idle; wake returns to Home/Power, or Home/Temperature when Sleep began from Temperature; secondary menu selections are never restored; heartbeat and safety continue at zero output |
@@ -56,6 +58,9 @@ automatically.
   `1…35` or `56…99`, the boundary crossing is directly `35 ↔ 56`, avoiding transient
   C1 commands and leaving relay sequencing with the power MCU. Explicit manual POWER
   targets `36…55` remain valid.
+- Restricted-cookware feedback `R26=01` immediately caps the lower-layer target and
+  every cooking-engine output at gear 35, forces `A1`, and cannot be bypassed by
+  TEMPERATURE, profiles, retained-session Resume, or a direct POWER edit.
 - E09 is generated locally after six consecutive bad 500-ms I²C cycles. A
   latched power-board fault retransmits the complete Stop sequence every 500 ms.
 - Start timeout, unknown power status, active `R26` after Stop, or a temperature

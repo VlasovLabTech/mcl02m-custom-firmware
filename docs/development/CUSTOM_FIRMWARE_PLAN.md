@@ -42,7 +42,8 @@ NFC, штатные рецепты, голосовое управление Xiao
   нет.
 - Отключение IGBT, задержки и последовательность реле реализованы силовой
   платой. Интерфейсная ESP передаёт желаемую мощность и следит за подтверждением.
-- `R26=02` подтверждает фактический нагрев; `R20=02` означает NoPan;
+- `R26=01/02` confirms actual heating (`01` is the stock restricted-cookware state,
+  capped at gear 35/`A1`); `R20=02` means NoPan;
   `R20=2B` — штатный переход реле, допустимый до 10 s.
 - Силовой heartbeat-watchdog с таймаутом до 5 s не обнаружен: при пропаже
   команд нагрев продолжался. Поэтому ESP32 обязана иметь собственный жёсткий
@@ -233,7 +234,7 @@ stateDiagram-v2
     BOOT_SAFE --> IDLE: Stop подтверждён, self-check OK
     IDLE --> MODE_EDIT: Enter POWER/TEMP/PROFILE
     MODE_EDIT --> STARTING: Confirm Start
-    STARTING --> RUNNING: R26=02
+    STARTING --> RUNNING: R26=01 or R26=02
     STARTING --> NO_PAN: R20=02
     RUNNING --> PAUSED: center click
     PAUSED --> STARTING: center click
@@ -281,7 +282,8 @@ watchdog. Sleep не должен ослеплять safety supervisor.
   периодом около 1 s: значение выбрано, но нагрев ещё не начался.
 - После Start белые LED горят постоянно и показывают фактически переданный gear,
   а не промежуточное положение ручки.
-- При `R26=00` экран показывает STARTING; после `R26=02` — HEATING.
+- With `R26=00`, the screen shows STARTING; `R26=01/02` confirms HEATING.
+  Value `01` also enables the global gear-35/`A1` cookware limit.
 
 Для V1 предлагается общий жёсткий предел непрерывного цикла 4 h, даже если
 пользователь не включил видимый таймер. Расширять его следует только после
@@ -381,7 +383,7 @@ E05 — это не «достигнута максимальная заданн
 - Последняя полностью подтверждённая длительность сохраняется в RAM и снова
   предлагается при следующем входе.
 - Timer в NVS/flash не записывается.
-- Отсчёт начинается после подтверждения фактического нагрева `R26=02`.
+- Timing starts after actual heating is confirmed by `R26=01/02`.
 - В V1 таймер считает активное приготовление и замораживается на Pause/NoPan.
 - По нулю: Stop, проверка `R26=00`, экран COMPLETE, мелодия завершения, затем Idle.
 - Cancel немедленно прекращает цикл без COMPLETE-мелодии.
@@ -580,7 +582,7 @@ no-pan, error и две стадии Sleep. Persistent fault/NoPan/Complete вс
 - heartbeat строго каждые 500 ms, независимо от OLED/Wi-Fi/NVS;
 - UI/web могут менять желаемое значение сколько угодно часто, но driver
   объединяет изменения и передаёт только последнее не чаще heartbeat;
-- `STARTING` продолжается до `R26=02`, timeout 8 s;
+- `STARTING` continues until `R26=01/02`, timeout 8 s;
 - `R20=2B` разрешён максимум 10 s;
 - две последовательные плохие I²C-цикла — Stop/fault;
 - аппаратный ESP task watchdog и interrupt watchdog включены;

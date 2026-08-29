@@ -121,6 +121,12 @@ static uint8_t topology_for_gear(uint8_t gear)
     return 0xe1;
 }
 
+static uint8_t cookware_limited_gear(uint8_t gear, bool limited)
+{
+    return limited && gear > MCL02M_SMALL_COOKWARE_MAX_GEAR ?
+           MCL02M_SMALL_COOKWARE_MAX_GEAR : gear;
+}
+
 static bool state_can_energize(powerboard_state_t state)
 {
     return state == PB_STATE_STARTING || state == PB_STATE_HEATING ||
@@ -282,6 +288,7 @@ static void fault_locked(const char *reason)
     s_status.target_gear = 0;
     s_status.applied_gear = 0;
     s_status.topology = 0;
+    s_status.cookware_limited = false;
     strlcpy(s_status.fault, fault_reason, sizeof(s_status.fault));
     s_run_deadline_us = 0;
     s_arm_deadline_us = 0;
@@ -302,6 +309,7 @@ static void stop_locked(const char *reason)
     s_status.target_gear = 0;
     s_status.applied_gear = 0;
     s_status.topology = 0;
+    s_status.cookware_limited = false;
     s_arm_deadline_us = 0;
     s_run_started_us = 0;
     s_run_deadline_us = 0;
@@ -447,8 +455,27 @@ static void update_status_feedback(void)
         s_no_pan_samples = 0;
     }
 
+    /*
+     * Stock ESP32 firmware treats R26=01 as valid small-cookware feedback:
+     * it caps the command at gear 35 and forces the 0x80/A1 topology. R26=02
+     * is the unrestricted heating acknowledgement. Do not interpret R26=01
+     * while paused/at active zero because the retained-session feedback has a
+     * different meaning when W00 is zero.
+     */
+    if (r20_valid && r20 == 0 && r26_valid &&
+        (s_status.state == PB_STATE_STARTING || s_status.state == PB_STATE_HEATING)) {
+        if (r26 == 0x01) {
+            s_status.cookware_limited = true;
+            if (s_status.applied_gear > MCL02M_SMALL_COOKWARE_MAX_GEAR)
+                s_status.applied_gear = MCL02M_SMALL_COOKWARE_MAX_GEAR;
+            if (s_status.applied_gear != 0) s_status.topology = 0xa1;
+        } else if (r26 == 0x02) {
+            s_status.cookware_limited = false;
+        }
+    }
+
     if (s_status.state == PB_STATE_STARTING && r20_valid && r20 == 0 &&
-        r26_valid && r26 == 0x02) {
+        r26_valid && (r26 == 0x01 || r26 == 0x02)) {
         s_status.state = PB_STATE_HEATING;
         s_start_confirm_deadline_us = 0;
     }
@@ -524,13 +551,15 @@ static uint8_t next_ramped_gear(uint8_t current, uint8_t target)
 static void advance_ramp(void)
 {
     xSemaphoreTake(s_status_lock, portMAX_DELAY);
+    const uint8_t effective_target = cookware_limited_gear(
+        s_status.target_gear, s_status.cookware_limited);
     if ((s_status.state != PB_STATE_STARTING && s_status.state != PB_STATE_HEATING) ||
-        s_status.applied_gear == s_status.target_gear) {
+        s_status.applied_gear == effective_target) {
         xSemaphoreGive(s_status_lock);
         return;
     }
     const uint8_t candidate = next_ramped_gear(s_status.applied_gear,
-                                                s_status.target_gear);
+                                                effective_target);
     s_status.applied_gear = candidate;
     s_status.topology = topology_for_gear(candidate);
     xSemaphoreGive(s_status_lock);
@@ -546,7 +575,7 @@ static void emit_status(void)
              "%02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X,"
              "%04X,%u,%u,%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ","
              "%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ","
-             "%" PRIu32 ",%u,%u,%u,%s",
+             "%" PRIu32 ",%u,%u,%u,%u,%s",
              powerboard_state_name(s.state), s.target_gear, s.applied_gear, s.topology,
              s.last_command_0d, s.last_command_00, s.last_command_0c,
              s.registers[0], s.registers[1], s.registers[2], s.registers[3],
@@ -557,7 +586,8 @@ static void emit_status(void)
              s.consecutive_bad_cycles, s.active_zero_entries, s.active_zero_resumes,
              s.stop_verified ? 1U : 0U,
              s.heartbeat_gap_observed_stop ? 1U : 0U,
-             MCL02M_ACTIVE_ZERO_ENABLED ? 1U : 0U, s.fault);
+             MCL02M_ACTIVE_ZERO_ENABLED ? 1U : 0U,
+             s.cookware_limited ? 1U : 0U, s.fault);
 #endif
     char json[768];
     powerboard_control_status_json(json, sizeof(json));
@@ -608,7 +638,8 @@ static void control_task(void *arg)
             xSemaphoreTake(s_status_lock, portMAX_DELAY);
             const powerboard_state_t command_state = s_status.state;
             const uint8_t gear = s_status.applied_gear;
-            const uint8_t target_gear = s_status.target_gear;
+            const uint8_t target_gear = cookware_limited_gear(
+                s_status.target_gear, s_status.cookware_limited);
             const uint8_t topology = s_status.topology;
             xSemaphoreGive(s_status_lock);
 
@@ -752,7 +783,7 @@ size_t powerboard_control_status_json(char *output, size_t output_size)
         "\"hb_gap_observed_stop\":%s,\"cycles\":%" PRIu32 ",\"bad_cycles\":%" PRIu32 ","
         "\"consecutive_bad_cycles\":%" PRIu32 ","
         "\"active_zero_entries\":%" PRIu32 ",\"active_zero_resumes\":%" PRIu32 ","
-        "\"active_zero_enabled\":%s,\"fault\":\"%s\"}",
+        "\"active_zero_enabled\":%s,\"cookware_limited\":%s,\"fault\":\"%s\"}",
         esp_timer_get_time() / 1000, powerboard_state_name(s.state),
         s.target_gear, s.applied_gear, s.topology,
         s.last_command_0d, s.last_command_00, s.last_command_0c,
@@ -764,7 +795,8 @@ size_t powerboard_control_status_json(char *output, size_t output_size)
         s.heartbeat_gap_observed_stop ? "true" : "false", s.completed_cycles,
         s.bad_cycles, s.consecutive_bad_cycles,
         s.active_zero_entries, s.active_zero_resumes,
-        MCL02M_ACTIVE_ZERO_ENABLED ? "true" : "false", s.fault);
+        MCL02M_ACTIVE_ZERO_ENABLED ? "true" : "false",
+        s.cookware_limited ? "true" : "false", s.fault);
 }
 
 esp_err_t powerboard_control_arm(unsigned window_ms)
@@ -799,6 +831,7 @@ esp_err_t powerboard_control_start(unsigned gear, unsigned duration_ms)
     s_status.target_gear = (uint8_t)gear;
     s_status.applied_gear = (uint8_t)(gear > 10 ? 10 : gear);
     s_status.topology = topology_for_gear(s_status.applied_gear);
+    s_status.cookware_limited = false;
     s_status.state = gear == 0 ? PB_STATE_ACTIVE_ZERO : PB_STATE_STARTING;
     if (gear == 0) ++s_status.active_zero_entries;
     s_status.heartbeat_gap_observed_stop = false;
@@ -834,9 +867,11 @@ esp_err_t powerboard_control_set_gear(unsigned gear)
         return ESP_ERR_INVALID_STATE;
     }
     const uint8_t new_gear = (uint8_t)gear;
+    const uint8_t effective_gear = cookware_limited_gear(
+        new_gear, s_status.cookware_limited);
     s_status.target_gear = new_gear;
     if (previous == PB_STATE_PAUSED) {
-        if (new_gear != 0) s_status.topology = topology_for_gear(new_gear);
+        if (effective_gear != 0) s_status.topology = topology_for_gear(effective_gear);
     } else if (new_gear == 0) {
         s_status.applied_gear = 0;
         s_status.state = PB_STATE_ACTIVE_ZERO;
@@ -844,8 +879,8 @@ esp_err_t powerboard_control_set_gear(unsigned gear)
         if (previous != PB_STATE_ACTIVE_ZERO) ++s_status.active_zero_entries;
     } else if (previous == PB_STATE_ACTIVE_ZERO) {
         /* Resume the retained session directly, without the cold-start gear-10 ramp. */
-        s_status.applied_gear = new_gear;
-        s_status.topology = topology_for_gear(new_gear);
+        s_status.applied_gear = effective_gear;
+        s_status.topology = topology_for_gear(effective_gear);
         s_status.state = PB_STATE_STARTING;
         s_start_confirm_deadline_us = 0;
         ++s_status.active_zero_resumes;
@@ -976,6 +1011,7 @@ esp_err_t powerboard_control_clear_fault(void)
     s_status.target_gear = 0;
     s_status.applied_gear = 0;
     s_status.topology = 0;
+    s_status.cookware_limited = false;
     s_status.consecutive_bad_cycles = 0;
     s_start_confirm_deadline_us = 0;
     strlcpy(s_status.fault, "NONE", sizeof(s_status.fault));

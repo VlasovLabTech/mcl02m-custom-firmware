@@ -57,6 +57,8 @@ static bool s_previous_state_valid;
 static bool s_awake;
 static unsigned s_i2c_debug_peak;
 static int64_t s_i2c_debug_hold_until_us;
+static uint32_t s_cookware_notice_seq;
+static int64_t s_cookware_notice_deadline_us;
 
 _Static_assert(OLED_ASSET_FRAME_BYTES == UI_OLED_BITMAP_BYTES,
                "OLED asset and driver frame sizes must match");
@@ -246,6 +248,16 @@ static void display_task(void *arg)
         const int64_t now = esp_timer_get_time();
         bool show;
         xSemaphoreTake(s_lock, portMAX_DELAY);
+        if (cooker.cookware_notice_seq != s_cookware_notice_seq) {
+            s_cookware_notice_seq = cooker.cookware_notice_seq;
+            if (s_cookware_notice_seq != 0) {
+                s_cookware_notice_deadline_us = now +
+                    (int64_t)COOKER_SMALL_COOKWARE_NOTICE_MS * 1000LL;
+                s_last_activity_us = now;
+                set_transient_locked(TRANSIENT_NONE, 0, now);
+            }
+        }
+        const bool cookware_notice = s_cookware_notice_deadline_us > now;
         const bool overlay = s_overlay;
         const overlay_kind_t overlay_kind = s_overlay_kind;
         const unsigned overlay_value = s_overlay_value;
@@ -314,14 +326,14 @@ static void display_task(void *arg)
             picture = oled_image_no_pan;
         } else if (cooker.state == COOK_STATE_COMPLETE) {
             picture = oled_image_ready;
-        } else if (s_transient_image != TRANSIENT_NONE) {
+        } else if (!cookware_notice && s_transient_image != TRANSIENT_NONE) {
             picture = transient_bitmap(s_transient_image);
         } else if (sleep_picture) {
             picture = oled_image_sleep;
         } else if (sleep_warning) {
             picture = oled_image_sleep_warning;
         }
-        show = picture != NULL || sleep_clock || cooker.state == COOK_STATE_FAULT ||
+        show = picture != NULL || cookware_notice || sleep_clock || cooker.state == COOK_STATE_FAULT ||
                cooker.state == COOK_STATE_COMPLETE ||
                cooker.state == COOK_STATE_NO_PAN || cooker.hold_saturated ||
                (settings.timer_screen_mode == TIMER_SCREEN_ALWAYS && cooker.timer_enabled &&
@@ -339,7 +351,8 @@ static void display_task(void *arg)
                                 cooker.state == COOK_STATE_COMPLETE ||
                                 cooker.state == COOK_STATE_NO_PAN ||
                                 cooker.hold_saturated;
-            const bool effective_overlay = overlay && !urgent;
+            const bool effective_cookware_notice = cookware_notice && !urgent;
+            const bool effective_overlay = overlay && !urgent && !effective_cookware_notice;
             const bool timer_only_due = settings.timer_screen_mode == TIMER_SCREEN_ALWAYS &&
                                         cooker.timer_enabled && !urgent &&
                                         cooker.state == COOK_STATE_COOKING &&
@@ -356,6 +369,16 @@ static void display_task(void *arg)
                     ui_oled_show_bitmap_text(picture, fault_code, 30, 32, 2);
                 else
                     ui_oled_show_bitmap(picture);
+            } else if (effective_cookware_notice) {
+                const app_language_t lang = settings.language;
+                const char *notice[UI_OLED_TEXT_LINES] = {
+                    tr(lang, "SMALL", "МАЛАЯ", "小锅"),
+                    tr(lang, "COOKWARE", "ПОСУДА", "功率限"),
+                    "",
+                    tr(lang, "POWER LIMITED", "МОЩНОСТЬ", "35"),
+                    tr(lang, "MAX 35", "МАКС 35", "")
+                };
+                ui_oled_show_text(notice);
             } else if (sleep_clock) {
                 struct tm local = {0};
                 char clock_text[8];

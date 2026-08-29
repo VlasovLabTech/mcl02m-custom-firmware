@@ -79,6 +79,15 @@ def main() -> int:
     require("#define MCL02M_NO_PAN_SAMPLES 3U" in
             (SHARED_POWER / "safety.h").read_text(encoding="utf-8"),
             "NoPan is accepted after three consecutive 500-ms samples")
+    require("#define MCL02M_SMALL_COOKWARE_MAX_GEAR 35U" in power_safety and
+            "r26 == 0x01 || r26 == 0x02" in power and
+            "s_status.cookware_limited = true;" in power and
+            "s_status.applied_gear = MCL02M_SMALL_COOKWARE_MAX_GEAR;" in power and
+            "if (s_status.applied_gear != 0) s_status.topology = 0xa1;" in power and
+            "gear = cookware_limited_gear_locked(gear);" in engine and
+            '"SMALL COOKWARE"' in engine and
+            "COOKER_SMALL_COOKWARE_NOTICE_MS" in display,
+            "R26=01 confirms heating, enforces the stock gear-35/A1 cookware limit, and explains it")
     require("#define COOKER_MAX_TIMER_S              (5U * 60U * 60U)" in config,
             "cooking timer is capped at five hours")
     require("COOKER_HOLD_MAX_GEAR" in (MAIN / "temperature_ctrl.c").read_text(encoding="utf-8"),

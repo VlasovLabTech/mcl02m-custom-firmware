@@ -27,6 +27,9 @@ keeping all heating commands behind the physical controls on the cooker.
 ## What the custom firmware adds
 
 - direct **POWER** control from `0…99`;
+- stock-compatible **small-cookware limiting**: restricted power-board feedback
+  caps the real output at gear 35 in every mode, reports the permitted POWER value,
+  and explains blocked upward adjustments on the OLED;
 - **temperature control with a PI/PID-style regulator**, high-power preheat,
   conservative approach, and a hold stage capped at gear 35;
 - live NTC temperature, IGBT temperature, mains voltage, selected/applied power,
@@ -169,7 +172,7 @@ modified. See [Flashing and recovery](docs/FLASHING.md) before writing anything.
 
 ## Development status
 
-The current source version is `0.2.12-dev`; the development unit remains on the
+The current source version is `0.2.13-dev`; the development unit remains on the
 hash-verified `0.2.11-dev` image written to stock `ota_1` on 2026-08-28. Earlier
 supervised testing
 confirmed retained-session active zero, Pause/Resume
@@ -180,7 +183,9 @@ four-second rate-adaptive braking with phase hysteresis, recomputes temperature 
 before Resume, and crosses directly between low and high power topologies instead of
 transiently requesting gears 36…55. Source `0.2.11-dev` also adds a physical Settings
 screen for the firmware version. Unflashed source `0.2.12-dev` begins the deferred
-state-machine work by fixing five bounded configuration/transition defects. The
+state-machine work by fixing five bounded configuration/transition defects. Unflashed
+`0.2.13-dev` adds stock-compatible restricted-cookware handling and a complete
+power-board response/register re-audit. The
 remaining findings and proposed fix sequence are preserved in the
 [state-machine implementation plan](docs/STATE_MACHINE_IMPLEMENTATION_PLAN.md).
 The new source is built and checked offline but has not been flashed.

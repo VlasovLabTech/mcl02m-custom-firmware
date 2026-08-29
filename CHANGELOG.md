@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.13-dev — 2026-08-29
+
+- Reclassified `R26=01` from an unrecognized response to the stock firmware's valid
+  restricted-cookware acknowledgement.
+- Enforced the stock gear-35/`A1` limit below POWER, TEMPERATURE, profile, ramp and
+  retained-session Resume paths, so no control mode can bypass the capability.
+- Made POWER display the real permitted value. A three-second small-cookware notice
+  precedes the normal capped display; attempts to raise the value above 35 are
+  rejected with the notice, while downward adjustments remain available.
+- Added compact UART and authenticated-status visibility for the cookware limiter,
+  executable policy tests, and static safety contracts.
+- Re-audited the stock ESP32 dump across `R20…R2F`, documenting known status groups,
+  service-only values, capability bytes, board-revision behavior, and remaining
+  compatibility work without claiming knowledge of the separate power MCU firmware.
+
 ## 0.2.12-dev — 2026-08-28
 
 - Eliminated the Set-to-Start ordering race: mode, POWER and temperature edits now

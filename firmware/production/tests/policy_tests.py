@@ -46,6 +46,24 @@ def ramp_step(current: int, target: int) -> int:
     return candidate
 
 
+def cookware_feedback(r26: int, command_active: bool, requested: int,
+                      applied: int) -> tuple[bool, bool, int, str]:
+    """Model stock R26 cookware capability feedback and the effective command."""
+    if not command_active or r26 not in {1, 2}:
+        return False, False, applied, "unchanged"
+    if r26 == 1:
+        return True, True, min(applied, 35), "A1"
+    return True, False, applied, "normal"
+
+
+def user_power_step(selected: int, delta: int, cookware_limited: bool) -> tuple[int, bool]:
+    """Return the honest displayed setting and whether the limit notice repeats."""
+    requested = max(0, min(99, selected + delta))
+    if cookware_limited and requested > 35:
+        return selected, True
+    return requested, False
+
+
 def profile_sequence(durations: list[int]) -> list[int]:
     """Return the physical 1-based cells that actually execute."""
     assert len(durations) == 5
@@ -175,6 +193,13 @@ def run() -> None:
     assert ramp_step(57, 28) == 35
     assert ramp_step(20, 45) == 30
     assert ramp_step(60, 45) == 50
+    assert cookware_feedback(1, True, 99, 66) == (True, True, 35, "A1")
+    assert cookware_feedback(1, True, 20, 20) == (True, True, 20, "A1")
+    assert cookware_feedback(2, True, 99, 66) == (True, False, 66, "normal")
+    assert cookware_feedback(1, False, 99, 0) == (False, False, 0, "unchanged")
+    assert user_power_step(35, 5, True) == (35, True)
+    assert user_power_step(35, -5, True) == (30, False)
+    assert user_power_step(35, 5, False) == (40, False)
     assert profile_sequence([2400, 1500, 0, 300, 0]) == [1, 2, 4]
     assert profile_sequence([0, 0, 0, 0, 0]) == []
     assert active_zero_command("ACTIVE_ZERO") == (0x81, 0, 0)

@@ -13,7 +13,7 @@ from a request to edit or build software.
 - Xiaomi device model: `chunmi.ihcooker.v2`.
 - Interface controller: Espressif `ESP-WROOM-32D` (classic ESP32).
 - Display: monochrome 64×48 OLED, page-major 384-byte framebuffer.
-- Current custom source version: `0.2.12-dev`.
+- Current custom source version: `0.2.13-dev`.
 - Framework: ESP-IDF.
 - Public repository language: English for technical documents; the device UI
   supports English, Russian, and Simplified Chinese.
@@ -218,10 +218,10 @@ repeat complete command every 500 ms
 
 The interface does not create relay deadtime. It sends a complete nonzero command
 immediately and continues the heartbeat. The power MCU disables the IGBT,
-serializes relay changes, and acknowledges active induction with `R26=02` after
-an observed 2.13–3.63 s startup window. Direct A↔E transitions are allowed. Do
-not add artificial Stop pulses between gear ranges unless new hardware evidence
-requires it.
+serializes relay changes, and acknowledges active induction with `R26=01` or
+`R26=02` after an observed 2.13–3.63 s startup window. Direct A↔E transitions are
+allowed. Do not add artificial Stop pulses between gear ranges unless new hardware
+evidence requires it.
 
 Custom `0.2.10-dev` and later repeat `W0D=81, W00=00, W0C=00` for POWER gear 0,
 temperature coast, and manual Pause. This is distinct from full Stop. Supervised
@@ -242,12 +242,19 @@ time.
 | `R22` | mains raw; approximately `voltage V - 50` on this revision |
 | `R23` | IGBT NTC raw; use extracted lookup table |
 | `R24` | lower/cooking-surface NTC raw; use extracted lookup table |
-| `R25` | observed constant `0A`; unknown/reserved |
-| `R26` | output state: `02` induction active, `00` off/no-pan/pause |
+| `R25` | startup capability/version byte; low nibble `0A` on the tested revision |
+| `R26` | output/cookware capability: `00` inactive, `01` restricted to gear 35 and `A1`, `02` unrestricted |
 | `R27` | auxiliary/topology feedback `00/01/02`; exact physical meaning unconfirmed |
 
 Do not replace the lookup tables with linear fits in production. Linear fits were
 useful only for early diagnostics.
+
+`R26=01` is a normal small-cookware response, not an error. The restriction is
+enforced below every control mode, including TEMPERATURE, profiles, Pause/Resume,
+and direct output changes. POWER mode reports the real permitted value, rejects
+upward edits above 35 with a three-second explanatory OLED notice, and continues to
+allow downward edits. See `docs/reverse-engineering/STOCK_POWER_BOARD_RESPONSE_AUDIT.md`
+for the stock response/register audit and the remaining compatibility findings.
 
 ### No-pan handling
 
@@ -543,7 +550,7 @@ Before any release or hardware write:
 8. After flashing, first perform a no-heat boot/UI/I²C soak, then supervised short
    power tests with a water load.
 
-The reference `0.2.12-dev` artifact identified in
+The reference `0.2.13-dev` artifact identified in
 `firmware/production/BUILD_MANIFEST.md` is an offline build and has not been flashed.
 The development unit remains on hash-verified `0.2.11-dev` in stock `ota_1`; that
 write did not touch the bootloader, partition table, NVS, `otadata`, `ota_0`, PHY or

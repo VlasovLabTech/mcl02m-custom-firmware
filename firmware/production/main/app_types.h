@@ -89,6 +89,8 @@ typedef struct {
     uint16_t mains_voltage_v;
     bool readings_valid;
     bool pan_present;
+    bool cookware_limited;
+    uint32_t cookware_notice_seq;
     bool active_zero;
     bool timer_enabled;
     uint32_t timer_remaining_s;

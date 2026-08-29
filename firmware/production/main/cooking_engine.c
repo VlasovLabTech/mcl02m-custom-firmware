@@ -64,6 +64,12 @@ static bool s_active_zero;
 static cooker_profile_t s_active_profile;
 static bool s_profile_selected;
 
+static uint8_t cookware_limited_gear_locked(uint8_t gear)
+{
+    return s_status.cookware_limited && gear > COOKER_HOLD_MAX_GEAR ?
+           COOKER_HOLD_MAX_GEAR : gear;
+}
+
 static cook_mode_t control_mode_locked(void)
 {
     return s_status.mode == COOK_MODE_PROFILE ?
@@ -135,6 +141,13 @@ static void emit_status(const char *event)
                     s_status.active_zero ? "true" : "false", s_status.pause_remaining_s);
 }
 
+static void announce_cookware_limit_locked(const char *event)
+{
+    ++s_status.cookware_notice_seq;
+    strlcpy(s_status.detail, "SMALL COOKWARE", sizeof(s_status.detail));
+    emit_status(event);
+}
+
 static void set_fault_locked(cooker_fault_t fault, const char *detail)
 {
     if (s_status.state == COOK_STATE_FAULT && s_status.fault == fault) return;
@@ -146,6 +159,7 @@ static void set_fault_locked(cooker_fault_t fault, const char *detail)
     s_waiting_pan_before_start = false;
     s_active_zero = false;
     s_status.active_zero = false;
+    s_status.cookware_limited = false;
     s_status.pause_remaining_s = 0;
     s_manual_pause_since_us = 0;
     strlcpy(s_status.detail, detail == NULL ? cooking_fault_name(fault) : detail,
@@ -285,6 +299,7 @@ static void normal_stop_locked(const char *reason, bool complete)
     s_waiting_pan_before_start = false;
     s_active_zero = false;
     s_status.active_zero = false;
+    s_status.cookware_limited = false;
     s_status.pause_remaining_s = 0;
     s_manual_pause_since_us = 0;
     if (!complete) s_status.timer_remaining_s = s_status.timer_last_s;
@@ -298,6 +313,7 @@ static void normal_stop_locked(const char *reason, bool complete)
 static esp_err_t apply_output_locked(uint8_t gear)
 {
     if (gear > COOKER_MAX_GEAR) return ESP_ERR_INVALID_ARG;
+    gear = cookware_limited_gear_locked(gear);
     powerboard_status_t pb;
     powerboard_control_get_status(&pb);
     if (pb.state == PB_STATE_STOPPED || pb.state == PB_STATE_ARMED ||
@@ -345,6 +361,10 @@ static esp_err_t set_power_locked(uint8_t gear)
         return ESP_ERR_INVALID_STATE;
     if (state_active(s_status.state) && s_status.mode != COOK_MODE_POWER)
         return ESP_ERR_INVALID_STATE;
+    if (s_status.cookware_limited && gear > COOKER_HOLD_MAX_GEAR) {
+        announce_cookware_limit_locked("small_cookware_input_blocked");
+        return ESP_ERR_INVALID_ARG;
+    }
 
     const uint8_t previous = s_status.selected_gear;
     s_status.selected_gear = gear;
@@ -467,6 +487,7 @@ static void update_temperature_locked(int64_t now_us)
 
 static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now_us)
 {
+    const bool was_cookware_limited = s_status.cookware_limited;
     s_status.applied_gear = pb->applied_gear;
     s_status.igbt_c = pb->igbt_c;
     s_status.bottom_c = pb->bottom_c;
@@ -477,9 +498,24 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
                               ((1U << 3) | (1U << 4));
     if (pb->valid_mask & (1U << 2)) s_status.mains_voltage_v = pb->registers[2] + 50U;
     s_status.pan_present = pb->state != PB_STATE_NO_PAN;
+    s_status.cookware_limited = pb->cookware_limited;
     s_status.active_zero = pb->state == PB_STATE_ACTIVE_ZERO || pb->state == PB_STATE_PAUSED;
     s_status.run_elapsed_s = s_run_started_us == 0 ? 0 :
                              (uint32_t)((now_us - s_run_started_us) / 1000000);
+
+    if (s_status.cookware_limited && !was_cookware_limited) {
+        if (control_mode_locked() == COOK_MODE_POWER &&
+            s_status.selected_gear > COOKER_HOLD_MAX_GEAR) {
+            s_status.selected_gear = COOKER_HOLD_MAX_GEAR;
+            if (s_status.state == COOK_STATE_PAUSED)
+                s_status.paused_gear = COOKER_HOLD_MAX_GEAR;
+            (void)powerboard_control_set_gear(COOKER_HOLD_MAX_GEAR);
+        }
+        announce_cookware_limit_locked("small_cookware_limit");
+    } else if (!s_status.cookware_limited && was_cookware_limited) {
+        strlcpy(s_status.detail, "COOKWARE LIMIT CLEARED", sizeof(s_status.detail));
+        emit_status("small_cookware_clear");
+    }
 
     if (pb->state == PB_STATE_FAULT) {
         set_fault_locked(map_power_fault(pb), pb->fault);
@@ -798,7 +834,8 @@ size_t cooking_engine_status_json(char *output, size_t output_size)
         "\"selected_gear\":%u,\"applied_gear\":%u,\"paused_gear\":%u,\"target_c\":%u,"
         "\"bottom_c\":%u,\"igbt_c\":%u,\"i2c_bad_cycles\":%u,"
         "\"voltage_v\":%u,\"readings_valid\":%s,"
-        "\"pan\":%s,\"active_zero\":%s,\"pause_remaining_s\":%" PRIu32 ","
+        "\"pan\":%s,\"cookware_limited\":%s,\"cookware_notice_seq\":%" PRIu32 ","
+        "\"active_zero\":%s,\"pause_remaining_s\":%" PRIu32 ","
         "\"timer_enabled\":%s,\"timer_s\":%" PRIu32 ","
         "\"timer_last_s\":%" PRIu32 ",\"delayed\":%s,\"delayed_s\":%" PRIu32 ","
         "\"clock_valid\":%s,\"hold_saturated\":%s,"
@@ -809,6 +846,7 @@ size_t cooking_engine_status_json(char *output, size_t output_size)
         s.selected_gear, s.applied_gear, s.paused_gear, s.target_temperature_c,
         s.bottom_c, s.igbt_c, s.i2c_bad_cycles,
         s.mains_voltage_v, s.readings_valid ? "true" : "false", s.pan_present ? "true" : "false",
+        s.cookware_limited ? "true" : "false", s.cookware_notice_seq,
         s.active_zero ? "true" : "false", s.pause_remaining_s,
         s.timer_enabled ? "true" : "false", s.timer_remaining_s, s.timer_last_s,
         s.delayed_start ? "true" : "false", s.delayed_remaining_s,

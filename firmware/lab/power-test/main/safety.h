@@ -31,6 +31,9 @@
 #ifndef MCL02M_LOW_TOPOLOGY_MAX_GEAR
 #define MCL02M_LOW_TOPOLOGY_MAX_GEAR 35U
 #endif
+#ifndef MCL02M_SMALL_COOKWARE_MAX_GEAR
+#define MCL02M_SMALL_COOKWARE_MAX_GEAR 35U
+#endif
 #ifndef MCL02M_HIGH_TOPOLOGY_MIN_GEAR
 #define MCL02M_HIGH_TOPOLOGY_MIN_GEAR 56U
 #endif
@@ -52,6 +55,9 @@
 #ifndef MCL02M_NO_PAN_SAMPLES
 #define MCL02M_NO_PAN_SAMPLES 3U
 #endif
+
+_Static_assert(MCL02M_SMALL_COOKWARE_MAX_GEAR <= MCL02M_LOW_TOPOLOGY_MAX_GEAR,
+               "small cookware must stay on the stock low-power topology");
 
 static inline bool mcl02m_powerboard_read_selector_allowed(unsigned reg)
 {
