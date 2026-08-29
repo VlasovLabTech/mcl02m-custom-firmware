@@ -830,12 +830,15 @@ static void oled_make_info(unsigned voltage_v, unsigned ntc_c, unsigned igbt_c, 
     oled_draw_info_line(32, "IGBT", igbt_c, "°C", valid);
 }
 
-static void oled_make_version(const char *title, const char *version)
+static void oled_make_version(const char *firmware_title, const char *firmware_version,
+                              const char *board_title, const char *board_revision)
 {
     memset(s_oled_frame, 0, sizeof(s_oled_frame));
-    /* Two 7-pixel rows plus a 3-pixel gap form a centered 17-pixel block. */
-    oled_draw_right(title, 15, 1, 1);
-    oled_draw_right(version, 25, 1, 1);
+    /* Four small rows, vertically centered and consistently left-aligned. */
+    oled_draw_scaled_text(firmware_title, 0, 5, 1, 1);
+    oled_draw_scaled_text(firmware_version, 0, 15, 1, 1);
+    oled_draw_scaled_text(board_title, 0, 27, 1, 1);
+    oled_draw_scaled_text(board_revision, 0, 37, 1, 1);
 }
 
 static void oled_make_sleep_clock(const char *text, unsigned y, unsigned alignment)
@@ -1288,14 +1291,18 @@ esp_err_t ui_oled_show_info(unsigned voltage_v, unsigned ntc_c, unsigned igbt_c,
     return err;
 }
 
-esp_err_t ui_oled_show_version(const char *title, const char *version)
+esp_err_t ui_oled_show_version(const char *firmware_title, const char *firmware_version,
+                               const char *board_title, const char *board_revision)
 {
-    if (title == NULL || *title == '\0' || version == NULL || *version == '\0')
+    if (firmware_title == NULL || *firmware_title == '\0' ||
+        firmware_version == NULL || *firmware_version == '\0' ||
+        board_title == NULL || *board_title == '\0' ||
+        board_revision == NULL || *board_revision == '\0')
         return ESP_ERR_INVALID_ARG;
     xSemaphoreTake(s_lock, portMAX_DELAY);
     esp_err_t err = oled_init_once();
     if (err == ESP_OK) {
-        oled_make_version(title, version);
+        oled_make_version(firmware_title, firmware_version, board_title, board_revision);
         err = oled_flush();
     }
     xSemaphoreGive(s_lock);

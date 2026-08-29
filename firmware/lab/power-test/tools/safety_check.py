@@ -78,8 +78,8 @@ def main() -> int:
             "low and high topology boundaries are explicit")
     require(macro_value(safety, "MCL02M_START_CONFIRM_TIMEOUT_MS") == 8_000,
             "R26 startup confirmation timeout is eight seconds")
-    require(macro_value(safety, "MCL02M_R20_TRANSITION_MAX_SAMPLES") == 20,
-            "verified R20=0x2B relay transition is bounded to ten seconds")
+    require(macro_value(safety, "MCL02M_KNOWN_R20_FAULT_SAMPLES") == 2,
+            "known R20 fault groups require two consecutive matching samples")
 
     literal_writes = {
         int(value, 0)
@@ -129,14 +129,16 @@ def main() -> int:
             "control task is paced by the verified 500-ms stock heartbeat")
     feedback = function_body(control, "update_status_feedback")
     require("s_status.state == PB_STATE_STARTING" in feedback and
-            "r26_valid && r26 == 0x02" in feedback and
+            "r26 == 0x01 || r26 == 0x02" in feedback and
             "s_status.state = PB_STATE_HEATING" in feedback and
             control.count("s_status.state = PB_STATE_HEATING") == 1,
-            "STARTING becomes HEATING only after valid R26=02 feedback")
-    require("r20 == 0x2b" in feedback and
-            "MCL02M_R20_TRANSITION_MAX_SAMPLES" in feedback and
-            "fault_locked(\"POWER TRANSITION\")" in feedback,
-            "verified R20=0x2B is treated as a bounded relay-transition status")
+            "STARTING becomes HEATING only after valid R26=01/02 feedback")
+    require("r20_silent_nonfault" in control and
+            "value == 0x2b" in control and "value == 0x29" in control and
+            "value == 0x2a" in control and
+            "s_status.unknown_r20_seq" in feedback and
+            "fault_locked(\"POWER TRANSITION\")" not in feedback,
+            "R20=2B/29/2A are silent nonfaults and other unknown values become warnings")
     require("MCL02M_START_CONFIRM_TIMEOUT_MS" in control_task and
             "fault_locked(\"START TIMEOUT\")" in control and
             control_task.find("write_register(0x0c") <

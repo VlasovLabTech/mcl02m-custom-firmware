@@ -473,9 +473,15 @@ static void render(void)
         snprintf(l4, sizeof(l4), "192.168.4.1");
         break;
     case VIEW_FIRMWARE_VERSION:
+        if (status.power_board_revision_valid)
+            snprintf(l0, sizeof(l0), "R28 %02X", status.power_board_revision);
+        else
+            strlcpy(l0, "R28 --", sizeof(l0));
         display_prod_set_version_overlay(
             tr(lang, "FIRMWARE", "ПРОШИВКА", "FIRMWARE"),
-            MCL02M_FIRMWARE_VERSION);
+            MCL02M_FIRMWARE_VERSION,
+            tr(lang, "PWR BOARD", "СИЛ ПЛАТА", "PWR BOARD"),
+            l0);
         return;
     case VIEW_FACTORY_CONFIRM:
         snprintf(l0, sizeof(l0), "%s", tr(lang, "FACTORY", "СБРОС", "恢复出厂"));
@@ -902,6 +908,21 @@ static void input_event(const ui_input_event_t *event)
     s_last_input_us = now;
     cooker_snapshot_t input_status;
     cooking_engine_get_snapshot(&input_status);
+    const bool true_urgent = input_status.state == COOK_STATE_FAULT ||
+                             input_status.state == COOK_STATE_COMPLETE ||
+                             input_status.state == COOK_STATE_NO_PAN ||
+                             input_status.hold_saturated;
+    if (input_status.r20_warning_active && !true_urgent) {
+        if (event->type == UI_INPUT_MAIN_PRESSED ||
+            event->type == UI_INPUT_MAIN_LONG) s_swallow_main = true;
+        if (event->type == UI_INPUT_MAIN_RELEASED) s_swallow_main = false;
+        if (event->type == UI_INPUT_TOUCH_B_PRESSED) s_swallow_timer = true;
+        if (event->type == UI_INPUT_TOUCH_B_RELEASED) s_swallow_timer = false;
+        cooking_acknowledge_warning();
+        display_prod_activity();
+        sound_play(SOUND_UI_CLICK);
+        return;
+    }
     if (input_status.state == COOK_STATE_SLEEP && event->type == UI_INPUT_MAIN_PRESSED) {
         cooking_wake();
         display_prod_activity();
@@ -985,7 +1006,8 @@ static void ui_task(void *arg)
         cooking_engine_get_snapshot(&status);
         settings_get(&settings);
         const int64_t now = esp_timer_get_time();
-        const bool urgent_screen = status.state == COOK_STATE_FAULT ||
+        const bool urgent_screen = status.r20_warning_active ||
+                                   status.state == COOK_STATE_FAULT ||
                                    status.state == COOK_STATE_COMPLETE ||
                                    status.state == COOK_STATE_NO_PAN ||
                                    status.hold_saturated;
@@ -1000,7 +1022,8 @@ static void ui_task(void *arg)
             now >= s_temperature_edit_deadline_us) {
             s_temperature_edit_deadline_us = 0;
         }
-        if ((status.state == COOK_STATE_IDLE || status.state == COOK_STATE_READY) &&
+        if (!status.r20_warning_active &&
+            (status.state == COOK_STATE_IDLE || status.state == COOK_STATE_READY) &&
             now - s_last_input_us >= (int64_t)settings.sleep_minutes * 60 * 1000000LL) {
             remember_primary_wake_selection();
             cooking_sleep();

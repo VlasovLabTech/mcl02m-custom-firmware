@@ -258,6 +258,7 @@ static void display_task(void *arg)
             }
         }
         const bool cookware_notice = s_cookware_notice_deadline_us > now;
+        const bool r20_warning = cooker.r20_warning_active;
         const bool overlay = s_overlay;
         const overlay_kind_t overlay_kind = s_overlay_kind;
         const unsigned overlay_value = s_overlay_value;
@@ -326,14 +327,16 @@ static void display_task(void *arg)
             picture = oled_image_no_pan;
         } else if (cooker.state == COOK_STATE_COMPLETE) {
             picture = oled_image_ready;
-        } else if (!cookware_notice && s_transient_image != TRANSIENT_NONE) {
+        } else if (!r20_warning && !cookware_notice &&
+                   s_transient_image != TRANSIENT_NONE) {
             picture = transient_bitmap(s_transient_image);
         } else if (sleep_picture) {
             picture = oled_image_sleep;
         } else if (sleep_warning) {
             picture = oled_image_sleep_warning;
         }
-        show = picture != NULL || cookware_notice || sleep_clock || cooker.state == COOK_STATE_FAULT ||
+        show = picture != NULL || r20_warning || cookware_notice || sleep_clock ||
+               cooker.state == COOK_STATE_FAULT ||
                cooker.state == COOK_STATE_COMPLETE ||
                cooker.state == COOK_STATE_NO_PAN || cooker.hold_saturated ||
                (settings.timer_screen_mode == TIMER_SCREEN_ALWAYS && cooker.timer_enabled &&
@@ -351,8 +354,12 @@ static void display_task(void *arg)
                                 cooker.state == COOK_STATE_COMPLETE ||
                                 cooker.state == COOK_STATE_NO_PAN ||
                                 cooker.hold_saturated;
-            const bool effective_cookware_notice = cookware_notice && !urgent;
-            const bool effective_overlay = overlay && !urgent && !effective_cookware_notice;
+            const bool effective_r20_warning = r20_warning && !urgent;
+            const bool effective_cookware_notice = cookware_notice && !urgent &&
+                                                   !effective_r20_warning;
+            const bool effective_overlay = overlay && !urgent &&
+                                           !effective_r20_warning &&
+                                           !effective_cookware_notice;
             const bool timer_only_due = settings.timer_screen_mode == TIMER_SCREEN_ALWAYS &&
                                         cooker.timer_enabled && !urgent &&
                                         cooker.state == COOK_STATE_COOKING &&
@@ -369,6 +376,13 @@ static void display_task(void *arg)
                     ui_oled_show_bitmap_text(picture, fault_code, 30, 32, 2);
                 else
                     ui_oled_show_bitmap(picture);
+            } else if (effective_r20_warning) {
+                char r20[12];
+                snprintf(r20, sizeof(r20), "R20 %02X", cooker.r20_warning_value);
+                const char *warning[UI_OLED_TEXT_LINES] = {
+                    "WARNING", "UNKNOWN", r20, "PRESS", "ANY KEY"
+                };
+                ui_oled_show_text(warning);
             } else if (effective_cookware_notice) {
                 const app_language_t lang = settings.language;
                 const char *notice[UI_OLED_TEXT_LINES] = {
@@ -402,7 +416,7 @@ static void display_task(void *arg)
             } else if (effective_overlay && overlay_kind == OVERLAY_INFO) {
                 ui_oled_show_info(overlay_value, overlay_ntc, overlay_igbt, overlay_valid);
             } else if (effective_overlay && overlay_kind == OVERLAY_VERSION) {
-                ui_oled_show_version(overlay_a, overlay_b);
+                ui_oled_show_version(overlay_a, overlay_b, overlay_c, overlay_d);
             } else if (timer_only_due) {
                 char timer[16];
                 const bool timer_seconds = format_timer_compact(cooker.timer_remaining_s, timer);
@@ -629,15 +643,19 @@ void display_prod_set_info_overlay(unsigned voltage_v, unsigned ntc_c, unsigned 
     xSemaphoreGive(s_lock);
 }
 
-void display_prod_set_version_overlay(const char *title, const char *version)
+void display_prod_set_version_overlay(const char *firmware_title,
+                                      const char *firmware_version,
+                                      const char *board_title,
+                                      const char *board_revision)
 {
-    if (title == NULL || version == NULL) return;
+    if (firmware_title == NULL || firmware_version == NULL ||
+        board_title == NULL || board_revision == NULL) return;
     xSemaphoreTake(s_lock, portMAX_DELAY);
     s_overlay_kind = OVERLAY_VERSION;
-    strlcpy(s_overlay_a, title, sizeof(s_overlay_a));
-    strlcpy(s_overlay_b, version, sizeof(s_overlay_b));
-    s_overlay_c[0] = '\0';
-    s_overlay_d[0] = '\0';
+    strlcpy(s_overlay_a, firmware_title, sizeof(s_overlay_a));
+    strlcpy(s_overlay_b, firmware_version, sizeof(s_overlay_b));
+    strlcpy(s_overlay_c, board_title, sizeof(s_overlay_c));
+    strlcpy(s_overlay_d, board_revision, sizeof(s_overlay_d));
     s_overlay_degree = false;
     s_overlay = true;
     xSemaphoreGive(s_lock);

@@ -13,6 +13,11 @@
 - `R26=01` restricted-cookware feedback is accepted as normal heating and caps every
   control path at real gear `35`/`A1`; POWER reports the permitted value, blocks only
   upward edits above 35, and displays a temporary explanatory message;
+- physical Settings shows both `0.2.14-dev` firmware and live raw `R28` power-board
+  revision/type with four left-aligned rows;
+- `R20=2B/29/2A` are silent nonfaults; another unknown nonzero `R20` shows its exact
+  hex value as a persistent warning, and the first physical input dismisses only the
+  warning without changing the cooking state;
 - active zero `0x81/0/0` for POWER 0, temperature coast and Pause; manual Pause
   performs a full Stop after 2 h while ordinary zero-power sessions continue;
 - Stop, Pause/Resume, NoPan `60 s` с обязательным циклом `мелодия → пауза 3 s`

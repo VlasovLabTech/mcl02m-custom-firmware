@@ -32,6 +32,7 @@ typedef enum {
     INTENT_SLEEP,
     INTENT_WAKE,
     INTENT_ACK,
+    INTENT_ACK_WARNING,
     INTENT_TIMER_SET,
     INTENT_TIMER_TOGGLE,
     INTENT_SCHEDULE_REL,
@@ -160,6 +161,7 @@ static void set_fault_locked(cooker_fault_t fault, const char *detail)
     s_active_zero = false;
     s_status.active_zero = false;
     s_status.cookware_limited = false;
+    s_status.r20_warning_active = false;
     s_status.pause_remaining_s = 0;
     s_manual_pause_since_us = 0;
     strlcpy(s_status.detail, detail == NULL ? cooking_fault_name(fault) : detail,
@@ -300,6 +302,7 @@ static void normal_stop_locked(const char *reason, bool complete)
     s_active_zero = false;
     s_status.active_zero = false;
     s_status.cookware_limited = false;
+    s_status.r20_warning_active = false;
     s_status.pause_remaining_s = 0;
     s_manual_pause_since_us = 0;
     if (!complete) s_status.timer_remaining_s = s_status.timer_last_s;
@@ -497,11 +500,23 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
     s_status.readings_valid = (pb->valid_mask & ((1U << 3) | (1U << 4))) ==
                               ((1U << 3) | (1U << 4));
     if (pb->valid_mask & (1U << 2)) s_status.mains_voltage_v = pb->registers[2] + 50U;
+    s_status.power_board_revision = pb->registers[8];
+    s_status.power_board_revision_valid = (pb->valid_mask & (1U << 8)) != 0;
     s_status.pan_present = pb->state != PB_STATE_NO_PAN;
     s_status.cookware_limited = pb->cookware_limited;
     s_status.active_zero = pb->state == PB_STATE_ACTIVE_ZERO || pb->state == PB_STATE_PAUSED;
     s_status.run_elapsed_s = s_run_started_us == 0 ? 0 :
                              (uint32_t)((now_us - s_run_started_us) / 1000000);
+
+    if (pb->unknown_r20_seq != s_status.r20_warning_seq) {
+        s_status.r20_warning_seq = pb->unknown_r20_seq;
+        s_status.r20_warning_value = pb->unknown_r20_value;
+        s_status.r20_warning_active = true;
+        snprintf(s_status.detail, sizeof(s_status.detail),
+                 "UNKNOWN R20 %02X", s_status.r20_warning_value);
+        sound_play(SOUND_WARNING);
+        emit_status("unknown_r20_warning");
+    }
 
     if (s_status.cookware_limited && !was_cookware_limited) {
         if (control_mode_locked() == COOK_MODE_POWER &&
@@ -678,6 +693,13 @@ static void handle_intent_locked(const intent_t *intent)
             }
         } else if (s_status.state == COOK_STATE_COMPLETE) s_status.state = COOK_STATE_IDLE;
         break;
+    case INTENT_ACK_WARNING:
+        if (s_status.r20_warning_active) {
+            s_status.r20_warning_active = false;
+            strlcpy(s_status.detail, "R20 WARNING ACK", sizeof(s_status.detail));
+            emit_status("unknown_r20_ack");
+        }
+        break;
     case INTENT_TIMER_SET:
         if (s_status.mode != COOK_MODE_PROFILE &&
             intent->value >= 0 && intent->value <= COOKER_MAX_TIMER_S) {
@@ -834,7 +856,10 @@ size_t cooking_engine_status_json(char *output, size_t output_size)
         "\"selected_gear\":%u,\"applied_gear\":%u,\"paused_gear\":%u,\"target_c\":%u,"
         "\"bottom_c\":%u,\"igbt_c\":%u,\"i2c_bad_cycles\":%u,"
         "\"voltage_v\":%u,\"readings_valid\":%s,"
+        "\"power_board_revision\":%u,\"power_board_revision_valid\":%s,"
         "\"pan\":%s,\"cookware_limited\":%s,\"cookware_notice_seq\":%" PRIu32 ","
+        "\"r20_warning_active\":%s,\"r20_warning_value\":%u,"
+        "\"r20_warning_seq\":%" PRIu32 ","
         "\"active_zero\":%s,\"pause_remaining_s\":%" PRIu32 ","
         "\"timer_enabled\":%s,\"timer_s\":%" PRIu32 ","
         "\"timer_last_s\":%" PRIu32 ",\"delayed\":%s,\"delayed_s\":%" PRIu32 ","
@@ -845,8 +870,12 @@ size_t cooking_engine_status_json(char *output, size_t output_size)
         cooking_state_name(s.state), s.mode, s.temp_phase, cooking_fault_name(s.fault),
         s.selected_gear, s.applied_gear, s.paused_gear, s.target_temperature_c,
         s.bottom_c, s.igbt_c, s.i2c_bad_cycles,
-        s.mains_voltage_v, s.readings_valid ? "true" : "false", s.pan_present ? "true" : "false",
+        s.mains_voltage_v, s.readings_valid ? "true" : "false",
+        s.power_board_revision, s.power_board_revision_valid ? "true" : "false",
+        s.pan_present ? "true" : "false",
         s.cookware_limited ? "true" : "false", s.cookware_notice_seq,
+        s.r20_warning_active ? "true" : "false", s.r20_warning_value,
+        s.r20_warning_seq,
         s.active_zero ? "true" : "false", s.pause_remaining_s,
         s.timer_enabled ? "true" : "false", s.timer_remaining_s, s.timer_last_s,
         s.delayed_start ? "true" : "false", s.delayed_remaining_s,
@@ -902,6 +931,7 @@ esp_err_t cooking_pause_resume(void) { return post(INTENT_PAUSE_RESUME, 0, false
 esp_err_t cooking_sleep(void) { return post(INTENT_SLEEP, 0, false, NULL); }
 esp_err_t cooking_wake(void) { return post(INTENT_WAKE, 0, false, NULL); }
 esp_err_t cooking_acknowledge(void) { return post(INTENT_ACK, 0, false, NULL); }
+esp_err_t cooking_acknowledge_warning(void) { return post(INTENT_ACK_WARNING, 0, false, NULL); }
 esp_err_t cooking_timer_set(uint32_t seconds, bool enabled) { return seconds <= COOKER_MAX_TIMER_S ? post(INTENT_TIMER_SET, seconds, enabled, NULL) : ESP_ERR_INVALID_ARG; }
 esp_err_t cooking_timer_toggle(void) { return post(INTENT_TIMER_TOGGLE, 0, false, NULL); }
 esp_err_t cooking_schedule_relative(uint32_t delay_s)

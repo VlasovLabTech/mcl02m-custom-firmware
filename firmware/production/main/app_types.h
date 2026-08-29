@@ -88,9 +88,14 @@ typedef struct {
     uint8_t i2c_bad_cycles;
     uint16_t mains_voltage_v;
     bool readings_valid;
+    uint8_t power_board_revision;
+    bool power_board_revision_valid;
     bool pan_present;
     bool cookware_limited;
     uint32_t cookware_notice_seq;
+    bool r20_warning_active;
+    uint8_t r20_warning_value;
+    uint32_t r20_warning_seq;
     bool active_zero;
     bool timer_enabled;
     uint32_t timer_remaining_s;

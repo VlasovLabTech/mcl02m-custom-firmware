@@ -87,7 +87,7 @@ remains valid and uses C1 normally.
 
 | Register | Interpretation |
 |---|---|
-| `0x20` | status: `00` normal, `02` no pan, `2B` short relay transition, other stable groups are faults |
+| `0x20` | status: `00` normal, `02` no pan, `2B` relay transition, `29/2A` service events, known persistent groups are faults, other values warn |
 | `0x21` | load/power feedback |
 | `0x22` | mains raw, approximately volts minus 50 on the tested revision |
 | `0x23` | IGBT NTC raw, converted by lookup table |
@@ -95,9 +95,21 @@ remains valid and uses C1 normally.
 | `0x25` | startup capability/version byte; low nibble `0A` on the tested revision |
 | `0x26` | output/cookware capability: `00` inactive, `01` restricted, `02` unrestricted |
 | `0x27` | auxiliary/topology feedback `00/01/02`, exact meaning unknown |
+| `0x28` | raw power-board revision/type selector; stock uses values above 2 for its newer NTC conversion path |
 
-The transient `R20=2B` is accepted for no more than 10 seconds. Use the extracted
-NTC lookup tables; early linear diagnostic fits are not production conversions.
+`R20=2B` is a stock-recognized relay-transition status. It is logged but neither
+displayed nor timed into a fault. `R20=29/2A` are stock service/calibration event
+notifications; normal stock cooking performs no user-facing action for them, so the
+custom runtime also keeps them silent and nonfatal while preserving raw telemetry.
+Use the extracted NTC lookup tables; early linear diagnostic fits are not production
+conversions.
+
+Any other unknown nonzero `R20` is not promoted to a guessed `EPB`. It creates a
+persistent warning showing `R20 XX`. Heating/session state is retained, and the first
+physical key, touch or encoder action acknowledges only the warning instead of
+executing its normal action. A continuously repeated identical value does not reopen
+the warning after acknowledgement; it rearms after a recognized value or a different
+unknown value.
 
 ## Restricted-cookware flow
 

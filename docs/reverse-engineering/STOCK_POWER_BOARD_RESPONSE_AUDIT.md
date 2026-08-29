@@ -63,17 +63,16 @@ six-sample path. A single sample is therefore not a stock fault decision.
 | `2B` | no explicit stock fault branch; runtime captures identify it as a relay-transition status | high |
 | other values | no explicit fault branch was found in this stock panel build | high for this binary only |
 
-The custom driver currently maps the known persistent fault groups correctly, but its
-filter is intentionally much shorter than stock. It also currently treats `29`, `2A`,
-and any other unlisted nonzero value as an eventual generic `EPB`, unlike the stock
-panel. This is a compatibility gap and should be addressed separately from the
-`R26=01` cookware fix.
+The custom driver maps the known persistent fault groups correctly, but its filter is
+intentionally much shorter than stock. Starting with `0.2.14-dev`, `29`, `2A`, and
+`2B` are silent nonfaults. Any other unlisted nonzero value creates a dismissible raw
+warning instead of a guessed `EPB` and does not interrupt an established session.
 
 ## Register-by-register audit
 
 | Register | Stock use | Control significance | Remaining custom-firmware gap |
 |---:|---|---|---|
-| `20` | status and fault classifier | critical | service values `29/2A`, generic-unknown policy, and debounce differ from stock |
+| `20` | status and fault classifier | critical | known groups are faults; `2B/29/2A` are silent; other values warn; known-fault debounce remains shorter than stock |
 | `21` | load/current-like feedback; displayed and range-checked only in service diagnostics | diagnostic | retain raw telemetry; do not use as the primary Start acknowledgement |
 | `22` | mains input raw value; displayed as raw + 50 and checked against the service range | diagnostic/safety | current voltage conversion is correct; normal stock cooking still relies primarily on `R20` fault status |
 | `23` | IGBT NTC raw; converted through the stock LUT on newer board types | safety/control | custom firmware always applies the newer-board LUT and must account for the `R28` board-type rule |
@@ -94,11 +93,10 @@ No normal cooking branch consumes `R27` or `R2C` through `R2F`.
 
 1. **Implemented now:** accept `R26=01` as heating, enforce gear 35 and `A1` in
    every mode, show the real permitted power, and explain blocked upward edits.
-2. **High priority:** whitelist or explicitly handle the stock service statuses
-   `R20=29/2A` so they cannot become a false `EPB`.
-3. **High priority:** replace the broad one-second “unknown nonzero means fault” rule
-   with a documented policy that distinguishes known stock faults, confirmed service
-   statuses, relay transitions, and truly unknown values.
+2. **Implemented in `0.2.14-dev`:** keep `R20=2B`, `29`, and `2A` silent and
+   nonfatal while retaining their raw diagnostic visibility.
+3. **Implemented in `0.2.14-dev`:** replace the broad “unknown nonzero means fault”
+   rule with a persistent raw-value warning acknowledged by the first physical input.
 4. **High priority for the second cooker:** honor `R28` before selecting the NTC
    conversion method, and validate `R25/R28/R29` as board capabilities rather than
    assuming the first cooker revision.

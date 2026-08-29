@@ -41,6 +41,8 @@ typedef struct {
     uint32_t consecutive_bad_cycles;
     uint32_t active_zero_entries;
     uint32_t active_zero_resumes;
+    uint32_t unknown_r20_seq;
+    uint8_t unknown_r20_value;
     bool cookware_limited;
     bool stop_verified;
     bool heartbeat_gap_observed_stop;

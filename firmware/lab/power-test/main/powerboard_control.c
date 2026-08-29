@@ -31,7 +31,9 @@
 
 #define PB_ACTIVE_ZERO_0D 0x81U
 
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
 static const char *TAG = "pbdbg";
+#endif
 
 static i2c_master_bus_handle_t s_bus;
 static i2c_master_dev_handle_t s_device;
@@ -46,7 +48,10 @@ static int64_t s_run_deadline_us;
 static int64_t s_start_confirm_deadline_us;
 static int64_t s_heartbeat_gap_deadline_us;
 static unsigned s_no_pan_samples;
-static unsigned s_unknown_status_samples;
+static unsigned s_r20_fault_samples;
+static uint8_t s_r20_fault_value;
+static bool s_unknown_r20_present;
+static uint8_t s_unknown_r20_present_value;
 static unsigned s_stop_active_samples;
 #if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
 static bool s_feedback_reported;
@@ -125,6 +130,37 @@ static uint8_t cookware_limited_gear(uint8_t gear, bool limited)
 {
     return limited && gear > MCL02M_SMALL_COOKWARE_MAX_GEAR ?
            MCL02M_SMALL_COOKWARE_MAX_GEAR : gear;
+}
+
+static bool r20_known_fault(uint8_t value)
+{
+    return value == 0x01 || value == 0x0b || value == 0x0c ||
+           value == 0x15 || value == 0x16 || value == 0x17 ||
+           value == 0x18 || value == 0x19 || value == 0x1a ||
+           value == 0x1b || value == 0x1c || value == 0x1d;
+}
+
+static const char *r20_fault_name(uint8_t value)
+{
+    if (value == 0x0b) return "E03 HIGH VOLT";
+    if (value == 0x0c) return "E04 LOW VOLT";
+    if (value == 0x1b) return "E05 BOTTOM";
+    if (value == 0x17) return "E07 IGBT";
+    if (value == 0x15 || value == 0x16 || value == 0x18) return "E08 SENSOR";
+    if (value == 0x19 || value == 0x1a || value == 0x1c || value == 0x1d)
+        return "E10 CHANNEL";
+    return "E12 POWER";
+}
+
+static bool r20_silent_nonfault(uint8_t value)
+{
+    return value == 0 || value == 0x02 || value == 0x2b ||
+           value == 0x29 || value == 0x2a;
+}
+
+static bool r20_session_compatible(uint8_t value)
+{
+    return value != 0x02 && !r20_known_fault(value);
 }
 
 static bool state_can_energize(powerboard_state_t state)
@@ -282,7 +318,9 @@ static void fault_locked(const char *reason)
         s_force_stop = true;
         return;
     }
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
     const powerboard_state_t previous_state = s_status.state;
+#endif
     const char *fault_reason = reason == NULL ? "FAULT" : reason;
     s_status.state = PB_STATE_FAULT;
     s_status.target_gear = 0;
@@ -316,7 +354,7 @@ static void stop_locked(const char *reason)
     s_start_confirm_deadline_us = 0;
     s_heartbeat_gap_deadline_us = 0;
     s_no_pan_samples = 0;
-    s_unknown_status_samples = 0;
+    s_r20_fault_samples = 0;
     s_force_stop = true;
     strlcpy(s_status.fault, reason == NULL ? "STOP" : reason, sizeof(s_status.fault));
 }
@@ -338,7 +376,8 @@ static bool retained_session_healthy_locked(void)
     const uint16_t needed = (1U << 0) | (1U << 2) | (1U << 3) |
                             (1U << 4) | (1U << 6);
     return (s_status.valid_mask & needed) == needed &&
-           s_status.registers[0] == 0 && s_status.registers[6] != 0 &&
+           r20_session_compatible(s_status.registers[0]) &&
+           s_status.registers[6] != 0 &&
            s_status.registers[3] >= 0x41 && s_status.registers[3] < 0xf8 &&
            s_status.registers[4] >= 0x0b && s_status.registers[4] < 0xfc &&
            s_status.igbt_c < MCL02M_MAX_IGBT_C &&
@@ -447,7 +486,8 @@ static void update_status_feedback(void)
             s_status.state = PB_STATE_NO_PAN;
             s_start_confirm_deadline_us = 0;
         }
-    } else if (r20_valid && r20 == 0 && s_status.state == PB_STATE_NO_PAN) {
+    } else if (r20_valid && r20_session_compatible(r20) &&
+               s_status.state == PB_STATE_NO_PAN) {
         s_no_pan_samples = 0;
         s_status.state = PB_STATE_STARTING;
         s_start_confirm_deadline_us = 0;
@@ -462,7 +502,7 @@ static void update_status_feedback(void)
      * while paused/at active zero because the retained-session feedback has a
      * different meaning when W00 is zero.
      */
-    if (r20_valid && r20 == 0 && r26_valid &&
+    if (r20_valid && r20_session_compatible(r20) && r26_valid &&
         (s_status.state == PB_STATE_STARTING || s_status.state == PB_STATE_HEATING)) {
         if (r26 == 0x01) {
             s_status.cookware_limited = true;
@@ -474,40 +514,46 @@ static void update_status_feedback(void)
         }
     }
 
-    if (s_status.state == PB_STATE_STARTING && r20_valid && r20 == 0 &&
+    if (s_status.state == PB_STATE_STARTING && r20_valid &&
+        r20_session_compatible(r20) &&
         r26_valid && (r26 == 0x01 || r26 == 0x02)) {
         s_status.state = PB_STATE_HEATING;
         s_start_confirm_deadline_us = 0;
     }
 
-    if (r20_valid && r20 == 0x2b) {
-        /* Verified stock relay-transition status; nonfatal for up to ten seconds. */
-        if (++s_unknown_status_samples >= MCL02M_R20_TRANSITION_MAX_SAMPLES &&
-            state_session_open(s_status.state)) {
-            fault_locked("POWER TRANSITION");
+    if (r20_valid && r20_known_fault(r20)) {
+        if (r20 != s_r20_fault_value) {
+            s_r20_fault_value = r20;
+            s_r20_fault_samples = 1;
+        } else {
+            ++s_r20_fault_samples;
         }
-    } else if (r20_valid && r20 != 0 && r20 != 0x02) {
-        const unsigned unknown_sample = ++s_unknown_status_samples;
+        s_unknown_r20_present = false;
 #if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
-        ESP_LOGW(TAG, "U,%s,%02X,%02X,%u/%u",
+        ESP_LOGW(TAG, "E,%s,%02X,%02X,%u/%u",
                  powerboard_state_name(s_status.state), r20, r26,
-                 unknown_sample, MCL02M_UNKNOWN_STATUS_SAMPLES_TO_FAULT);
+                 s_r20_fault_samples, MCL02M_KNOWN_R20_FAULT_SAMPLES);
 #endif
-        if (unknown_sample >= MCL02M_UNKNOWN_STATUS_SAMPLES_TO_FAULT &&
+        if (s_r20_fault_samples >= MCL02M_KNOWN_R20_FAULT_SAMPLES &&
             state_session_open(s_status.state)) {
-            const char *fault = "POWER STATUS";
-            if (r20 == 0x0b) fault = "E03 HIGH VOLT";
-            else if (r20 == 0x0c) fault = "E04 LOW VOLT";
-            else if (r20 == 0x1b) fault = "E05 BOTTOM";
-            else if (r20 == 0x17) fault = "E07 IGBT";
-            else if (r20 == 0x15 || r20 == 0x16 || r20 == 0x18) fault = "E08 SENSOR";
-            else if (r20 == 0x19 || r20 == 0x1a || r20 == 0x1c || r20 == 0x1d)
-                fault = "E10 CHANNEL";
-            else if (r20 == 0x01) fault = "E12 POWER";
-            fault_locked(fault);
+            fault_locked(r20_fault_name(r20));
+        }
+    } else if (r20_valid && !r20_silent_nonfault(r20)) {
+        s_r20_fault_samples = 0;
+        if (!s_unknown_r20_present || r20 != s_unknown_r20_present_value) {
+            s_unknown_r20_present = true;
+            s_unknown_r20_present_value = r20;
+            s_status.unknown_r20_value = r20;
+            ++s_status.unknown_r20_seq;
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+            ESP_LOGW(TAG, "W,%s,R20,%02X,R26,%02X,SEQ,%" PRIu32,
+                     powerboard_state_name(s_status.state), r20, r26,
+                     s_status.unknown_r20_seq);
+#endif
         }
     } else {
-        s_unknown_status_samples = 0;
+        s_r20_fault_samples = 0;
+        s_unknown_r20_present = false;
     }
 
     if (s_status.state == PB_STATE_HEARTBEAT_GAP && r26_valid && r26 == 0) {
@@ -575,7 +621,7 @@ static void emit_status(void)
              "%02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X,"
              "%04X,%u,%u,%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ","
              "%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ","
-             "%" PRIu32 ",%u,%u,%u,%u,%s",
+             "%" PRIu32 ",%u,%u,%u,%u,%02X,%02X,%" PRIu32 ",%s",
              powerboard_state_name(s.state), s.target_gear, s.applied_gear, s.topology,
              s.last_command_0d, s.last_command_00, s.last_command_0c,
              s.registers[0], s.registers[1], s.registers[2], s.registers[3],
@@ -587,7 +633,8 @@ static void emit_status(void)
              s.stop_verified ? 1U : 0U,
              s.heartbeat_gap_observed_stop ? 1U : 0U,
              MCL02M_ACTIVE_ZERO_ENABLED ? 1U : 0U,
-             s.cookware_limited ? 1U : 0U, s.fault);
+             s.cookware_limited ? 1U : 0U, s.registers[8],
+             s.unknown_r20_value, s.unknown_r20_seq, s.fault);
 #endif
     char json[768];
     powerboard_control_status_json(json, sizeof(json));
@@ -776,19 +823,21 @@ size_t powerboard_control_status_json(char *output, size_t output_size)
         "\"gear_target\":%u,\"gear_applied\":%u,\"topology\":%u,"
         "\"cmd_0d\":%u,\"cmd_00\":%u,\"cmd_0c\":%u,"
         "\"r20\":%u,\"r21\":%u,\"r22\":%u,\"r23\":%u,\"r24\":%u,"
-        "\"r26\":%u,\"r27\":%u,\"igbt_c\":%u,\"bottom_c\":%u,"
+        "\"r26\":%u,\"r27\":%u,\"r28\":%u,\"igbt_c\":%u,\"bottom_c\":%u,"
         "\"valid_mask\":%u,\"run_ms\":%" PRIu32 ",\"remaining_ms\":%" PRIu32 ","
         "\"arm_ms\":%" PRIu32 ",\"start_confirm_ms\":%" PRIu32 ","
         "\"hb_gap_ms\":%" PRIu32 ",\"stop_verified\":%s,"
         "\"hb_gap_observed_stop\":%s,\"cycles\":%" PRIu32 ",\"bad_cycles\":%" PRIu32 ","
         "\"consecutive_bad_cycles\":%" PRIu32 ","
         "\"active_zero_entries\":%" PRIu32 ",\"active_zero_resumes\":%" PRIu32 ","
-        "\"active_zero_enabled\":%s,\"cookware_limited\":%s,\"fault\":\"%s\"}",
+        "\"active_zero_enabled\":%s,\"cookware_limited\":%s,"
+        "\"unknown_r20_value\":%u,\"unknown_r20_seq\":%" PRIu32 ",\"fault\":\"%s\"}",
         esp_timer_get_time() / 1000, powerboard_state_name(s.state),
         s.target_gear, s.applied_gear, s.topology,
         s.last_command_0d, s.last_command_00, s.last_command_0c,
         s.registers[0], s.registers[1], s.registers[2], s.registers[3],
-        s.registers[4], s.registers[6], s.registers[7], s.igbt_c, s.bottom_c,
+        s.registers[4], s.registers[6], s.registers[7], s.registers[8],
+        s.igbt_c, s.bottom_c,
         s.valid_mask, s.run_elapsed_ms, s.run_remaining_ms, s.arm_remaining_ms,
         s.start_confirm_remaining_ms, s.heartbeat_gap_remaining_ms,
         s.stop_verified ? "true" : "false",
@@ -796,7 +845,8 @@ size_t powerboard_control_status_json(char *output, size_t output_size)
         s.bad_cycles, s.consecutive_bad_cycles,
         s.active_zero_entries, s.active_zero_resumes,
         MCL02M_ACTIVE_ZERO_ENABLED ? "true" : "false",
-        s.cookware_limited ? "true" : "false", s.fault);
+        s.cookware_limited ? "true" : "false", s.unknown_r20_value,
+        s.unknown_r20_seq, s.fault);
 }
 
 esp_err_t powerboard_control_arm(unsigned window_ms)

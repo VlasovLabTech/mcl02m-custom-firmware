@@ -45,6 +45,8 @@ keeping all heating commands behind the physical controls on the cooker.
 - custom OLED artwork, power/status LEDs, and six PWM melodies;
 - NoPan recovery, latched errors, thermal guards, hard run limit, safe boot Stop,
   and a single 500 ms power-control heartbeat.
+- dismissible warnings with the exact raw value for previously unseen nonzero
+  power-board `R20` statuses; known fault groups retain their normal E-codes.
 
 The complete three-language operating guide is available as a single offline
 file: **[User manual](docs/user-manual.html)**.
@@ -172,7 +174,7 @@ modified. See [Flashing and recovery](docs/FLASHING.md) before writing anything.
 
 ## Development status
 
-The current source version is `0.2.13-dev`; the development unit remains on the
+The current source version is `0.2.14-dev`; the development unit remains on the
 hash-verified `0.2.11-dev` image written to stock `ota_1` on 2026-08-28. Earlier
 supervised testing
 confirmed retained-session active zero, Pause/Resume
@@ -185,7 +187,9 @@ transiently requesting gears 36…55. Source `0.2.11-dev` also adds a physical S
 screen for the firmware version. Unflashed source `0.2.12-dev` begins the deferred
 state-machine work by fixing five bounded configuration/transition defects. Unflashed
 `0.2.13-dev` adds stock-compatible restricted-cookware handling and a complete
-power-board response/register re-audit. The
+power-board response/register re-audit. Unflashed `0.2.14-dev` adds the live `R28`
+board revision to Settings and replaces unknown-`R20` generic faults with physical-
+input-acknowledged warnings. The
 remaining findings and proposed fix sequence are preserved in the
 [state-machine implementation plan](docs/STATE_MACHINE_IMPLEMENTATION_PLAN.md).
 The new source is built and checked offline but has not been flashed.

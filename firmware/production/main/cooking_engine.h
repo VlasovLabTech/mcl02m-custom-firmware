@@ -21,6 +21,7 @@ esp_err_t cooking_pause_resume(void);
 esp_err_t cooking_sleep(void);
 esp_err_t cooking_wake(void);
 esp_err_t cooking_acknowledge(void);
+esp_err_t cooking_acknowledge_warning(void);
 
 esp_err_t cooking_timer_set(uint32_t seconds, bool enabled);
 esp_err_t cooking_timer_toggle(void);

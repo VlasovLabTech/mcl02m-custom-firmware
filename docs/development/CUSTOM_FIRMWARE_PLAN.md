@@ -44,7 +44,8 @@ NFC, штатные рецепты, голосовое управление Xiao
   платой. Интерфейсная ESP передаёт желаемую мощность и следит за подтверждением.
 - `R26=01/02` confirms actual heating (`01` is the stock restricted-cookware state,
   capped at gear 35/`A1`); `R20=02` means NoPan;
-  `R20=2B` — штатный переход реле, допустимый до 10 s.
+  `R20=2B` and stock service events `29/2A` are silent nonfaults without an
+  invented timeout; another unknown nonzero value is retained as a raw warning.
 - Силовой heartbeat-watchdog с таймаутом до 5 s не обнаружен: при пропаже
   команд нагрев продолжался. Поэтому ESP32 обязана иметь собственный жёсткий
   safety supervisor и watchdog.
@@ -583,7 +584,9 @@ no-pan, error и две стадии Sleep. Persistent fault/NoPan/Complete вс
 - UI/web могут менять желаемое значение сколько угодно часто, но driver
   объединяет изменения и передаёт только последнее не чаще heartbeat;
 - `STARTING` continues until `R26=01/02`, timeout 8 s;
-- `R20=2B` разрешён максимум 10 s;
+- `R20=2B` and stock service events `29/2A` are silent nonfaults without an
+  invented timeout; another unknown nonzero `R20` is preserved as a raw warning
+  instead of being promoted to a guessed fault;
 - две последовательные плохие I²C-цикла — Stop/fault;
 - аппаратный ESP task watchdog и interrupt watchdog включены;
 - операции Wi-Fi, DNS, flash/NVS и отрисовка никогда не блокируют safety task;

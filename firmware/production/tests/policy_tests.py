@@ -64,6 +64,35 @@ def user_power_step(selected: int, delta: int, cookware_limited: bool) -> tuple[
     return requested, False
 
 
+def r20_policy(value: int) -> str:
+    """Classify stock-known statuses without inventing faults for unknown values."""
+    known_faults = {0x01, 0x0B, 0x0C, 0x15, 0x16, 0x17,
+                    0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D}
+    if value == 0:
+        return "normal"
+    if value == 0x02:
+        return "no_pan"
+    if value in {0x2B, 0x29, 0x2A}:
+        return "silent_nonfault"
+    if value in known_faults:
+        return "known_fault"
+    return "dismissible_warning"
+
+
+def r20_warning_events(values: list[int]) -> list[int]:
+    """Emit once per continuous unknown value, rearming after a known status."""
+    present: int | None = None
+    events: list[int] = []
+    for value in values:
+        if r20_policy(value) == "dismissible_warning":
+            if present != value:
+                present = value
+                events.append(value)
+        else:
+            present = None
+    return events
+
+
 def profile_sequence(durations: list[int]) -> list[int]:
     """Return the physical 1-based cells that actually execute."""
     assert len(durations) == 5
@@ -200,6 +229,14 @@ def run() -> None:
     assert user_power_step(35, 5, True) == (35, True)
     assert user_power_step(35, -5, True) == (30, False)
     assert user_power_step(35, 5, False) == (40, False)
+    assert r20_policy(0x00) == "normal"
+    assert r20_policy(0x02) == "no_pan"
+    assert r20_policy(0x2B) == "silent_nonfault"
+    assert r20_policy(0x29) == "silent_nonfault"
+    assert r20_policy(0x2A) == "silent_nonfault"
+    assert r20_policy(0x17) == "known_fault"
+    assert r20_policy(0x7F) == "dismissible_warning"
+    assert r20_warning_events([0x7F, 0x7F, 0x00, 0x7F, 0x29, 0x7F]) == [0x7F] * 3
     assert profile_sequence([2400, 1500, 0, 300, 0]) == [1, 2, 4]
     assert profile_sequence([0, 0, 0, 0, 0]) == []
     assert active_zero_command("ACTIVE_ZERO") == (0x81, 0, 0)

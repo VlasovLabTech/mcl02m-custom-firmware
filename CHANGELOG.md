@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.14-dev — 2026-08-29
+
+- Extended `SETUP → FIRMWARE → VERSION` with the live raw `R28` power-board
+  revision/type byte. All four firmware/board rows are now left-aligned.
+- Made `R20=2B` a silent, unbounded, nonfault relay-transition status. It remains
+  visible in raw diagnostics and no longer escalates after ten seconds.
+- Made stock service events `R20=29/2A` silent nonfaults during normal cooking; their
+  raw values remain available in diagnostics.
+- Replaced generic `EPB` escalation for every other unknown nonzero `R20` with a
+  persistent warning that displays the exact hexadecimal value. The first physical
+  input acknowledges only the warning, without changing power or Pause state.
+- Kept the known `R20` fault groups as faults and made their debounce require
+  consecutive samples of the same value. Unknown warnings no longer obstruct an
+  already-started session's Start confirmation or retained-session Resume.
+- Added `R28` and unknown-warning fields to compact UART and authenticated Wi-Fi
+  diagnostics, plus policy/static regression coverage.
+
 ## 0.2.13-dev — 2026-08-29
 
 - Reclassified `R26=01` from an unrecognized response to the stock firmware's valid

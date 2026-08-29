@@ -281,11 +281,23 @@ def main() -> int:
             "VIEW_FIRMWARE_VERSION" in ui and
             "display_prod_set_version_overlay" in ui and
             "MCL02M_FIRMWARE_VERSION" in ui and
+            '"PWR BOARD"' in ui and
+            'snprintf(l0, sizeof(l0), "R28 %02X"' in ui and
             "OVERLAY_VERSION" in display and
-            "ui_oled_show_version(overlay_a, overlay_b)" in display and
-            "oled_draw_right(title, 15, 1, 1);" in outputs and
-            "oled_draw_right(version, 25, 1, 1);" in outputs,
-            "physical Settings exposes a two-line, vertically centered, right-aligned firmware version screen")
+            "ui_oled_show_version(overlay_a, overlay_b, overlay_c, overlay_d)" in display and
+            "oled_draw_scaled_text(firmware_title, 0, 5, 1, 1);" in outputs and
+            "oled_draw_scaled_text(board_revision, 0, 37, 1, 1);" in outputs,
+            "physical Settings shows left-aligned firmware and live R28 power-board revision")
+    require("r20_silent_nonfault" in power and
+            "value == 0x2b" in power and "value == 0x29" in power and
+            "value == 0x2a" in power and
+            "!r20_silent_nonfault(r20)" in power and
+            "s_status.unknown_r20_seq" in power and
+            '"WARNING", "UNKNOWN", r20, "PRESS", "ANY KEY"' in display and
+            "cooking_acknowledge_warning();" in ui and
+            "input_status.r20_warning_active && !true_urgent" in ui and
+            'fault_locked("POWER TRANSITION")' not in power,
+            "unknown R20 is dismissible warning while 2B/29/2A stay silent and nonfatal")
     require("show_i2c_debug" in settings and
             "s_settings.show_i2c_debug = 0;" in settings and
             "if (stored.schema <= 4U) s_settings.show_i2c_debug = 0;" in settings and

@@ -4,9 +4,9 @@ Status: **in progress; the first bounded fix batch is implemented, while the rem
 
 Audit baseline: `0.2.10-dev`, commit `2b5784e` (`2026-08-28`)
 
-Current source: `0.2.13-dev`; the first five bounded findings below and the separate
-restricted-cookware response fix are implemented and checked offline but have not
-been flashed
+Current source: `0.2.14-dev`; the first five bounded findings, restricted-cookware
+response, power-board revision display, and unknown-`R20` warning policy are
+implemented and checked offline but have not been flashed
 
 This document preserves the complete control-flow review so the findings can be
 discussed, prioritized, and implemented later without relying on chat history. It is

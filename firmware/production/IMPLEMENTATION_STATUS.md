@@ -1,9 +1,9 @@
 # MCL02M custom firmware — implementation status
 
 Дата: 2026-08-29
-Версия исходников: `0.2.13-dev`
+Версия исходников: `0.2.14-dev`
 Статус: the development unit remains on the hash-verified `0.2.11-dev` app
-written to stock `ota_1` on 2026-08-28. Unflashed source `0.2.13-dev` fixes the first
+written to stock `ota_1` on 2026-08-28. Unflashed source `0.2.14-dev` fixes the first
 five bounded state-integrity findings and implements stock-compatible restricted
 cookware handling. Earlier
 supervised tests confirmed retained-session active zero, Pause/Resume
@@ -11,8 +11,9 @@ without unwanted relay switching, Sleep/Wake, I2C debug display, and temperature
 operation. At a 125 °C empty-pan setpoint, initial heating overshot by approximately
 5 °C and subsequent holding was accurate. The source includes adaptive initial
 braking, pause-safe output recomputation, and direct low/high topology crossing. Its
-physical Settings menu also exposes the compile-time firmware version on a dedicated
-two-line OLED screen. The `0.2.13-dev` image is built and checked offline but has not
+physical Settings menu exposes both the compile-time firmware version and live raw
+power-board `R28` on a dedicated four-line, left-aligned OLED screen. The
+`0.2.14-dev` image is built and checked offline but has not
 been flashed. The earlier one-time NVS refresh is complete and must not be repeated
 automatically.
 
@@ -22,6 +23,8 @@ automatically.
 |---|---|
 | POWER | `0…99`; encoder slow `1`, fast `5`; вращение не запускает нагрев; gear 0 enters the active-zero session rather than full Stop |
 | SMALL COOKWARE | `R26=01` is accepted as normal heating, not a fault; every control mode is capped at real gear `35` and forced to `A1`; POWER shows the permitted value, rejects upward edits above 35 with a 3-s explanation, and still allows downward edits; `R26=02` clears the restriction |
+| VERSION / BOARD | the physical firmware screen has four left-aligned rows: firmware label/version and live raw power-board `R28 XX`; invalid startup data is shown as `R28 --` |
+| UNKNOWN R20 | `2B`, `29`, and `2A` remain silent nonfaults; another unrecognized nonzero value shows a persistent `WARNING / UNKNOWN / R20 XX`; the first physical input dismisses only the warning and the established session continues |
 | TEMPERATURE | `40…190 °C`; entering T°C immediately copies and clamps the setpoint into editor-owned state; PREHEAT uses `56/77/99`; braking reserve is `clamp(10 °C + positive four-second rise, 10…20 °C)`, with a 15 °C minimum from 170 °C and 5 °C phase hysteresis; APPROACH uses `8 + 2 × error`; PI uses `4 + 2 × error + 0.08 × integral`; APPROACH/HOLD remain capped at `35`; output is active zero at/above target and PI resumes one degree below |
 | HOLD SATURATED | gear `35` в течение 90 s при ошибке не менее 3 °C: orange, warning и сообщение; предел не повышается |
 | Start | только отдельным нажатием центра; силовой preflight и `STARTING` до `R26=01/02` |

@@ -39,7 +39,8 @@ esp_err_t ui_oled_show_time_editor(const char *title, const char *value,
                                    const char *footer);
 esp_err_t ui_oled_show_complete(const char *text);
 esp_err_t ui_oled_show_info(unsigned voltage_v, unsigned ntc_c, unsigned igbt_c, bool valid);
-esp_err_t ui_oled_show_version(const char *title, const char *version);
+esp_err_t ui_oled_show_version(const char *firmware_title, const char *firmware_version,
+                               const char *board_title, const char *board_revision);
 esp_err_t ui_oled_show_sleep_clock(const char *text, unsigned y, unsigned alignment);
 esp_err_t ui_oled_power(bool enabled);
 esp_err_t ui_buzzer_chirp(unsigned frequency_hz, unsigned duration_ms);

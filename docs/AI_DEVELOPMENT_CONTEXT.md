@@ -13,12 +13,13 @@ from a request to edit or build software.
 - Xiaomi device model: `chunmi.ihcooker.v2`.
 - Interface controller: Espressif `ESP-WROOM-32D` (classic ESP32).
 - Display: monochrome 64×48 OLED, page-major 384-byte framebuffer.
-- Current custom source version: `0.2.13-dev`.
+- Current custom source version: `0.2.14-dev`.
 - Framework: ESP-IDF.
 - Public repository language: English for technical documents; the device UI
   supports English, Russian, and Simplified Chinese.
-- The physical Settings menu has a dedicated two-line, right-aligned firmware-version
-  screen. Deferred control-flow findings are preserved in
+- The physical Settings menu has a dedicated four-line, left-aligned screen for the
+  firmware version and live raw `R28` power-board revision/type. Deferred control-flow
+  findings are preserved in
   `docs/STATE_MACHINE_IMPLEMENTATION_PLAN.md`; they are not implemented merely by
   being documented there.
 
@@ -237,7 +238,7 @@ time.
 
 | Register | Meaning / current interpretation |
 |---|---|
-| `R20` | status: `00` normal, `02` no pan, `2B` transient relay state accepted for up to 10 s; stable error groups map to E-codes |
+| `R20` | status: `00` normal, `02` no pan, `2B` silent relay transition, `29/2A` silent stock service events; known persistent groups map to E-codes and other values produce an acknowledged warning |
 | `R21` | load/power feedback; rises with applied power |
 | `R22` | mains raw; approximately `voltage V - 50` on this revision |
 | `R23` | IGBT NTC raw; use extracted lookup table |
@@ -245,6 +246,7 @@ time.
 | `R25` | startup capability/version byte; low nibble `0A` on the tested revision |
 | `R26` | output/cookware capability: `00` inactive, `01` restricted to gear 35 and `A1`, `02` unrestricted |
 | `R27` | auxiliary/topology feedback `00/01/02`; exact physical meaning unconfirmed |
+| `R28` | raw power-board revision/type selector, displayed in physical Settings and retained in diagnostics |
 
 Do not replace the lookup tables with linear fits in production. Linear fits were
 useful only for early diagnostics.
@@ -255,6 +257,13 @@ and direct output changes. POWER mode reports the real permitted value, rejects
 upward edits above 35 with a three-second explanatory OLED notice, and continues to
 allow downward edits. See `docs/reverse-engineering/STOCK_POWER_BOARD_RESPONSE_AUDIT.md`
 for the stock response/register audit and the remaining compatibility findings.
+
+Unknown nonzero `R20` values never receive an invented generic fault code. The OLED
+shows a persistent `WARNING / UNKNOWN / R20 XX` screen, compact UART and authenticated
+status retain the raw value, and the first physical action dismisses the screen without
+executing its normal control action. The same continuously present value remains
+dismissed; a recognized intervening value or a different unknown value rearms it.
+Known stock fault groups remain faults. `R20=2B`, `29`, and `2A` are silent nonfaults.
 
 ### No-pan handling
 
@@ -550,7 +559,7 @@ Before any release or hardware write:
 8. After flashing, first perform a no-heat boot/UI/I²C soak, then supervised short
    power tests with a water load.
 
-The reference `0.2.13-dev` artifact identified in
+The reference `0.2.14-dev` artifact identified in
 `firmware/production/BUILD_MANIFEST.md` is an offline build and has not been flashed.
 The development unit remains on hash-verified `0.2.11-dev` in stock `ota_1`; that
 write did not touch the bootloader, partition table, NVS, `otadata`, `ota_0`, PHY or
