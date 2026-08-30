@@ -2,11 +2,11 @@
 
 Этот документ описывает будущую процедуру, но **не разрешает запись сейчас**.
 
-Current reference app artifact: `build/mcl02m_custom.bin` (`0.2.25-dev`). Its exact
-size and SHA-256 are recorded in `BUILD_MANIFEST.md`; it has not been flashed. The
-deployed `0.2.24-dev` app was flashed to stock `ota_1` at `0x170000` on 2026-08-30
-after explicit authorization, and esptool verified the written data. No other
-partition was written.
+Current source version: `0.2.28-dev`; its reference public app artifact has not been flashed.
+The exact size and SHA-256 are recorded in `BUILD_MANIFEST.md`. The preceding
+`0.2.26-dev` artifact was flashed to stock `ota_1` at `0x170000` on 2026-08-30 after
+explicit authorization, and esptool verified the written data. No other partition
+was written.
 Чистая пересборка может иметь другой hash из-за compile metadata; для release
 нужно сохранить новый manifest и заново пройти все gates.
 
@@ -51,7 +51,7 @@ required. The firmware contains no automatic NVS erase.
    frame; listen for unexpected relay clicks.
 4. Pause/Resume and Cancel. Confirm Pause sends `81/00/00`, Resume does not send
    `00/00/00`, the cooking timer freezes, and Cancel does send full Stop.
-5. NoPan remove/return well inside 60 s; countdown must freeze. Confirm a safe-hold
+5. NoPan remove/return well inside the 128 s melody; countdown must freeze. Confirm a safe-hold
    `81/00/00` generation precedes the freshly recomputed Resume generation, including
    an `R26=01` small-cookware return.
 6. Boundary commands 35↔36 and 55↔56 no faster than stock 500-ms heartbeat.

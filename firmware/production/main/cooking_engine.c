@@ -60,6 +60,9 @@ static int64_t s_active_zero_accumulator_us;
 static int64_t s_profile_zero_accumulator_us;
 static bool s_saturation_announced;
 static bool s_no_pan_announced;
+static unsigned s_no_pan_sound_start;
+static unsigned s_no_pan_sound_completion;
+static int64_t s_no_pan_sound_started_us;
 static bool s_waiting_pan_before_start;
 static bool s_active_zero;
 static bool s_pan_return_waiting_output;
@@ -114,8 +117,33 @@ static void no_pan_sound_locked(void)
 {
     if (!s_no_pan_announced) {
         s_no_pan_announced = true;
+        s_no_pan_sound_start = sound_start_count(SOUND_NO_PAN);
+        s_no_pan_sound_completion = sound_completion_count(SOUND_NO_PAN);
+        s_no_pan_sound_started_us = 0;
         sound_play(SOUND_NO_PAN);
     }
+}
+
+static void cancel_no_pan_sound_locked(void)
+{
+    if (s_no_pan_announced) sound_cancel(SOUND_NO_PAN);
+}
+
+static bool no_pan_melody_finished_locked(int64_t now_us)
+{
+    if (!s_no_pan_announced) return false;
+    if (sound_completion_count(SOUND_NO_PAN) != s_no_pan_sound_completion)
+        return true;
+    if (sound_start_count(SOUND_NO_PAN) != s_no_pan_sound_start) {
+        if (s_no_pan_sound_started_us == 0) s_no_pan_sound_started_us = now_us;
+        return now_us - s_no_pan_sound_started_us >=
+               (int64_t)COOKER_NO_PAN_PLAY_FAILSAFE_MS * 1000LL;
+    }
+    /* A protected Wake/Sleep may legitimately finish before NoPan starts. Keep
+     * that queue wait separate so it cannot consume the 128 s melody budget. */
+    return s_no_pan_since_us != 0 &&
+           now_us - s_no_pan_since_us >=
+               (int64_t)COOKER_NO_PAN_START_FAILSAFE_MS * 1000LL;
 }
 
 static void reset_temperature_after_interruption_locked(bool observe)
@@ -395,7 +423,7 @@ static void begin_normal_stop_locked(const char *reason, bool complete)
         (void)powerboard_control_stop(s_stop_reason);
         return;
     }
-    if (s_no_pan_announced) sound_stop();
+    cancel_no_pan_sound_locked();
     powerboard_control_stop(reason);
     s_stop_terminal = complete ? STOP_TERMINAL_COMPLETE : STOP_TERMINAL_IDLE;
     strlcpy(s_stop_reason, reason == NULL ? "STOP" : reason, sizeof(s_stop_reason));
@@ -454,7 +482,7 @@ static esp_err_t apply_output_locked(uint8_t gear)
         s_status.active_zero = s_active_zero || pb.state == PB_STATE_PAUSED;
         if (pb.transition_pending) {
             if (pb.transition_kind == PB_TRANSITION_ACTIVE_ZERO) {
-                if (s_no_pan_announced) sound_stop();
+                cancel_no_pan_sound_locked();
                 s_no_pan_announced = false;
                 s_no_pan_since_us = 0;
                 strlcpy(s_status.detail, "ACTIVE ZERO PENDING",
@@ -710,7 +738,7 @@ static void apply_confirmed_transition_locked(const powerboard_status_t *pb,
         s_active_zero = true;
         s_status.active_zero = true;
         s_status.state = COOK_STATE_NO_PAN;
-        if (s_no_pan_announced) sound_stop();
+        cancel_no_pan_sound_locked();
         s_no_pan_announced = false;
         s_no_pan_since_us = 0;
         s_pan_return_waiting_output = true;
@@ -854,7 +882,7 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
         const bool r20_valid = (pb->valid_mask & 1U) != 0;
         s_status.pan_present = r20_valid && pb->registers[0] == 0;
         if (s_status.pan_present) {
-            if (s_no_pan_announced) sound_stop();
+            cancel_no_pan_sound_locked();
             s_waiting_pan_before_start = false;
             s_no_pan_since_us = 0;
             s_no_pan_announced = false;
@@ -863,7 +891,7 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
                 set_fault_locked(FAULT_START_TIMEOUT, "SCHEDULE START BLOCKED");
         } else {
             no_pan_sound_locked();
-            if (now_us - s_no_pan_since_us >= COOKER_NO_PAN_TIMEOUT_MS * 1000LL)
+            if (no_pan_melody_finished_locked(now_us))
                 set_fault_locked(FAULT_E02_NO_PAN_TIMEOUT, "E02 NO PAN TIMEOUT");
         }
         return;
@@ -874,7 +902,7 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
         (pb->transition_kind == PB_TRANSITION_PAN_RETURN_HOLD ||
          pb->transition_kind == PB_TRANSITION_PAN_RETURN_RESUME);
     if (pan_return_pending) {
-        if (s_no_pan_announced) sound_stop();
+        cancel_no_pan_sound_locked();
         s_no_pan_announced = false;
         strlcpy(s_status.detail,
                 pb->transition_kind == PB_TRANSITION_PAN_RETURN_HOLD ?
@@ -885,7 +913,7 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
     if (pb->state == PB_STATE_NO_PAN) {
         enter_no_pan_context_locked(now_us);
         no_pan_sound_locked();
-        if (now_us - s_no_pan_since_us >= COOKER_NO_PAN_TIMEOUT_MS * 1000LL)
+        if (no_pan_melody_finished_locked(now_us))
             set_fault_locked(FAULT_E02_NO_PAN_TIMEOUT, "E02 NO PAN TIMEOUT");
         return;
     }
@@ -967,7 +995,7 @@ static void handle_intent_locked(const intent_t *intent)
                 powerboard_status_t pb;
                 powerboard_control_get_status(&pb);
                 copy_transition_status_locked(&pb);
-                if (pausing_no_pan && s_no_pan_announced) sound_stop();
+                if (pausing_no_pan) cancel_no_pan_sound_locked();
                 if (pausing_no_pan) {
                     s_no_pan_announced = false;
                     s_no_pan_since_us = 0;
@@ -1012,12 +1040,14 @@ static void handle_intent_locked(const intent_t *intent)
     case INTENT_SLEEP:
         if (!state_active(s_status.state) && s_status.state != COOK_STATE_FAULT &&
             s_status.state != COOK_STATE_DELAYED &&
-            s_status.state != COOK_STATE_STOPPING) s_status.state = COOK_STATE_SLEEP;
+            s_status.state != COOK_STATE_STOPPING &&
+            !(s_status.readings_valid &&
+              s_status.bottom_c > COOKER_HOT_THRESHOLD_C))
+            s_status.state = COOK_STATE_SLEEP;
         break;
     case INTENT_WAKE:
         if (s_status.state == COOK_STATE_SLEEP) {
             s_status.state = COOK_STATE_IDLE;
-            sound_stop();
             sound_play(SOUND_WAKE);
         } else if (s_status.state == COOK_STATE_COMPLETE) {
             s_status.state = COOK_STATE_IDLE;
@@ -1068,7 +1098,7 @@ static void handle_intent_locked(const intent_t *intent)
         }
         break;
     case INTENT_SCHEDULE_CANCEL:
-        if (s_waiting_pan_before_start && s_no_pan_announced) sound_stop();
+        if (s_waiting_pan_before_start) cancel_no_pan_sound_locked();
         if (s_status.state == COOK_STATE_DELAYED || s_waiting_pan_before_start)
             s_status.state = COOK_STATE_IDLE;
         s_status.delayed_start = false;

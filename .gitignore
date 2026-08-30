@@ -12,6 +12,11 @@
 *.dump
 *.nvs
 
+# Private/local melody sources and private sound-flavor build output.
+/assets/sounds/midi/
+/tools/sound/
+/firmware/production/build_private/
+
 # ESP-IDF and CMake output.
 **/build/
 **/build_*/

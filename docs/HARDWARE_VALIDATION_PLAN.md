@@ -1,8 +1,9 @@
 # Supervised Hardware Validation Plan
 
-Status: `0.2.24-dev` was flashed app-only after explicit authorization; the targeted
-boot, Delayed Start and transactional Stop validation passed. This document does not
-authorize another flash or heating session by itself.
+Status: `0.2.26-dev` was flashed app-only after explicit authorization; physical boot
+and UI confirmation remain pending. The targeted `0.2.24-dev` boot, Delayed Start and
+transactional Stop validation passed. This document does not authorize another flash
+or heating session by itself.
 
 The objective is to validate the current fix and regression-sensitive
 state-machine paths with one passive UART capture. The operator performs all physical
@@ -78,8 +79,8 @@ hash and the one-shot `B` tuple.
 ## 4. Recovery and cookware session
 
 1. Start at low POWER with suitable cookware.
-2. Remove the cookware well before the 60-second NoPan limit. Confirm `NO_PAN`, zero
-   applied output, frozen countdown and repeating warning cadence.
+2. Remove the cookware well before the 128-second NoPan melody ends. Confirm
+   `NO_PAN`, zero applied output, frozen countdown and uninterrupted playback.
 3. Return the same cookware. Require a confirmed `PAN_RETURN_HOLD` active-zero
    generation before the separately recomputed `PAN_RETURN_RESUME` generation.
 4. Repeat with the known small cookware. `R26=01` must cap the honest selected and
@@ -142,6 +143,16 @@ Append one row per supervised session:
 | Date/time | Firmware version | App SHA-256 | Cooker | Boot `B` tuple | Steps | Result | Log path | Physical observations |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 2026-08-30 01:51–02:16 MSK | `0.2.24-dev` | `f547b7dd4ba9bddb1a50b5ff6a9ad9d920a579b77a55acac8e06d3c8571fd21c` | Development unit | required `0F30`; service `F000/0`; `R25/R28/R29=0A/0B/32` | Boot, version, delayed POWER 10 Start, delayed cancellation, delayed TEMPERATURE 55 °C Start, POWER 10 NoPan/return, user Stops | PASS | `_local_private/validation/uart-20260830-015103.log`; `_local_private/validation/uart-20260830-020518.log`; `_local_private/validation/uart-20260830-021359.log` | Both delayed modes reached confirmed `COOKING` without `ETM`; cancellation did not revive Start; temperature reached 55 °C and entered active zero; NoPan forced zero, return confirmed `PAN_RETURN_HOLD` before a separate `PAN_RETURN_RESUME` to gear 10; all Stops reached confirmed `R26=00`, `S,DONE`, `IDLE` |
+
+Pending for the next supervised `0.2.26-dev` session: repeat step 7 and verify the
+new persistent `time` artwork, lower-right countdown/mode badge, expiry into the
+selected cooking mode, and cancellation before the deadline.
+
+Pending after a future `0.2.28-dev` flash: verify one full 128-second NoPan melody,
+E02 only after its final note, cookware return before completion without E02, and a
+second removal restarting from the first note. For the private flavor, verify that
+ordinary input does not interrupt or queue delayed clicks behind Wake, Cancel stops
+Wake, long-hold Sleep replaces Wake, and Sleep finishes before a queued Wake begins.
 
 Keep these decisions open until hardware evidence exists:
 

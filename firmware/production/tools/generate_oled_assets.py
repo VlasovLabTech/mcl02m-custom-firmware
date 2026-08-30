@@ -17,26 +17,39 @@ FRAME_BYTES = WIDTH * PAGES
 ASSETS = (
     ("cancel.png", "oled_image_cancel"),
     ("confirm.png", "oled_image_confirm"),
-    ("coocking.png", "oled_image_cooking"),
+    ("cooking.png", "oled_image_cooking"),
     ("error.png", "oled_image_error"),
     ("nopan.png", "oled_image_no_pan"),
-    ("ready.png", "oled_image_ready"),
+    ("ready1.png", "oled_image_ready_1"),
+    ("ready2.png", "oled_image_ready_2"),
+    ("ready3.png", "oled_image_ready_3"),
     ("sleep1.png", "oled_image_sleep_warning"),
     ("sleep2.png", "oled_image_sleep"),
     ("turnon.png", "oled_image_turn_on"),
     ("wakeup.png", "oled_image_wakeup"),
+    ("wifipresent.png", "oled_image_wifi_present"),
+    ("hot.png", "oled_image_hot"),
+    ("time.png", "oled_image_delayed_start"),
+    ("small.png", "oled_image_small_cookware"),
+    ("noopls.png", "oled_image_noopls"),
+    ("toohot.png", "oled_image_too_hot"),
+    ("whatisgoingon.png", "oled_image_what_is_going_on"),
 )
 
 
 def frame_from_png(path: Path) -> tuple[bytes, str]:
     with Image.open(path) as source:
-        if source.size != (WIDTH, HEIGHT) or source.mode != "1":
-            raise ValueError(f"{path}: expected {WIDTH}x{HEIGHT} mode 1, got {source.size} {source.mode}")
-        image = source.copy()
+        if source.size != (WIDTH, HEIGHT) or source.mode not in {"1", "L"}:
+            raise ValueError(
+                f"{path}: expected {WIDTH}x{HEIGHT} binary mode 1/L, "
+                f"got {source.size} {source.mode}"
+            )
+        if source.mode == "L" and set(source.get_flattened_data()) - {0, 255}:
+            raise ValueError(f"{path}: mode L contains non-binary pixels")
+        image = source.convert("1", dither=Image.Dither.NONE)
 
-    # error.png contains an example E03 plus a separator stroke in the lower-right
-    # corner. Keep the approved source untouched and reserve that entire corner
-    # for the live 2x fault code so no part of the separator remains visible.
+    # Reserve the lower-right corner for the live 2x fault code. Keeping this mask
+    # in the generator prevents a future artwork revision from colliding with it.
     if path.name == "error.png":
         for y in range(30, 48):
             for x in range(30, 64):

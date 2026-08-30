@@ -1,5 +1,9 @@
 # Selected MCL02M sound pack
 
+Historical selection snapshot. Production `0.2.28-dev` supersedes the NoPan row
+with the complete 128-second Nutcracker table. The private Wake/Sleep MIDI inputs
+and private build output are deliberately excluded from Git.
+
 Пять подтверждённых владельцем мелодий и один новый кандидат для пробуждения:
 
 | № | Событие | Выбранная основа | Длительность |

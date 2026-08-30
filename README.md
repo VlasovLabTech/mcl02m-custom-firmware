@@ -175,9 +175,9 @@ modified. See [Flashing and recovery](docs/FLASHING.md) before writing anything.
 
 ## Development status
 
-The current source version is `0.2.25-dev`; the development unit runs the
-hash-verified `0.2.24-dev` image written only to stock `ota_1` at `0x170000` on
-2026-08-30. Supervised testing confirmed retained-session active zero without
+The current source version is `0.2.28-dev`; the hash-verified `0.2.26-dev` app image was written
+only to stock `ota_1` at `0x170000` on the development unit on 2026-08-30.
+Supervised testing of the preceding `0.2.24-dev` image confirmed retained-session active zero without
 unexpected relay switching, Sleep/Wake, the temporary I2C debug display, and
 temperature operation with water. A 125 °C empty-pan test then showed about 5 °C of first-heat
 overshoot while subsequent holding remained accurate. Source `0.2.10-dev` adds
@@ -230,18 +230,37 @@ gear lifetime. Version `0.2.24-dev` fixes the supervised-test Delayed Start race
 after expiry the engine refreshes the power-board snapshot before classifying
 feedback, and a still-pending Start cannot mistake the prior stopped state for
 `ETM`. Its waiting screen orders the selected value directly below `POWER` or
-`T°C`, before the delay label and countdown. Unflashed `0.2.25-dev` lets any new
+`T°C`, before the delay label and countdown. Version `0.2.25-dev` lets any new
 physical press or encoder movement dismiss an existing timed picture immediately;
 an action such as Cancel may then create its own new picture. Transactional Stop
 keeps the clean large live screen instead of briefly exposing technical `STOPPING`
 text. `START AT` refuses an invalid wall clock with a localized `TIME / NOT SET`
-screen rather than opening or accepting a time editor. The supervised operator/monitor sequence is documented in the
+screen rather than opening or accepting a time editor. Version `0.2.26-dev`
+replaces the production OLED artwork and adds three rotating completion frames.
+Delayed Start uses its dedicated picture with a compact countdown plus
+`P`/`t`/`pr` mode badge. Small cookware uses its dedicated three-second picture
+with `P<36` and a localized label. Successful Wi-Fi joins show the Wi-Fi picture,
+including when entering an already-connected Wi-Fi menu. After cooking stops, a
+valid surface reading above 60 °C produces a blinking hot-surface picture after
+five seconds of inactivity; timer-completion Ready keeps priority until
+acknowledged, and Sleep is blocked until the surface cools. Three additional
+frames are compiled but deliberately have no trigger yet. Unflashed `0.2.27-dev`
+removes the exclamation mark from the cookware limit and adds the previously missing
+`<` OLED glyph. Unflashed `0.2.28-dev` replaces the NoPan loop with one complete,
+mandatory 128-second Nutcracker melody and raises E02 only after playback completes.
+A separate watchdog faults if playback cannot start within 30 seconds or cannot
+report completion within 132 seconds after it starts. Returning cookware, Pause, or Stop cancels only
+that NoPan request, so removing cookware again restarts the melody from its beginning.
+Long transition melodies discard ordinary queued clicks. Public and opt-in ignored
+private builds share every source except the selected Wake/Sleep tables; their project
+names and build directories are distinct. The supervised
+operator/monitor sequence is documented in the
 [hardware validation plan](docs/HARDWARE_VALIDATION_PLAN.md). The
 remaining findings and proposed fix sequence are preserved in the
 [state-machine implementation plan](docs/STATE_MACHINE_IMPLEMENTATION_PLAN.md).
-The `0.2.24-dev` app was flashed after explicit owner authorization. Esptool verified
+The `0.2.26-dev` app was flashed after explicit owner authorization. Esptool verified
 the written data; no bootloader, partition table, `otadata`, NVS or other partition
-was written.
+was written. Physical boot and UI confirmation remain pending.
 
 This is an independent community project, not an official Xiaomi or Chunmi
 product. Use it at your own risk. Licensed under the [MIT License](LICENSE).

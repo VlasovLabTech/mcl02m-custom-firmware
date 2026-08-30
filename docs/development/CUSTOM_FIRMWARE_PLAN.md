@@ -6,10 +6,15 @@ snapshot `0.1.0-dev`; нагрев этой документацией не за
 
 Редакция 3 от 2026-08-23 учитывает решения владельца по дополнительным значениям
 на OLED, новому timer с секундами, двухступенчатому Stop/Sleep, `DISPLAY_OFF`,
-NoPan 120 s, LED/buzzer patterns, ограничениям PREHEAT/HOLD, минимальным flash
+the original NoPan timeout, LED/buzzer patterns, ограничениям PREHEAT/HOLD, минимальным flash
 writes, обоим вариантам отложенного старта, `TIMER SCREEN`, critical alarm и
 `HOLD SATURATED`. Реализованный статус вынесен в
 [production/IMPLEMENTATION_STATUS.md](production/IMPLEMENTATION_STATUS.md).
+
+The sound policy was superseded in `0.2.28-dev`: NoPan now plays the complete
+128-second Nutcracker melody once and enters E02 after confirmed completion, with
+separate 30-second start and 132-second post-start watchdogs. The current production status is authoritative where it differs
+from this historical baseline plan.
 
 ## 1. Цель
 
@@ -467,7 +472,7 @@ Safety thresholds, I²C-регистры и калибровка NTC не явл
 
 | Код | Штатный смысл | Предлагаемая реакция |
 |---|---|---|
-| E02 | нет посуды | NoPan, orange blink, до 120 s на возврат, затем Stop |
+| E02 | нет посуды | NoPan, orange blink, full 128 s Nutcracker playback, then Stop after confirmed completion; 30 s start and 132 s post-start watchdogs |
 | E03 | высокое напряжение | Stop, показать LINE HIGH, повторный Start только пользователем |
 | E04 | низкое напряжение | Stop, показать LINE LOW, повторный Start только пользователем |
 | E05 | перегрев нижнего датчика | latched Stop до охлаждения и подтверждения |
@@ -532,7 +537,8 @@ bottom guard 120 °C непригоден для production, поэтому та
 - после трёх alarm bursts звук прекращается, fault остаётся на OLED;
 - при критическом fault автоматический Sleep запрещён до подтверждения
   пользователя;
-- NoPan — редкий напоминательный сигнал, а не непрерывный писк.
+- NoPan — the complete mandatory 128-second Nutcracker melody played once; cookware
+  return, Pause, or Stop cancels it, and another removal restarts it from the first note.
 
 ### OLED
 
@@ -557,12 +563,12 @@ bottom guard 120 °C непригоден для production, поэтому та
 - оба режима: слева внизу IGBT temperature;
 - любой из двух дополнительных блоков можно отключить.
 
-Один полный 1-bit framebuffer занимает только 384 bytes. Реализованы десять
-статических полноэкранных кадров: turn-on, wake, cooking, confirm, cancel, ready,
-no-pan, error и две стадии Sleep. Persistent fault/NoPan/Complete всегда
-приоритетнее временной картинки; bitmap rendering не блокирует силовой heartbeat.
-В шаблоне error пример `E03` очищается при генерации, а поверх рисуется
-фактический live E-код.
+One complete 1-bit framebuffer occupies only 384 bytes. The production pack now
+compiles 19 full-screen frames: the original event classes with revised artwork,
+three rotating Ready variants, Wi-Fi, Hot, Time and Small plus three reserved
+inactive frames. Persistent fault/NoPan/Complete always outranks a timed picture;
+bitmap rendering never blocks the power heartbeat. The lower-right error corner is
+reserved during generation and receives the actual live E-code at runtime.
 
 ## 18. Архитектура безопасности и I²C
 
@@ -742,7 +748,7 @@ network/web → background telemetry.
 - POWER, Start/Stop, Pause/Resume, двухступенчатый Stop/Sleep и Cancel;
 - timer с секундами до 5 h, RAM-last-value, COMPLETE;
 - OLED-off/wake guard, дополнительные угловые параметры, LED/buzzer patterns;
-- NoPan 120 s и полный error screen;
+- completion-driven 128 s NoPan melody and full error screen;
 - READINGS;
 - RU/EN базовый font и простой OLED UI;
 - NVS только для подтверждённых Settings; timer/telemetry не пишутся;
@@ -797,7 +803,9 @@ network/web → background telemetry.
 7. Auto sleep default 1 min; активный OLED-off default 60 s — отдельные таймеры.
 8. Cooking timer имеет секунды, максимум 5 h и помнит последнее значение в RAM.
 9. Обычный timer LED горит, delayed Start LED мигает.
-10. NoPan мигает оранжевым и ждёт возврата посуды до 120 s.
+10. NoPan мигает оранжевым, plays the full 128 s Nutcracker table, and enters E02
+    after confirmed completion; 30 s start and 132 s post-start watchdogs cover
+    sound-task failure without truncating legitimate queued playback.
 11. POWER encoder: slow 1, fast 5; выбранные до Start белые LED мигают.
 12. В TEMPERATURE: PREHEAT `56…99`, HOLD `0…35` для первого эксперимента.
 13. Локальные показания — voltage, bottom NTC, IGBT; угловые значения на рабочем
@@ -834,6 +842,6 @@ network/web → background telemetry.
 - окончательный диапазон/шаг TEMPERATURE после калибровки; provisional 40…190 °C;
 - точные PI/PID coefficients и thermal thresholds остаются предметом supervised
   калибровки;
-- десять согласованных статических OLED-картинок включены; многокадровые
-  анимации пока не используются;
+- 19 approved OLED frames are compiled; Ready rotates between three static frames
+  on successive completions and Hot uses a timed visible/blank blink;
 - новая partition table и полноценный OTA — только после стабильной версии.

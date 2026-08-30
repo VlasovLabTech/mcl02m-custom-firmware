@@ -6,6 +6,7 @@
 #include <sys/time.h>
 #include <time.h>
 
+#include "display_prod.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_mac.h"
@@ -76,6 +77,7 @@ static void event_handler(void *arg, esp_event_base_t base, int32_t id, void *da
         esp_ip4addr_ntoa(&event->ip_info.ip, s_status.sta_ip, sizeof(s_status.sta_ip));
         xSemaphoreGive(s_lock);
         start_sntp_once();
+        display_prod_show_wifi_present();
         telemetry_emitf("{\"type\":\"wifi\",\"state\":\"connected\",\"ip\":\"%s\"}",
                         s_status.sta_ip);
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_AP_START) {

@@ -513,6 +513,7 @@ static const uint8_t *oled_glyph(char c)
     static const uint8_t dot[5] = {0x00, 0x60, 0x60, 0x00, 0x00};
     static const uint8_t slash[5] = {0x20, 0x10, 0x08, 0x04, 0x02};
     static const uint8_t equals[5] = {0x14, 0x14, 0x14, 0x14, 0x14};
+    static const uint8_t less_than[5] = {0x08, 0x14, 0x22, 0x41, 0x00};
     static const uint8_t question[5] = {0x02, 0x01, 0x51, 0x09, 0x06};
     static const uint8_t exclamation[5] = {0x00, 0x00, 0x5f, 0x00, 0x00};
     if (c >= 'a' && c <= 'z') c = (char)(c - 'a' + 'A');
@@ -524,6 +525,7 @@ static const uint8_t *oled_glyph(char c)
     case '.': return dot;
     case '/': return slash;
     case '=': return equals;
+    case '<': return less_than;
     case '?': return question;
     case '!': return exclamation;
     default: return blank;
@@ -1136,6 +1138,30 @@ esp_err_t ui_oled_show_bitmap_text(const uint8_t bitmap[UI_OLED_BITMAP_BYTES],
     if (err == ESP_OK) {
         memcpy(s_oled_frame, bitmap, OLED_FRAME_BYTES);
         oled_draw_scaled_text(text, x, y, scale, scale);
+        err = oled_flush();
+    }
+    xSemaphoreGive(s_lock);
+    return err;
+}
+
+esp_err_t ui_oled_show_bitmap_right_text(const uint8_t bitmap[UI_OLED_BITMAP_BYTES],
+                                         const char *top, int top_y,
+                                         const char *bottom, int bottom_y)
+{
+    if (bitmap == NULL || top == NULL || bottom == NULL ||
+        (*top == '\0' && *bottom == '\0') ||
+        top_y < 0 || bottom_y < 0 ||
+        top_y + oled_text_height(top, 1) > OLED_HEIGHT ||
+        bottom_y + oled_text_height(bottom, 1) > OLED_HEIGHT ||
+        oled_text_width(top, 1, false) > OLED_WIDTH ||
+        oled_text_width(bottom, 1, false) > OLED_WIDTH)
+        return ESP_ERR_INVALID_ARG;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    esp_err_t err = oled_init_once();
+    if (err == ESP_OK) {
+        memcpy(s_oled_frame, bitmap, OLED_FRAME_BYTES);
+        if (*top != '\0') oled_draw_right(top, top_y, 1, 1);
+        if (*bottom != '\0') oled_draw_right(bottom, bottom_y, 1, 1);
         err = oled_flush();
     }
     xSemaphoreGive(s_lock);

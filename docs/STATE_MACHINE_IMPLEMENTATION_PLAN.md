@@ -4,14 +4,23 @@ Status: **in progress; the first bounded fix batch is implemented, while the rem
 
 Audit baseline: `0.2.10-dev`, commit `2b5784e` (`2026-08-28`)
 
-Current source: `0.2.25-dev`. Version `0.2.24-dev` was flashed to the development
-cooker on 2026-08-30 after explicit authorization; retained-session active zero works
-without unexpected relay switching, and the targeted Delayed Start regression passed
-without `ETM`. The source also keeps the temporary I2C-loss
+Current source: `0.2.28-dev`. The `0.2.26-dev` app image was flashed to the development cooker on
+2026-08-30 after explicit authorization; physical boot and UI confirmation remain
+pending. Supervised `0.2.24-dev` testing showed retained-session active zero without
+unexpected relay switching, and the targeted Delayed Start regression passed without
+`ETM`. The source also keeps the temporary I2C-loss
 OLED counter behind a disabled compile-time flag, so it is absent from the production
-menu and display without deleting the implementation. Unflashed `0.2.25-dev` removes
+menu and display without deleting the implementation. Version `0.2.25-dev` removes
 the internal `STOPPING` text from the physical UI while retaining the complete lower
-transaction and diagnostics.
+transaction and diagnostics. Version `0.2.26-dev` changes only the presentation
+layer and Sleep eligibility: it installs the revised OLED pack, rotates completion
+artwork, adds dedicated delayed/Wi-Fi/small-cookware/hot-surface screens, and blocks
+Sleep while a valid bottom reading remains above 60 °C. Unflashed `0.2.27-dev`
+removes the cookware-limit exclamation mark and adds the missing `<` OLED glyph.
+Unflashed `0.2.28-dev` makes the full 128-second Nutcracker table the one-shot NoPan
+warning and uses its confirmed completion, rather than an unrelated repeating timer,
+to enter E02. It also separates default public and opt-in ignored private sound
+flavors while keeping all control and safety sources shared.
 
 This document preserves the complete control-flow review so the findings can be
 discussed, prioritized, and implemented later without relying on chat history. It is
@@ -337,9 +346,9 @@ Recommended change:
 ### M2. Pausing from NoPan retains the old NoPan timestamp
 
 Implementation status: **implemented in `0.2.12-dev` and included in the deployed
-`0.2.14-dev`**. The selected policy is to reset the elapsed NoPan window on entering
-manual Pause; a later Resume starts a fresh 60-second window if the pan is missing
-again.
+`0.2.14-dev`** and later superseded by completion-driven playback in
+`0.2.28-dev`. Entering manual Pause cancels the current NoPan melody; a later Resume
+with missing cookware starts a fresh full 128-second melody from its first note.
 
 The Pause path stops the NoPan sound, but it does not clearly reset
 `s_no_pan_since_us`. After Resume, a still-missing pan can inherit the previous elapsed
@@ -715,7 +724,7 @@ or `R29` behavior is guessed from that evidence.
 - [x] Reset/freeze the NoPan timer, cooking countdown, sound cycle, temperature trend,
   PI state, saturation episode and transition generation through one entry/exit path.
 - [x] Cover pan loss and return in PREHEAT, APPROACH, HOLD, active zero, Pause and each
-  profile-stage type, including a return near the 60-second boundary.
+  profile-stage type, including a return near the 128-second playback boundary.
 - [x] Verify that Stop or Pause during return cancels that generation and prevents a
   late feedback sample from restoring heat.
 

@@ -3,7 +3,7 @@
 Build date: 2026-08-30
 ESP-IDF: 6.0.2
 Target: ESP32, Unicore
-Firmware: `0.2.25-dev`
+Firmware: `0.2.28-dev`
 
 The app header embeds compile metadata, so a clean rebuild may have a different
 SHA-256 while retaining the same source, layout, size and validation gates.
@@ -12,17 +12,17 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 ## App image
 
 - File: `build/mcl02m_custom.bin`
-- Size: `898160` bytes (`0xDB470`)
-- SHA-256: `ac97874049ccdde6e07140c1a342a6ae74d744ce14ebe425276c80b26c725620`
-- ESP image validation hash: `1c0f8394b3fb297547010730516dbcc0df4ada81e06f95d18287544b12f85575`
-- Stock OTA slot: `0x160000` bytes; image fits with `543632` bytes free.
+- Size: `903680` bytes (`0xDCA00`)
+- SHA-256: `9ad802e3eb4ca3d28916566e75c268448e009dc5540350ce2c871087357d09a3`
+- ESP image validation hash: `11022e18f9136626d722ccce7799bc6c904663f6ef36eb091aaeed0477e4684d`
+- Stock OTA slot: `0x160000` bytes; image fits with `538112` bytes free.
 
 ## Linked memory
 
-- Flash code: 642374 bytes
-- Flash data: 151116 bytes
+- Flash code: 643698 bytes
+- Flash data: 155308 bytes
 - IRAM: 89047 / 131072 bytes (67.94%)
-- DRAM static: 37028 / 180736 bytes (20.49%)
+- DRAM static: 37172 / 180736 bytes (20.57%)
 - RTC slow: 64 / 8192 bytes
 
 ## Offline gates
@@ -58,12 +58,26 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
   timed picture before the same action may create a new one, transactional Stop uses
   the clean live-focus renderer, and `START AT` cannot enter or complete while the
   wall clock is invalid and instead shows localized `TIME NOT SET` feedback.
+  The `0.2.26-dev` cases additionally prove three-frame Ready rotation, persistent
+  delayed-start artwork with compact countdown and mode badge, three-second localized
+  small-cookware artwork, Wi-Fi connection artwork, the exact five-second/2-on/1-off
+  Hot policy, Ready priority over Hot, and Sleep rejection above a valid 60 °C reading.
+  The `0.2.27-dev` case additionally proves that the small-cookware overlay uses
+  `P<36` without an exclamation mark and that the OLED font contains `<`.
+  The `0.2.28-dev` cases additionally parse the complete Nutcracker table and prove
+  its exact 128000-ms duration, completion-driven E02 with separate 30000-ms start
+  and 132000-ms post-start watchdogs,
+  selective NoPan cancellation/restart, protected long-melody scheduling, and the
+  fail-closed separation between the public and ignored private sound flavors.
 - `tests/safety_check.py`: PASS.
+- The public ELF contains no private LCE/SNM table or adapter symbols. The private
+  flavor was built separately from the ignored local source and exposes the distinct
+  `mcl02m_custom_private` project name and `0.2.28-dev-private` app version.
 - Production ELF check: temporary `I2C ERRORS` menu/overlay code is absent while
   its guarded source remains available.
 - `tests/localization_check.py`: PASS; 101 used CJK glyphs, 68 static strings,
   complete glyph coverage, no moving text and no 1× string wider than 64 px.
-- `tools/generate_oled_assets.py --check`: PASS, ten exact 384-byte frames.
+- `tools/generate_oled_assets.py --check`: PASS, 19 exact 384-byte frames.
 - `esptool image-info`: valid checksum and validation hash, ESP32/DIO/40 MHz/16 MiB.
 - Generated partition table: byte-identical to stock.
 - `tools/monitor_uart.py --list`: PASS; pyserial enumerates the available ports and
@@ -73,10 +87,10 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 
 ## Development-unit deployment
 
-This `0.2.25-dev` artifact has not been flashed. The development unit runs the
-hash-verified `0.2.24-dev` app written only to stock `ota_1` at `0x170000` on
-2026-08-30 after explicit owner authorization. Esptool verified the written data.
-That operation did not write the
+This `0.2.28-dev` artifact has not been flashed. The exact hash-verified
+`0.2.26-dev` artifact was written only to stock `ota_1` at `0x170000` on the
+development unit on 2026-08-30 after explicit owner authorization. Esptool verified
+the written data. That operation did not write the
 bootloader, partition table, `otadata`, NVS, PHY, `ota_0` or eFuse.
 
 ESP-IDF prints a generic `idf.py flash` suggestion after building. Project procedure

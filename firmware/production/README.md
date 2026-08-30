@@ -2,8 +2,8 @@
 
 Рабочий проект новой интерфейсной прошивки для ESP-WROOM-32D в Xiaomi MCL02M.
 Проект не содержит штатные Mi Home/MIoT, рецепты и NFC. В OLED-интерфейс
-включены десять согласованных пользовательских полноэкранных 1-bit картинок и
-шесть утверждённых PWM-мелодий.
+включены 19 согласованных пользовательских полноэкранных 1-bit картинок, включая
+три пока неактивных резервных кадра, и шесть утверждённых PWM-мелодий.
 
 ## Реализовано
 
@@ -13,7 +13,7 @@
 - `R26=01` restricted-cookware feedback is accepted as normal heating and caps every
   control path at real gear `35`/`A1`; POWER reports the permitted value, blocks only
   upward edits above 35, and displays a temporary explanatory message;
-- physical Settings shows both `0.2.25-dev` firmware and live raw `R28` power-board
+- physical Settings shows both `0.2.28-dev` firmware and live raw `R28` power-board
   revision/type with four left-aligned rows;
 - `R20=2B/29/2A` are silent nonfaults; another unknown nonzero `R20` shows its exact
   hex value as a persistent warning, and the first physical input dismisses only the
@@ -30,8 +30,10 @@
   only a matching successful command followed by fresh compatible `R20/R26` feedback
   confirms them, repeated short presses are idempotent, and exact timeout/rejection
   reasons remain available in compact UART and authenticated status;
-- Stop, Pause/Resume, NoPan `60 s` с обязательным циклом `мелодия → пауза 3 s`
-  даже при `SOUND OFF`; cookware return first confirms active zero, then refreshes
+- Stop, Pause/Resume, and completion-driven NoPan: the complete 128 s Nutcracker
+  melody plays once even with `SOUND OFF`, then E02 is raised; separate 30 s start
+  and 132 s post-start watchdogs cover a failed sound task without consuming the
+  melody budget while a protected Wake/Sleep finishes. Cookware return first cancels only that melody and confirms active zero, then refreshes
   readings and confirms a separately recomputed output; critical fault latch and
   IGBT/bottom guards remain active;
 - cooking timer up to 5 h with sequential `SECONDS → MINUTES → HOURS` confirmation,
@@ -42,21 +44,34 @@
 - Delayed Start synchronizes the panel to POWER, TEMPERATURE or the selected PROFILE
   after expiry, refreshes the post-Start power-board snapshot before classifying
   feedback, and keeps a pending Start from misreading the preceding stopped state as
-  `ETM`; the waiting screen shows mode, selected value, delay label, then countdown;
+  `ETM`; the waiting screen uses the dedicated Time picture with compact countdown
+  and `P`/`t`/`pr` mode badge;
   profile selection remains immutable during the delay, and long-center Stop/Cancel
   outranks an open timer editor;
 - `START IN` и `START AT`, только после физического задания/разрешения;
 - an invalid wall clock blocks `START AT` and shows localized `TIME / NOT SET`
   instead of silently opening an editor or accepting a schedule;
 - OLED-off/wake guard, 9 LED мощности, timer LED, blue/orange status, buzzer;
-- полноэкранные `64×48` turn-on/wake/cooking/confirm/cancel/ready/no-pan/error/
-  sleep-warning/sleep картинки; error-шаблон получает фактический E-код;
+- полноэкранные `64×48` turn-on/wake/cooking/confirm/cancel/no-pan/error/
+  sleep-warning/sleep картинки; three Ready frames rotate per completion, and the
+  error template receives the live E-code;
+- successful Wi-Fi connection and entry to an already-connected Wi-Fi menu show the
+  Wi-Fi picture; small cookware shows a 3-s picture with `P<36` and localized label;
+- after five inactive seconds above a valid 60 °C surface reading, the Hot picture
+  blinks 2 s on / 1 s blank; completion Ready has priority until acknowledgement,
+  and automatic or manual Sleep is blocked until cooling;
+- delayed Start continuously shows the Time picture with countdown and mode badge;
+  `noopls`, `toohot` and `whatisgoingon` are compiled but have no trigger yet;
 - any new physical press or encoder movement dismisses an existing timed picture;
   the action is still processed and may intentionally create its own new picture;
 - transactional Stop retains the clean large live screen and never exposes the
   internal five-line `STOPPING` status page;
-- табличные PWM-мелодии boot/wake/complete/NoPan/critical/sleep; sleep работает
-  с duty около 18%, остальные — 50%; UI click, STAGE и WARNING сохранены;
+- table-driven PWM melodies for boot/wake/complete/NoPan/critical/sleep. The public
+  build contains the full public-domain Nutcracker NoPan table and the existing
+  public Wake/Sleep tables. The opt-in private build substitutes only local Wake and
+  Sleep tables. Long Wake/Sleep/NoPan playback drops ordinary queued clicks; Cancel
+  or forced long-hold Sleep can cancel Wake, and cookware return/Pause/Stop cancels
+  only NoPan;
 - OLED timeout default 3 min с фиксированными интервалами до 5 h; активный экран
   показывает timer и контекстный NTC/gear, опционально IGBT;
 - Settings в versioned NVS namespace без автоматического erase; отдельный
@@ -141,6 +156,36 @@ python tests/policy_tests.py
 python tests/safety_check.py
 python tests/localization_check.py
 ```
+
+## Public and private sound builds
+
+Both flavors compile the same control, safety, UI, and networking sources. The
+public flavor is the default and has no include path to the ignored private MIDI
+pack:
+
+```powershell
+idf.py -B build -D MCL02M_PRIVATE_SOUND_BUILD=OFF build
+```
+
+The private flavor is opt-in and fails closed when the local generated header is
+absent:
+
+```powershell
+idf.py -B build_private -D MCL02M_PRIVATE_SOUND_BUILD=ON build
+```
+
+Its input is
+`assets/sounds/midi/generated/code/melody_tables_midi.generated.h`. The input,
+local generator workspace, `build_private/`, and all firmware binaries are ignored
+by Git. The artifacts have distinct project names:
+
+- public: `build/mcl02m_custom.bin`, app version `0.2.28-dev`;
+- private: `build_private/mcl02m_custom_private.bin`, app version
+  `0.2.28-dev-private`.
+
+The physical version screen intentionally shows the shared source version
+`0.2.28-dev`; `esptool image-info` exposes the private suffix. Never reuse one build
+directory for both flavors.
 
 Допустимый артефакт для будущего отдельного согласования — только app image
 `build/mcl02m_custom.bin` для stock `ota_1` (`0x170000`). Нельзя автоматически

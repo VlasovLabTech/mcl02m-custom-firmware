@@ -45,8 +45,19 @@ def main() -> int:
     engine = (MAIN / "cooking_engine.c").read_text(encoding="utf-8")
     web = (MAIN / "web_server_prod.c").read_text(encoding="utf-8")
     sound = (MAIN / "sound.c").read_text(encoding="utf-8")
+    private_sound = (MAIN / "private_sound_tables.c").read_text(encoding="utf-8")
+    private_midi_path = (PROJECT_ROOT / "assets" / "sounds" / "midi" /
+                         "generated" / "code" / "melody_tables_midi.generated.h")
     melodies_path = MAIN / "melody_tables.h"
     melodies = melodies_path.read_text(encoding="utf-8")
+    nutcracker_path = MAIN / "melody_nutcracker.generated.h"
+    nutcracker = nutcracker_path.read_text(encoding="utf-8")
+    nutcracker_notes = [
+        tuple(map(int, values))
+        for values in re.findall(r"\{(\d+),\s*(\d+),\s*(\d+)\}", nutcracker)
+    ]
+    project_cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+    gitignore = (PROJECT_ROOT / ".gitignore").read_text(encoding="utf-8")
     app_main = (MAIN / "app_main.c").read_text(encoding="utf-8")
     indicators = (MAIN / "indicators.c").read_text(encoding="utf-8")
     display = (MAIN / "display_prod.c").read_text(encoding="utf-8")
@@ -69,15 +80,20 @@ def main() -> int:
             "temperature HOLD cannot exceed gear 35")
     require("#define COOKER_PREHEAT_MIN_GEAR         56U" in config,
             "temperature PREHEAT begins in the agreed 56+ region")
-    require("#define COOKER_NO_PAN_TIMEOUT_MS         60000U" in config,
-            "NoPan return window is 60 seconds")
-    require("#define COOKER_NO_PAN_SOUND_PAUSE_MS      3000U" in config and
+    require("#define COOKER_NO_PAN_TIMEOUT_MS        128000U" in config and
+            "#define COOKER_NO_PAN_START_FAILSAFE_MS  30000U" in config and
+            "#define COOKER_NO_PAN_PLAY_FAILSAFE_MS  132000U" in config and
             "no_pan_sound_locked();" in engine and
             "sound_play(SOUND_NO_PAN);" in engine and
-            "play_table(k_sound_no_pan" in sound and
-            "wait_interruptible(COOKER_NO_PAN_SOUND_PAUSE_MS" in sound and
+            "play_table(k_sound_midi_nutcracker_pas_de_deux" in sound and
+            "sound_start_count(SOUND_NO_PAN)" in engine and
+            "sound_completion_count(SOUND_NO_PAN)" in engine and
+            "no_pan_melody_finished_locked(now_us)" in engine and
             "pattern == SOUND_NO_PAN || pattern == SOUND_CRITICAL" in sound,
-            "NoPan melody repeats after a full three-second silent pause and bypasses sound-off")
+            "NoPan plays one complete 128-second mandatory melody before faulting")
+    require(len(nutcracker_notes) == 286 and nutcracker_notes[-1] == (0, 0, 0) and
+            sum(on_ms + gap_ms for _, on_ms, gap_ms in nutcracker_notes) == 128000,
+            "the public Nutcracker table is complete and exactly 128 seconds")
     require("#define MCL02M_NO_PAN_SAMPLES 3U" in
             (SHARED_POWER / "safety.h").read_text(encoding="utf-8"),
             "NoPan is accepted after three consecutive 500-ms samples")
@@ -154,11 +170,14 @@ def main() -> int:
     require("mandatory_pattern(pattern)" in sound,
             "sound-off setting cannot silence NoPan or the critical alarm")
     require(hashlib.sha256(melodies.encode("utf-8")).hexdigest() ==
-            "c3608697a8eadc646f6bb579623d1e5d011397c76e71f279ca06fdcced710e54" and
+                "8c0c5c06a8e21bb77275d61b6b30fb85b546ab97d1c9dc127276433033a70b72" and
+            hashlib.sha256(nutcracker.encode("utf-8")).hexdigest() ==
+                "7b298f958ef6309b99a3ad6abb2fee66877ad275a0c2bb7c047f71b984e9f0d7" and
             all(name in melodies for name in ("k_sound_boot", "k_sound_complete",
-                                              "k_sound_no_pan", "k_sound_critical",
-                                              "k_sound_sleep", "k_sound_wake")),
-            "the approved six-melody PWM table is embedded byte-for-byte")
+                                              "k_sound_critical", "k_sound_sleep",
+                                              "k_sound_wake")) and
+            "k_sound_midi_nutcracker_pas_de_deux" in nutcracker,
+            "all six approved public PWM melodies are byte-exact")
     require("ui_buzzer_chirp_duty" in output_header and
             "ui_buzzer_chirp_duty" in outputs and
             "SELECTED_SOUND_SLEEP_DUTY_PERMILLE  180U" in melodies and
@@ -168,12 +187,56 @@ def main() -> int:
     wake_branch = engine[engine.find("case INTENT_WAKE"):
                          engine.find("case INTENT_ACK")]
     require("s_status.state == COOK_STATE_SLEEP" in wake_branch and
-            "sound_stop();" in wake_branch and "sound_play(SOUND_WAKE);" in wake_branch and
+            "sound_stop();" not in wake_branch and "sound_play(SOUND_WAKE);" in wake_branch and
             "SOUND_WAKE" in sound and "play_table(k_sound_wake" in sound,
-            "wake melody plays only on a real Sleep-to-Idle transition")
-    require("if (s_no_pan_announced) sound_stop();" in engine and
-            "pausing_no_pan && s_no_pan_announced" in engine,
-            "NoPan melody loop is interrupted on pan return, Stop or Pause")
+            "wake is queued only on a real Sleep-to-Idle transition without cutting Sleep")
+    require("sound_cancel(SOUND_NO_PAN);" in engine and
+            "if (pausing_no_pan) cancel_no_pan_sound_locked();" in engine,
+            "NoPan is cancelled selectively on pan return, Stop or Pause")
+    require("protected_pattern" in sound and
+            "s_protected_pending" in sound and
+            "if (!protect &&" in sound and
+            "sound_cancel(sound_pattern_t pattern)" in sound and
+            "sound_start_count(sound_pattern_t pattern)" in sound and
+            "sound_completion_count(sound_pattern_t pattern)" in sound,
+            "long transition melodies discard ordinary queued sounds and support targeted cancellation")
+    require("sound_cancel(SOUND_WAKE);\n    s_temperature_edit_deadline_us = 0;" in ui and
+            "remember_primary_wake_selection();\n        sound_cancel(SOUND_WAKE);\n        cooking_sleep();" in ui,
+            "Cancel and forced long-hold Sleep are the explicit Wake cancellation paths")
+    require("MCL02M_PRIVATE_SOUND_BUILD" in project_cmake and
+            "mcl02m_custom_private" in project_cmake and
+            "private_sound_tables.c" in cmake and
+            "melody_tables_midi.generated.h" in cmake and
+            "k_sound_midi_lce" in private_sound and
+            "k_sound_midi_snm" in private_sound and
+            "/assets/sounds/midi/" in gitignore and
+            "/firmware/production/build_private/" in gitignore,
+            "private Wake/Sleep melodies use an opt-in ignored build flavor")
+    if private_midi_path.exists():
+        private_midi = private_midi_path.read_text(encoding="utf-8")
+
+        def private_table_duration(name: str) -> int:
+            match = re.search(
+                rf"static const buzzer_note_t {name}\[\]\s*=\s*\{{(.*?)\n\}};",
+                private_midi,
+                re.DOTALL,
+            )
+            if match is None:
+                return -1
+            notes = re.findall(r"\{(\d+),\s*(\d+),\s*(\d+)\}", match.group(1))
+            return sum(int(on_ms) + int(gap_ms)
+                       for _, on_ms, gap_ms in notes)
+
+        require(private_table_duration("k_sound_midi_lce") == 8704 and
+                private_table_duration("k_sound_midi_snm") == 7460,
+                "local private Wake/Sleep tables have the approved exact durations")
+    public_map = BUILD / "mcl02m_custom.map"
+    if public_map.exists():
+        public_symbols = public_map.read_text(encoding="utf-8", errors="replace")
+        require("k_sound_midi_lce" not in public_symbols and
+                "k_sound_midi_snm" not in public_symbols and
+                "private_sound_note" not in public_symbols,
+                "public firmware contains no private Wake/Sleep melody symbols")
     require("sound_stop();" in engine[engine.find("case INTENT_ACK"):
                                       engine.find("case INTENT_SCHEDULE_REL")],
             "fault acknowledgement immediately silences a remaining alarm pattern")
@@ -567,14 +630,6 @@ def main() -> int:
             "s_status.transition_kind == PB_TRANSITION_START" in engine and
             "!start_pending" in engine,
             "pending Start feedback cannot be misclassified as an unexpected Stop")
-    delayed_screen = display[display.find("if (s->delayed_start)"):
-                             display.find("return;", display.find("if (s->delayed_start)"))]
-    require('snprintf(lines[1], DISPLAY_LINE_BYTES, "%u", s->selected_gear);' in
-            delayed_screen and
-            'snprintf(lines[2], DISPLAY_LINE_BYTES, "%s", tr(lang, "DELAY"' in
-            delayed_screen and
-            delayed_screen.find("lines[1]") < delayed_screen.find('tr(lang, "DELAY"'),
-            "delayed screen places the selected POWER/TEMPERATURE value directly below its mode")
     long_branch = ui[ui.find("static bool central_long"):
                      ui.find("static void cancel_action")]
     require("synchronize_delayed_start_view" in ui and
@@ -673,9 +728,12 @@ def main() -> int:
             "Sleep wake returns to Power or preserves Temperature, never a secondary menu item")
     image_symbols = (
         "oled_image_cancel", "oled_image_confirm", "oled_image_cooking",
-        "oled_image_error", "oled_image_no_pan", "oled_image_ready",
+        "oled_image_error", "oled_image_no_pan", "oled_image_ready_1",
+        "oled_image_ready_2", "oled_image_ready_3",
         "oled_image_sleep_warning", "oled_image_sleep", "oled_image_turn_on",
-        "oled_image_wakeup",
+        "oled_image_wakeup", "oled_image_wifi_present", "oled_image_hot",
+        "oled_image_delayed_start", "oled_image_small_cookware",
+        "oled_image_noopls", "oled_image_too_hot", "oled_image_what_is_going_on",
     )
     image_lengths = []
     for symbol in image_symbols:
@@ -686,10 +744,11 @@ def main() -> int:
         )
         image_lengths.append(len(re.findall(r"0x[0-9a-fA-F]{2}", match.group(1))) if match else 0)
     require("#define OLED_ASSET_FRAME_BYTES 384U" in asset_header and
-            image_lengths == [384] * 10 and
+            image_lengths == [384] * 19 and
             "OLED_ASSET_FRAME_BYTES == UI_OLED_BITMAP_BYTES" in display and
-            "ui_oled_show_bitmap" in outputs and "ui_oled_show_bitmap_text" in outputs,
-            "all ten approved 64x48 pictures compile as exact 384-byte OLED frames")
+            "ui_oled_show_bitmap" in outputs and "ui_oled_show_bitmap_text" in outputs and
+            "ui_oled_show_bitmap_right_text" in outputs,
+            "all 19 approved 64x48 pictures compile as exact 384-byte OLED frames")
     require("error.png" in asset_generator and "for y in range(30, 48)" in asset_generator and
             "for x in range(30, 64)" in asset_generator and
             all(code in display for code in ('code = "E02"', 'code = "E03"',
@@ -700,7 +759,7 @@ def main() -> int:
                                              'code = "EST"', 'code = "ETM"')) and
             "ui_oled_show_bitmap_text(picture, fault_code, 30, 32, 2)" in display and
             "oled_draw_scaled_text(text, x, y, scale, scale)" in outputs,
-            "error artwork removes the separator/example and renders the live code at 2x")
+            "error artwork reserves its lower-right corner and renders the live code at 2x")
     require("#define COOKER_IMAGE_CONFIRM_MS         1500U" in config and
             "#define COOKER_IMAGE_WAKEUP_MS          3000U" in config and
             "#define COOKER_IMAGE_TURN_ON_MS         5000U" in config and
@@ -717,6 +776,11 @@ def main() -> int:
             "previous == COOK_STATE_SLEEP" in display and
             "active_picture_state(cooker.state) && !active_picture_state(previous)" in display,
             "turn-on, wake-up, Start, Resume and pan-return transitions select their pictures")
+    require("TRANSIENT_WIFI_PRESENT" in display and
+            "display_prod_show_wifi_present();" in network and
+            "network.sta_connected ? \"WI-FI OK\" : \"WI-FI\"" in ui and
+            "if (network.sta_connected) display_prod_show_wifi_present();" in ui,
+            "successful Wi-Fi connection and entry to a connected Wi-Fi menu show the new artwork")
     require("display_prod_show_confirm();" in ui and
             "display_prod_show_cancel();" in ui and
             "TRANSIENT_CONFIRM" in display and "TRANSIENT_CANCEL" in display,
@@ -725,22 +789,47 @@ def main() -> int:
                     ui.find("static void ui_task")]
     require("void display_prod_dismiss_transient(void)" in display and
             "display_prod_dismiss_transient();" in input_body and
+            "s_cookware_notice_deadline_us = 0;" in display and
             "event->type == UI_INPUT_ENCODER" in input_body and
             "event->type == UI_INPUT_MAIN_PRESSED" in input_body and
             "event->type == UI_INPUT_TOUCH_A_PRESSED" in input_body and
             "event->type == UI_INPUT_TOUCH_B_PRESSED" in input_body and
             input_body.find("display_prod_dismiss_transient();") <
             input_body.find("cancel_action();"),
-            "physical input dismisses an existing timed picture before its own action may create one")
+            "physical input dismisses existing transient and small-cookware pictures before its own action")
     active_focus = display[display.find("const bool active_focus"):
                            display.find("if (!effective_overlay", display.find("const bool active_focus"))]
     require("cooker.state == COOK_STATE_STOPPING" in active_focus,
             "transactional Stop retains the clean live focus screen instead of technical STOPPING text")
-    require("picture = oled_image_ready;" in display and
+    require("ready_bitmap(s_ready_image)" in display and
+            "s_next_ready_image = (s_next_ready_image + 1U) % 3U" in display and
             "picture = oled_image_error;" in display and
             "picture = oled_image_no_pan;" in display and
             "status.state == COOK_STATE_COMPLETE) &&" not in ui,
-            "ready, error and no-pan pictures remain state-latched until user or pan action")
+            "three alternating ready pictures, error and no-pan remain state-latched")
+    require("picture = oled_image_delayed_start;" in display and
+            "format_timer_compact(cooker.delayed_remaining_s, delay);" in display and
+            'snprintf(output, 12, "P%u", s->selected_gear);' in display and
+            'snprintf(output, 12, "t%u", s->target_temperature_c);' in display and
+            'snprintf(output, 12, "pr%u"' in display,
+            "delayed start artwork carries a compact countdown and P/t/pr mode badge")
+    require("oled_image_small_cookware, \"P<36\", 1" in display and
+            "case '<': return less_than;" in outputs and
+            'tr(lang, "SMALL", "МАЛ", "小锅"), 40' in display and
+            "COOKER_SMALL_COOKWARE_NOTICE_MS 3000U" in config,
+            "small cookware artwork shows P<36 and a localized three-second label")
+    require("#define COOKER_HOT_THRESHOLD_C            60U" in config and
+            "#define COOKER_HOT_IDLE_DELAY_MS         5000U" in config and
+            "#define COOKER_HOT_BLINK_ON_MS           2000U" in config and
+            "#define COOKER_HOT_BLINK_OFF_MS          1000U" in config and
+            "picture = oled_image_hot;" in display and
+            "ui_oled_show_bitmap(s_blank_frame);" in display and
+            "!surface_hot" in ui and "surface_is_hot(&status)" in ui and
+            "s_status.bottom_c > COOKER_HOT_THRESHOLD_C" in engine,
+            "hot-surface artwork waits five seconds, blinks 2/1 and blocks automatic/manual Sleep")
+    require(all(display.count(symbol) == 0 for symbol in
+                ("oled_image_noopls", "oled_image_too_hot", "oled_image_what_is_going_on")),
+            "reserved noopls/toohot/whatisgoingon artwork is compiled but not displayed")
     require("picture = oled_image_sleep_warning;" in display and
             "picture = oled_image_sleep;" in display and
             "picture != NULL" in display[display.find("if (show)"):

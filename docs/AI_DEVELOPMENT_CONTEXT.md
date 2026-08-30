@@ -13,7 +13,28 @@ from a request to edit or build software.
 - Xiaomi device model: `chunmi.ihcooker.v2`.
 - Interface controller: Espressif `ESP-WROOM-32D` (classic ESP32).
 - Display: monochrome 64×48 OLED, page-major 384-byte framebuffer.
-- Current custom source version: `0.2.25-dev`.
+- Current custom source version: `0.2.28-dev`.
+- `0.2.28-dev` integrates the complete 128-second public-domain Nutcracker table as
+  the mandatory one-shot NoPan warning. E02 follows confirmed sound completion, with
+  separate 30-second start and 132-second post-start watchdogs; cookware return,
+  Pause, and Stop selectively cancel NoPan,
+  and a later removal starts it again from the beginning. Wake, Sleep, NoPan, and the
+  critical alarm are protected queue requests, so ordinary clicks do not accumulate
+  behind a long melody. The default public build has no dependency on private sound
+  sources. An opt-in `MCL02M_PRIVATE_SOUND_BUILD` compiles the ignored local Wake and
+  Sleep tables in a separate `build_private` directory and produces the distinctly
+  named `mcl02m_custom_private` app.
+- `0.2.26-dev` installs the revised 19-frame production OLED pack. Three Ready
+  variants rotate per completion; Delayed Start uses its Time frame with compact
+  countdown and `P`/`t`/`pr` badge; restricted cookware uses its Small frame with
+  `P<36` and a localized label; successful Wi-Fi connection uses its own frame.
+  After five inactive seconds in Idle/Ready with a valid bottom reading above
+  60 °C, Hot blinks 2 s on / 1 s blank. COMPLETE Ready has priority until physical
+  acknowledgement, and both UI and engine reject Sleep until the reading is at or
+  below 60 °C. Reserved No-op, Too-hot and What-is-going-on frames compile without
+  any runtime trigger.
+- Unflashed `0.2.27-dev` removes the exclamation mark from the small-cookware limit
+  and adds the previously missing `<` OLED glyph.
 - `0.2.25-dev` makes timed pictures dismissible by the next physical press or encoder
   movement while preserving a new picture created by that same action, keeps the
   clean live focus screen throughout transactional Stop, and refuses `START AT` with
@@ -291,8 +312,8 @@ Custom behavior:
 
 1. Require three consecutive `R20=02` observations at 500 ms cadence.
 2. Send `W0D=80`, keep `W00=01`, and retain the requested `W0C` gear.
-3. Freeze the cooking timer, show the NoPan image, blink orange, and repeat the
-   mandatory NoPan melody followed by a full 3-second silent pause.
+3. Freeze the cooking timer, show the NoPan image, blink orange, and play the full
+   mandatory 128-second Nutcracker melody exactly once.
 4. A valid recognized pan-present `R20` (`00`, `2B`, `29`, or `2A`) together with
    `R26=01/02` starts a generation-tagged safe-hold transaction. An unknown warning
    value never proves cookware return.
@@ -300,7 +321,10 @@ Custom behavior:
    trend/PI/saturation context, recompute POWER/TEMPERATURE/profile output, apply the
    `R26=01` gear-35 cap, and confirm a separate Resume generation. Stop or Pause
    cancels or replaces either recovery generation.
-6. Otherwise Stop and latch `E02` after the 60-second NoPan window.
+6. Otherwise Stop and latch `E02` when the melody reports full completion. A
+   30-second start watchdog and a 132-second post-start watchdog stop safely if the
+   sound task cannot begin or report completion; queued Wake/Sleep time is not taken
+   from the Nutcracker playback budget.
 
 NoPan and critical sounds ignore the normal Sound OFF setting.
 
@@ -535,8 +559,9 @@ boot, wake, complete, no-pan, critical, sleep
 ```
 
 Normal melody duty is 50%; sleep is approximately 18%. Existing click, stage,
-and warning sounds remain. NoPan loops as melody + 3 s silence until recovery or
-Stop. Critical uses three bursts; each burst contains two 2.5-second motifs with
+and warning sounds remain. NoPan plays the full Nutcracker table once; cookware
+return, Pause, or Stop cancels it, and a later removal restarts at the first note.
+Critical uses three bursts; each burst contains two 2.5-second motifs with
 4-second pauses between bursts. Acknowledgement calls `sound_stop()` immediately.
 
 ## 11. Persistence and network policy
@@ -614,12 +639,12 @@ Before any release or hardware write:
    power tests with a water load.
 
 The reference artifact identified in `firmware/production/BUILD_MANIFEST.md` follows
-the current source. The deployed `0.2.24-dev` app (897856 bytes; SHA-256
-`f547b7dd4ba9bddb1a50b5ff6a9ad9d920a579b77a55acac8e06d3c8571fd21c`) was flashed
+the current source. The deployed `0.2.26-dev` app (901408 bytes; SHA-256
+`e2baa60d3d61621e268ea31c5e5d57a4cee93d271a2c7db41e1c9ef2e5ef1326`) was flashed
 to stock `ota_1` at `0x170000` on 2026-08-30 after explicit owner authorization.
-Esptool verified the written data; that deployment did not touch the bootloader,
-partition table, NVS, `otadata`, `ota_0`, PHY or eFuse. This status is not permission
-for another flash operation.
+Esptool verified the written data; physical boot and UI confirmation remain pending.
+That deployment did not touch the bootloader, partition table, NVS, `otadata`,
+`ota_0`, PHY or eFuse. This status is not permission for another flash operation.
 
 ## 13. Remaining uncertainties and optional characterization
 
@@ -627,7 +652,7 @@ for another flash operation.
   temperature holding have passed supervised checks. A 125 °C empty-pan trial on
   `0.2.9-dev` held accurately after an approximately 5 °C initial overshoot. The
   adaptive braking, Pause recomputation, and direct topology crossing present in the
-  deployed `0.2.24-dev` still require complete supervised cookware characterization.
+  current source still require complete supervised cookware characterization.
 - Production retains the 80 °C interface-side IGBT guard and uses 210 °C for
   the separate interface-side bottom cutoff; the power MCU's native E05 also
   remains active.

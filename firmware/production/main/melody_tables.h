@@ -64,29 +64,7 @@ static const buzzer_note_t k_sound_complete[] = {
     {0, 0, 0},
 };
 
-/* No pan / Sharp alarm; 2.740 s. */
-static const buzzer_note_t k_sound_no_pan[] = {
-    {4186, 110, 35},
-    {2960, 110, 35},
-    {4186, 110, 35},
-    {2960, 110, 35},
-    {4186, 110, 35},
-    {2960, 110, 35},
-    {4699, 110, 35},
-    {3322, 110, 35},
-    {4699, 110, 35},
-    {3322, 110, 35},
-    {4699, 110, 35},
-    {3322, 110, 35},
-    {5274, 80, 20},
-    {4978, 80, 20},
-    {4699, 80, 20},
-    {4435, 80, 20},
-    {4186, 80, 20},
-    {3951, 80, 20},
-    {2960, 400, 0},
-    {0, 0, 0},
-};
+#include "melody_nutcracker.generated.h"
 
 /* Critical / Beethoven Fifth; 2.500 s. */
 static const buzzer_note_t k_sound_critical[] = {

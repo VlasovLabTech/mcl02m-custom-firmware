@@ -525,8 +525,8 @@ def delayed_start_tick(due: bool, stale_power: str, fresh_power: str,
     return state, power
 
 
-def delayed_screen_lines(mode: str, value: str, remaining: str) -> tuple[str, ...]:
-    return mode, value, "DELAY", remaining
+def delayed_picture_labels(mode: str, value: int, remaining: str) -> tuple[str, ...]:
+    return "time", remaining, delayed_mode(mode, value)
 
 
 def delayed_after_restart(was_scheduled: bool) -> bool:
@@ -711,18 +711,49 @@ def picture_policy(
     transient: str | None = None,
     idle_ms: int = 0,
     sleep_ms: int = 0,
+    readings_valid: bool = False,
+    bottom_c: int = 0,
 ) -> str | None:
     """Model the production display priority and 60-second default Sleep."""
     urgent = {"FAULT": "error", "NO_PAN": "nopan", "COMPLETE": "ready"}
     if state in urgent:
         return urgent[state]
+    if state == "DELAYED":
+        return "time"
     if transient:
         return transient
+    surface_hot = readings_valid and bottom_c > 60
+    if state in {"IDLE", "READY"} and surface_hot and idle_ms >= 5_000:
+        return "hot" if (idle_ms - 5_000) % 3_000 < 2_000 else "blank"
     if state == "SLEEP" and sleep_ms < 10_000:
         return "sleep2"
-    if state in {"IDLE", "READY"} and idle_ms >= 50_000:
+    if state in {"IDLE", "READY"} and not surface_hot and idle_ms >= 50_000:
         return "sleep1"
     return None
+
+
+def ready_picture(completion_number: int) -> str:
+    return f"ready{completion_number % 3 + 1}"
+
+
+def delayed_mode(mode: str, value: int) -> str:
+    return {"POWER": "P", "TEMPERATURE": "t", "PROFILE": "pr"}[mode] + str(value)
+
+
+def sleep_allowed(*, readings_valid: bool, bottom_c: int) -> bool:
+    return not (readings_valid and bottom_c > 60)
+
+
+def no_pan_fault(*, melody_completed: bool, queue_elapsed_ms: int,
+                 playback_elapsed_ms: int | None, pan_returned: bool) -> bool:
+    """Completion is authoritative; queue and playback watchdogs stay separate."""
+    if pan_returned:
+        return False
+    if melody_completed:
+        return True
+    if playback_elapsed_ms is None:
+        return queue_elapsed_ms >= 30_000
+    return playback_elapsed_ms >= 132_000
 
 
 def transient_after_physical_input(
@@ -751,6 +782,18 @@ def run() -> None:
     assert timer.remaining == 260
     timer.tick("COOKING", 260)
     assert timer.remaining == 0
+    assert not no_pan_fault(melody_completed=False, queue_elapsed_ms=20_000,
+                            playback_elapsed_ms=None, pan_returned=False)
+    assert no_pan_fault(melody_completed=False, queue_elapsed_ms=30_000,
+                        playback_elapsed_ms=None, pan_returned=False)
+    assert not no_pan_fault(melody_completed=False, queue_elapsed_ms=140_000,
+                            playback_elapsed_ms=127_999, pan_returned=False)
+    assert no_pan_fault(melody_completed=True, queue_elapsed_ms=128_000,
+                        playback_elapsed_ms=128_000, pan_returned=False)
+    assert no_pan_fault(melody_completed=False, queue_elapsed_ms=150_000,
+                        playback_elapsed_ms=132_000, pan_returned=False)
+    assert not no_pan_fault(melody_completed=True, queue_elapsed_ms=128_000,
+                            playback_elapsed_ms=128_000, pan_returned=True)
 
     control = TimerControl()
     control.set(5 * 60)
@@ -799,8 +842,8 @@ def run() -> None:
         "STARTING", "STOPPED")
     assert delayed_start_tick(True, "STOPPED", "STOPPED", False) == (
         "FAULT", "STOPPED")
-    assert delayed_screen_lines("POWER", "10", "00:42") == (
-        "POWER", "10", "DELAY", "00:42")
+    assert delayed_picture_labels("POWER", 10, "00:42") == (
+        "time", "00:42", "P10")
     assert not delayed_after_restart(was_scheduled=True)
 
     assert temperature_step("PREHEAT", 100, 20) == ("PREHEAT", 99)
@@ -1234,6 +1277,26 @@ def run() -> None:
     assert picture_policy("FAULT", transient="cancel") == "error"
     assert picture_policy("NO_PAN", transient="cooking") == "nopan"
     assert picture_policy("COMPLETE", idle_ms=999_999) == "ready"
+    assert picture_policy(
+        "COMPLETE", idle_ms=999_999, readings_valid=True, bottom_c=99
+    ) == "ready"
+    assert [ready_picture(i) for i in range(6)] == [
+        "ready1", "ready2", "ready3", "ready1", "ready2", "ready3"
+    ]
+    assert picture_policy("DELAYED", transient="confirm") == "time"
+    assert delayed_mode("POWER", 85) == "P85"
+    assert delayed_mode("TEMPERATURE", 107) == "t107"
+    assert delayed_mode("PROFILE", 2) == "pr2"
+    assert picture_policy("IDLE", idle_ms=4_999, readings_valid=True, bottom_c=61) is None
+    assert picture_policy("IDLE", idle_ms=5_000, readings_valid=True, bottom_c=61) == "hot"
+    assert picture_policy("IDLE", idle_ms=6_999, readings_valid=True, bottom_c=61) == "hot"
+    assert picture_policy("IDLE", idle_ms=7_000, readings_valid=True, bottom_c=61) == "blank"
+    assert picture_policy("IDLE", idle_ms=7_999, readings_valid=True, bottom_c=61) == "blank"
+    assert picture_policy("IDLE", idle_ms=8_000, readings_valid=True, bottom_c=61) == "hot"
+    assert picture_policy("IDLE", idle_ms=50_000, readings_valid=True, bottom_c=60) == "sleep1"
+    assert not sleep_allowed(readings_valid=True, bottom_c=61)
+    assert sleep_allowed(readings_valid=True, bottom_c=60)
+    assert sleep_allowed(readings_valid=False, bottom_c=99)
     assert transient_after_physical_input("cooking", physical_input=True) is None
     assert transient_after_physical_input("confirm", physical_input=True) is None
     assert transient_after_physical_input(

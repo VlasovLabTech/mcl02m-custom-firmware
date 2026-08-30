@@ -125,6 +125,11 @@ static bool run_visible_state(cook_state_t state)
            state == COOK_STATE_STOPPING;
 }
 
+static bool surface_is_hot(const cooker_snapshot_t *status)
+{
+    return status->readings_valid && status->bottom_c > COOKER_HOT_THRESHOLD_C;
+}
+
 static void synchronize_delayed_start_view(const cooker_snapshot_t *status)
 {
     const bool started = s_last_cooking_state == COOK_STATE_DELAYED &&
@@ -513,7 +518,9 @@ static void render(void)
     }
     case VIEW_WIFI_MENU: {
         app_settings_t current;
+        network_status_t network = {0};
         settings_get(&current);
+        network_prod_get_status(&network);
         static const char *items_en[WIFI_ITEMS] = {"POWER", "STATUS", "SETUP", "PASSWORD"};
         static const char *items_ru[WIFI_ITEMS] = {"ПИТАНИЕ", "СТАТУС", "НАСТР", "ПАРОЛЬ"};
         static const char *items_zh[WIFI_ITEMS] = {"电源", "状态", "设置", "密码"};
@@ -524,7 +531,7 @@ static void render(void)
                                                     tr(lang, "OFF", "ВЫКЛ", "关")) :
                             items[s_wifi_selection];
         display_prod_set_menu_overlay(s_wifi_selection + 1,
-                                      label, "WI-FI");
+                                      label, network.sta_connected ? "WI-FI OK" : "WI-FI");
         return;
     }
     case VIEW_WIFI_STATUS: {
@@ -871,8 +878,11 @@ static void central_short(void)
         break;
     case VIEW_SETTINGS:
         if (s_setting == SETTING_WIFI_INDEX) {
+            network_status_t network = {0};
+            network_prod_get_status(&network);
             s_wifi_selection = 0;
             s_view = VIEW_WIFI_MENU;
+            if (network.sta_connected) display_prod_show_wifi_present();
         } else if (s_setting == SETTING_FIRMWARE_VERSION_INDEX) {
             s_view = VIEW_FIRMWARE_VERSION;
         } else if (s_setting == SETTING_FACTORY_INDEX) {
@@ -1012,7 +1022,12 @@ static bool central_long(void)
         vTaskDelay(pdMS_TO_TICKS(700));
         esp_restart();
     } else if (s_view == VIEW_HOME) {
+        if (surface_is_hot(&status)) {
+            sound_play(SOUND_WARNING);
+            return true;
+        }
         remember_primary_wake_selection();
+        sound_cancel(SOUND_WAKE);
         cooking_sleep();
         display_prod_clear_overlay();
         sound_play(SOUND_SLEEP);
@@ -1029,6 +1044,7 @@ static void cancel_action(void)
 {
     cooker_snapshot_t status;
     cooking_engine_get_snapshot(&status);
+    sound_cancel(SOUND_WAKE);
     s_temperature_edit_deadline_us = 0;
     s_timer_editing = false;
     if (status.state == COOK_STATE_FAULT || status.state == COOK_STATE_COMPLETE)
@@ -1089,7 +1105,6 @@ static void input_event(const ui_input_event_t *event)
             cooking_wake();
             display_prod_activity();
             restore_primary_wake_selection();
-            sound_play(SOUND_UI_CLICK);
             return;
         }
         cancel_action();
@@ -1160,6 +1175,7 @@ static void ui_task(void *arg)
                                    status.state == COOK_STATE_NO_PAN ||
                                    status.state == COOK_STATE_STOPPING ||
                                    status.hold_saturated;
+        const bool surface_hot = surface_is_hot(&status);
         if (urgent_screen) s_temperature_edit_deadline_us = 0;
         if (urgent_screen && s_timer_editing) {
             close_timer_editor();
@@ -1172,6 +1188,7 @@ static void ui_task(void *arg)
             s_temperature_edit_deadline_us = 0;
         }
         if (!status.r20_warning_active &&
+            !surface_hot &&
             (status.state == COOK_STATE_IDLE || status.state == COOK_STATE_READY) &&
             now - s_last_input_us >= (int64_t)settings.sleep_minutes * 60 * 1000000LL) {
             remember_primary_wake_selection();

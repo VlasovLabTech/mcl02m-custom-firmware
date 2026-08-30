@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 
-#define MCL02M_FIRMWARE_VERSION "0.2.25-dev"
+#define MCL02M_FIRMWARE_VERSION "0.2.28-dev"
 
 #define COOKER_MAX_GEAR                 99U
 #define COOKER_HOLD_MAX_GEAR            35U
@@ -10,8 +10,9 @@
 #define COOKER_MAX_TIMER_S              (5U * 60U * 60U)
 #define COOKER_RETAINED_SESSION_LIMIT_MS (8U * 60U * 60U * 1000U)
 #define COOKER_MANUAL_PAUSE_TIMEOUT_MS   (2U * 60U * 60U * 1000U)
-#define COOKER_NO_PAN_TIMEOUT_MS         60000U
-#define COOKER_NO_PAN_SOUND_PAUSE_MS      3000U
+#define COOKER_NO_PAN_TIMEOUT_MS        128000U
+#define COOKER_NO_PAN_START_FAILSAFE_MS  30000U
+#define COOKER_NO_PAN_PLAY_FAILSAFE_MS  132000U
 #define COOKER_POWERBOARD_ARM_MS         30000U
 #define COOKER_ENCODER_WAKE_GUARD_MS     1500U
 #define COOKER_DEFAULT_SLEEP_MIN         1U
@@ -36,6 +37,11 @@
 #define COOKER_IMAGE_CANCEL_MS          1500U
 #define COOKER_IMAGE_SLEEP_WARNING_MS  10000U
 #define COOKER_IMAGE_SLEEP_MS          10000U
+#define COOKER_IMAGE_WIFI_PRESENT_MS    3000U
+#define COOKER_HOT_THRESHOLD_C            60U
+#define COOKER_HOT_IDLE_DELAY_MS         5000U
+#define COOKER_HOT_BLINK_ON_MS           2000U
+#define COOKER_HOT_BLINK_OFF_MS          1000U
 
 /* Additional interface-side guard; the power MCU retains its own protections. */
 #define COOKER_IGBT_LIMIT_C              80U

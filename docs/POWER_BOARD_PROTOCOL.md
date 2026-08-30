@@ -131,7 +131,11 @@ adjustments remain available. `R26=02` clears the restriction.
 
 After three consecutive 500 ms samples of `R20=02`, send `W0D=80` while keeping
 `W00=01` and retaining `W0C`. On `R20=00`, restore the topology for the retained
-gear. The custom UI gives the user 60 seconds before latching E02.
+gear. The custom UI plays one complete 128-second Nutcracker warning and latches
+E02 only after confirmed playback completion. A 30-second start watchdog and a
+132-second post-start watchdog cover a failed sound task without spending the melody
+budget while an existing protected Wake/Sleep finishes. Returning cookware cancels
+playback, and another removal restarts it.
 
 ## Safety observations
 

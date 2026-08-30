@@ -1,5 +1,20 @@
 set(UI_SHARED "${CMAKE_CURRENT_LIST_DIR}/../../lab/ui-test/main")
 set(POWER_SHARED "${CMAKE_CURRENT_LIST_DIR}/../../lab/power-test/main")
+set(PRIVATE_SOUND_SRCS)
+set(PRIVATE_SOUND_INCLUDE_DIRS)
+
+if(MCL02M_PRIVATE_SOUND_BUILD)
+    set(PRIVATE_SOUND_DIR
+        "${CMAKE_CURRENT_LIST_DIR}/../../../assets/sounds/midi/generated/code")
+    set(PRIVATE_SOUND_HEADER
+        "${PRIVATE_SOUND_DIR}/melody_tables_midi.generated.h")
+    if(NOT EXISTS "${PRIVATE_SOUND_HEADER}")
+        message(FATAL_ERROR
+            "Private sound build requires ${PRIVATE_SOUND_HEADER}")
+    endif()
+    list(APPEND PRIVATE_SOUND_SRCS "private_sound_tables.c")
+    list(APPEND PRIVATE_SOUND_INCLUDE_DIRS "${PRIVATE_SOUND_DIR}")
+endif()
 
 idf_component_register(
     SRCS
@@ -14,6 +29,7 @@ idf_component_register(
         "temperature_ctrl.c"
         "ui_controller.c"
         "web_server_prod.c"
+        ${PRIVATE_SOUND_SRCS}
         "${POWER_SHARED}/powerboard_control.c"
         "${UI_SHARED}/telemetry.c"
         "${UI_SHARED}/ui_inputs.c"
@@ -22,6 +38,7 @@ idf_component_register(
         "."
         "${POWER_SHARED}"
         "${UI_SHARED}"
+        ${PRIVATE_SOUND_INCLUDE_DIRS}
     REQUIRES
         esp_driver_gpio
         esp_driver_i2c
@@ -37,6 +54,12 @@ idf_component_register(
         mbedtls
         nvs_flash
 )
+
+if(MCL02M_PRIVATE_SOUND_BUILD)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE MCL02M_PRIVATE_SOUND_BUILD=1)
+else()
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE MCL02M_PRIVATE_SOUND_BUILD=0)
+endif()
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     MCL02M_POWER_TEST_BUILD=0

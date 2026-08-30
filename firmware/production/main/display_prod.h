@@ -11,6 +11,7 @@ bool display_prod_is_awake(void);
 void display_prod_dismiss_transient(void);
 void display_prod_show_confirm(void);
 void display_prod_show_cancel(void);
+void display_prod_show_wifi_present(void);
 void display_prod_set_overlay(const char *lines[UI_OLED_TEXT_LINES]);
 void display_prod_set_menu_overlay(unsigned index, const char *label, const char *subtitle);
 void display_prod_set_number_overlay(unsigned value);

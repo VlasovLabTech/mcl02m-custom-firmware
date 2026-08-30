@@ -32,6 +32,7 @@ typedef enum {
     TRANSIENT_COOKING,
     TRANSIENT_CONFIRM,
     TRANSIENT_CANCEL,
+    TRANSIENT_WIFI_PRESENT,
 } transient_image_t;
 
 static SemaphoreHandle_t s_lock;
@@ -61,6 +62,10 @@ static int64_t s_i2c_debug_hold_until_us;
 #endif
 static uint32_t s_cookware_notice_seq;
 static int64_t s_cookware_notice_deadline_us;
+static unsigned s_ready_image;
+static unsigned s_next_ready_image;
+
+static const uint8_t s_blank_frame[OLED_ASSET_FRAME_BYTES] = {0};
 
 _Static_assert(OLED_ASSET_FRAME_BYTES == UI_OLED_BITMAP_BYTES,
                "OLED asset and driver frame sizes must match");
@@ -103,7 +108,17 @@ static const uint8_t *transient_bitmap(transient_image_t image)
     case TRANSIENT_COOKING: return oled_image_cooking;
     case TRANSIENT_CONFIRM: return oled_image_confirm;
     case TRANSIENT_CANCEL: return oled_image_cancel;
+    case TRANSIENT_WIFI_PRESENT: return oled_image_wifi_present;
     default: return NULL;
+    }
+}
+
+static const uint8_t *ready_bitmap(unsigned index)
+{
+    switch (index % 3U) {
+    case 1: return oled_image_ready_2;
+    case 2: return oled_image_ready_3;
+    default: return oled_image_ready_1;
     }
 }
 
@@ -204,24 +219,21 @@ static bool format_timer_compact(uint32_t seconds, char output[16])
     return true; /* Double second prime. */
 }
 
+static void format_delayed_mode(const cooker_snapshot_t *s, char output[12])
+{
+    if (s->mode == COOK_MODE_TEMPERATURE)
+        snprintf(output, 12, "t%u", s->target_temperature_c);
+    else if (s->mode == COOK_MODE_PROFILE)
+        snprintf(output, 12, "pr%u", s->profile_index == 0 ? 1U : s->profile_index);
+    else
+        snprintf(output, 12, "P%u", s->selected_gear);
+}
+
 static void normal_screen(const cooker_snapshot_t *s, const app_settings_t *settings,
                           char lines[UI_OLED_TEXT_LINES][DISPLAY_LINE_BYTES])
 {
     const app_language_t lang = settings->language;
     snprintf(lines[0], DISPLAY_LINE_BYTES, "%s", mode_name(s->mode, lang));
-    if (s->delayed_start) {
-        char time_text[16];
-        format_time(s->delayed_remaining_s, time_text);
-        if (s->mode == COOK_MODE_TEMPERATURE)
-            snprintf(lines[1], DISPLAY_LINE_BYTES,
-                     tr(lang, "SET %u°C", "ЦЕЛЬ %u°C", "目标 %u°C"),
-                     s->target_temperature_c);
-        else
-            snprintf(lines[1], DISPLAY_LINE_BYTES, "%u", s->selected_gear);
-        snprintf(lines[2], DISPLAY_LINE_BYTES, "%s", tr(lang, "DELAY", "ОТЛОЖ", "延时"));
-        snprintf(lines[3], DISPLAY_LINE_BYTES, "%s", time_text);
-        return;
-    }
     snprintf(lines[1], DISPLAY_LINE_BYTES, "%s", state_name(s->state, lang));
     if (s->mode == COOK_MODE_TEMPERATURE) {
         snprintf(lines[2], DISPLAY_LINE_BYTES, tr(lang, "SET %3uC", "ЦЕЛЬ %3uC", "目标 %3uC"),
@@ -299,6 +311,10 @@ static void display_task(void *arg)
                     set_transient_locked(TRANSIENT_WAKEUP, COOKER_IMAGE_WAKEUP_MS, now);
                 if (active_picture_state(cooker.state) && !active_picture_state(previous))
                     set_transient_locked(TRANSIENT_COOKING, COOKER_IMAGE_COOKING_MS, now);
+                if (cooker.state == COOK_STATE_COMPLETE) {
+                    s_ready_image = s_next_ready_image;
+                    s_next_ready_image = (s_next_ready_image + 1U) % 3U;
+                }
                 if (cooker.state == COOK_STATE_FAULT ||
                     cooker.state == COOK_STATE_COMPLETE ||
                     cooker.state == COOK_STATE_NO_PAN)
@@ -308,6 +324,18 @@ static void display_task(void *arg)
         if (s_transient_image != TRANSIENT_NONE && now >= s_transient_deadline_us)
             set_transient_locked(TRANSIENT_NONE, 0, now);
         const int64_t timeout_us = (int64_t)settings.oled_timeout_s * 1000000LL;
+        const bool surface_hot = cooker.readings_valid &&
+                                 cooker.bottom_c > COOKER_HOT_THRESHOLD_C;
+        const int64_t hot_delay_us = (int64_t)COOKER_HOT_IDLE_DELAY_MS * 1000LL;
+        const bool hot_due = surface_hot &&
+            (cooker.state == COOK_STATE_IDLE || cooker.state == COOK_STATE_READY) &&
+            now - s_last_activity_us >= hot_delay_us;
+        const int64_t hot_cycle_us =
+            (int64_t)(COOKER_HOT_BLINK_ON_MS + COOKER_HOT_BLINK_OFF_MS) * 1000LL;
+        const int64_t hot_elapsed_us = hot_due ?
+            now - s_last_activity_us - hot_delay_us : 0;
+        const bool hot_visible = hot_due &&
+            hot_elapsed_us % hot_cycle_us < (int64_t)COOKER_HOT_BLINK_ON_MS * 1000LL;
         const time_t wall = time(NULL);
         const bool sleep_clock = cooker.state == COOK_STATE_SLEEP &&
                                  settings.show_sleep_clock && wall > 1700000000;
@@ -317,6 +345,7 @@ static void display_task(void *arg)
         const int64_t idle_sleep_us = (int64_t)settings.sleep_minutes * 60 * 1000000LL;
         const bool sleep_warning =
             (cooker.state == COOK_STATE_IDLE || cooker.state == COOK_STATE_READY) &&
+            !surface_hot &&
             idle_sleep_us >= (int64_t)COOKER_IMAGE_SLEEP_WARNING_MS * 1000LL &&
             now - s_last_activity_us >=
                 idle_sleep_us - (int64_t)COOKER_IMAGE_SLEEP_WARNING_MS * 1000LL;
@@ -325,6 +354,7 @@ static void display_task(void *arg)
             now - s_sleep_entered_us < (int64_t)COOKER_IMAGE_SLEEP_MS * 1000LL;
         const uint8_t *picture = NULL;
         bool picture_has_fault_code = false;
+        bool picture_has_delay_info = false;
         char fault_code[4] = {0};
         if (cooker.state == COOK_STATE_FAULT) {
             picture = oled_image_error;
@@ -333,16 +363,21 @@ static void display_task(void *arg)
         } else if (cooker.state == COOK_STATE_NO_PAN) {
             picture = oled_image_no_pan;
         } else if (cooker.state == COOK_STATE_COMPLETE) {
-            picture = oled_image_ready;
+            picture = ready_bitmap(s_ready_image);
+        } else if (cooker.state == COOK_STATE_DELAYED) {
+            picture = oled_image_delayed_start;
+            picture_has_delay_info = true;
         } else if (!r20_warning && !cookware_notice &&
                    s_transient_image != TRANSIENT_NONE) {
             picture = transient_bitmap(s_transient_image);
+        } else if (!r20_warning && !cookware_notice && hot_visible) {
+            picture = oled_image_hot;
         } else if (sleep_picture) {
             picture = oled_image_sleep;
         } else if (sleep_warning) {
             picture = oled_image_sleep_warning;
         }
-        show = picture != NULL || r20_warning || cookware_notice || sleep_clock ||
+        show = picture != NULL || hot_due || r20_warning || cookware_notice || sleep_clock ||
                cooker.state == COOK_STATE_FAULT ||
                cooker.state == COOK_STATE_COMPLETE ||
                cooker.state == COOK_STATE_NO_PAN || cooker.hold_saturated ||
@@ -366,7 +401,7 @@ static void display_task(void *arg)
                                                    !effective_r20_warning;
             const bool effective_overlay = overlay && !urgent &&
                                            !effective_r20_warning &&
-                                           !effective_cookware_notice;
+                                           !effective_cookware_notice && !hot_due;
             const bool timer_only_due = settings.timer_screen_mode == TIMER_SCREEN_ALWAYS &&
                                         cooker.timer_enabled && !urgent &&
                                         cooker.state == COOK_STATE_COOKING &&
@@ -382,6 +417,13 @@ static void display_task(void *arg)
             if (picture != NULL) {
                 if (picture_has_fault_code)
                     ui_oled_show_bitmap_text(picture, fault_code, 30, 32, 2);
+                else if (picture_has_delay_info) {
+                    char delay[16];
+                    char mode[12];
+                    format_timer_compact(cooker.delayed_remaining_s, delay);
+                    format_delayed_mode(&cooker, mode);
+                    ui_oled_show_bitmap_right_text(picture, delay, 30, mode, 40);
+                }
                 else
                     ui_oled_show_bitmap(picture);
             } else if (effective_r20_warning) {
@@ -393,14 +435,11 @@ static void display_task(void *arg)
                 ui_oled_show_text(warning);
             } else if (effective_cookware_notice) {
                 const app_language_t lang = settings.language;
-                const char *notice[UI_OLED_TEXT_LINES] = {
-                    tr(lang, "SMALL", "МАЛАЯ", "小锅"),
-                    tr(lang, "COOKWARE", "ПОСУДА", "功率限"),
-                    "",
-                    tr(lang, "POWER LIMITED", "МОЩНОСТЬ", "35"),
-                    tr(lang, "MAX 35", "МАКС 35", "")
-                };
-                ui_oled_show_text(notice);
+                ui_oled_show_bitmap_right_text(
+                    oled_image_small_cookware, "P<36", 1,
+                    tr(lang, "SMALL", "МАЛ", "小锅"), 40);
+            } else if (hot_due) {
+                ui_oled_show_bitmap(s_blank_frame);
             } else if (sleep_clock) {
                 struct tm local = {0};
                 char clock_text[8];
@@ -512,6 +551,8 @@ esp_err_t display_prod_init(void)
     s_transient_deadline_us = s_last_activity_us +
                               (int64_t)COOKER_IMAGE_TURN_ON_MS * 1000LL;
     s_previous_state_valid = false;
+    s_ready_image = 0;
+    s_next_ready_image = 0;
     s_awake = true;
     return xTaskCreate(display_task, "display", 4096, NULL, 3, NULL) == pdPASS ?
            ESP_OK : ESP_ERR_NO_MEM;
@@ -540,6 +581,7 @@ void display_prod_dismiss_transient(void)
 {
     xSemaphoreTake(s_lock, portMAX_DELAY);
     set_transient_locked(TRANSIENT_NONE, 0, esp_timer_get_time());
+    s_cookware_notice_deadline_us = 0;
     xSemaphoreGive(s_lock);
 }
 
@@ -554,6 +596,14 @@ void display_prod_show_cancel(void)
 {
     xSemaphoreTake(s_lock, portMAX_DELAY);
     set_transient_locked(TRANSIENT_CANCEL, COOKER_IMAGE_CANCEL_MS, esp_timer_get_time());
+    xSemaphoreGive(s_lock);
+}
+
+void display_prod_show_wifi_present(void)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    set_transient_locked(TRANSIENT_WIFI_PRESENT, COOKER_IMAGE_WIFI_PRESENT_MS,
+                         esp_timer_get_time());
     xSemaphoreGive(s_lock);
 }
 

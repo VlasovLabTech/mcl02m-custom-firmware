@@ -1,26 +1,29 @@
-# Монохромные изображения 64x48
+# Production 64x48 OLED artwork
 
-Финальные файлы — десять PNG непосредственно в этом каталоге. Все они имеют
-размер `64x48`, режим Pillow `1` (настоящий 1-bit PNG) и ровно два цвета:
-чёрный фон и белый рисунок. Исходники в родительском каталоге не изменены.
+This directory is the tracked source of truth for the production OLED frames.
+Every active or reserved PNG is exactly `64x48`, contains only black and white
+pixels, and is converted without dithering to the SSD1306 page-major format.
 
-## Метод
+The current pack contains 19 compiled frames:
 
-1. PNG переводится в яркость.
-2. На исходном разрешении порог Otsu убирает цветные и сглаженные полутона.
-3. Бинарная маска уменьшается фильтром `BOX` как карта покрытия пикселя.
-4. Пиксель экрана включается, если белый рисунок занимает не менее 34% его
-   исходной площади.
+- updated Cancel, Confirm, Cooking, Error, NoPan, Wake and two Sleep frames;
+- three Ready frames selected in rotation on successive timer completions;
+- Wi-Fi connected, hot-surface, delayed-start and small-cookware frames;
+- the unchanged startup frame;
+- reserved `noopls`, `toohot` and `whatisgoingon` frames, which are compiled but
+  deliberately have no display trigger yet.
 
-Так тонкие усы, пар, знаки, искры и мелкие черты не исчезают, но вокруг них не
-появляется шум дизеринга.
+`error.png` keeps its lower-right corner available for the live 2x error code.
+The delayed-start frame receives a compact countdown and `P`, `t` or `pr` mode
+badge at runtime. The small-cookware frame receives `P<36` and a localized label
+at runtime.
 
-Повторная сборка:
+Regenerate and verify the C resources:
 
 ```powershell
-py -3 .\prepare_oled_images.py
+py -3 firmware\production\tools\generate_oled_assets.py
+py -3 firmware\production\tools\generate_oled_assets.py --check
 ```
 
-Параметр `--coverage` управляет толщиной: меньше `0.34` — детали толще, больше —
-тоньше. В `_previews` сохранены увеличенная итоговая контактная таблица и
-сравнение обычной бинаризации, трёх порогов покрытия и Floyd-Steinberg.
+The legacy `coocking.png` and `ready.png` files remain only as historical source
+art and are not compiled into the current firmware.
