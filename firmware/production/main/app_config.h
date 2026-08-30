@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 
-#define MCL02M_FIRMWARE_VERSION "0.2.28-dev"
+#define MCL02M_FIRMWARE_VERSION "0.2.29-dev"
 
 #define COOKER_MAX_GEAR                 99U
 #define COOKER_HOLD_MAX_GEAR            35U
@@ -33,6 +33,7 @@
 #define COOKER_IMAGE_WAKEUP_MS          3000U
 #define COOKER_IMAGE_TURN_ON_MS         5000U
 #define COOKER_IMAGE_COOKING_MS         2500U
+#define COOKER_COMPLETE_NOTICE_MS      60000U
 #define COOKER_SMALL_COOKWARE_NOTICE_MS 3000U
 #define COOKER_IMAGE_CANCEL_MS          1500U
 #define COOKER_IMAGE_SLEEP_WARNING_MS  10000U

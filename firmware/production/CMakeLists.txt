@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 option(MCL02M_PRIVATE_SOUND_BUILD "Use local non-public Wake/Sleep melodies" OFF)
-set(MCL02M_BASE_VERSION "0.2.28-dev")
+set(MCL02M_BASE_VERSION "0.2.29-dev")
 if(MCL02M_PRIVATE_SOUND_BUILD)
     set(PROJECT_VER "${MCL02M_BASE_VERSION}-private")
     set(MCL02M_PROJECT_NAME mcl02m_custom_private)

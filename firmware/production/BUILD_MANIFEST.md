@@ -3,7 +3,7 @@
 Build date: 2026-08-30
 ESP-IDF: 6.0.2
 Target: ESP32, Unicore
-Firmware: `0.2.28-dev`
+Firmware: `0.2.29-dev`
 
 The app header embeds compile metadata, so a clean rebuild may have a different
 SHA-256 while retaining the same source, layout, size and validation gates.
@@ -12,17 +12,26 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 ## App image
 
 - File: `build/mcl02m_custom.bin`
-- Size: `903680` bytes (`0xDCA00`)
-- SHA-256: `9ad802e3eb4ca3d28916566e75c268448e009dc5540350ce2c871087357d09a3`
-- ESP image validation hash: `11022e18f9136626d722ccce7799bc6c904663f6ef36eb091aaeed0477e4684d`
-- Stock OTA slot: `0x160000` bytes; image fits with `538112` bytes free.
+- Size: `904256` bytes (`0xDCC40`)
+- SHA-256: `b9a3770f383564c6f0d95bfc169498b92b7f91e2d107c15e0ba39482de6f88f9`
+- ESP image validation hash: `2e56a6d7c0756a79abc86a68984b48fc19dff3848fc81b828de3b48f61979a23`
+- Stock OTA slot: `0x160000` bytes; image fits with `537536` bytes free.
+
+## Private sound flavor
+
+- File: ignored `build_private/mcl02m_custom_private.bin`
+- Size: `904480` bytes (`0xDCD20`)
+- SHA-256: `476c6940d174cdb6a6f8e6f26c93686f6e1319fde3a69599139f005696ef2de5`
+- ESP image validation hash: `8bf93a73f5fae7754d122b973735db61a1267712e07dc169d64b9da5dbf49a03`
+- Stock OTA slot: `0x160000` bytes; image fits with `537312` bytes free.
+- Project/app metadata: `mcl02m_custom_private`, `0.2.29-dev-private`.
 
 ## Linked memory
 
-- Flash code: 643698 bytes
-- Flash data: 155308 bytes
+- Flash code: 643902 bytes
+- Flash data: 155676 bytes
 - IRAM: 89047 / 131072 bytes (67.94%)
-- DRAM static: 37172 / 180736 bytes (20.57%)
+- DRAM static: 37180 / 180736 bytes (20.57%)
 - RTC slow: 64 / 8192 bytes
 
 ## Offline gates
@@ -69,14 +78,25 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
   and 132000-ms post-start watchdogs,
   selective NoPan cancellation/restart, protected long-melody scheduling, and the
   fail-closed separation between the public and ignored private sound flavors.
+  The `0.2.29-dev` gate additionally checks the remaining Chinese firmware/version,
+  power-board, warning and Stop translations, Russian compact-width safety, complete
+  CJK coverage, and all ten sections of each EN/RU/ZH user-manual panel against the
+  current temperature, sound, warning, timer and fault behavior. It also proves that
+  the Ready completion state remains visible through 59,999 ms and returns to Idle at
+  60,000 ms so Hot, OLED timeout, and Sleep policy cannot remain blocked forever. It
+  also proves that short center, long center, and Cancel during NoPan all converge on
+  one idempotent transactional Stop, immediately cancel the warning melody, and that
+  neither the cooking engine nor the lower power-board driver can arm a NoPan Pause
+  transition capable of timing out as `EPB`.
 - `tests/safety_check.py`: PASS.
 - The public ELF contains no private LCE/SNM table or adapter symbols. The private
   flavor was built separately from the ignored local source and exposes the distinct
-  `mcl02m_custom_private` project name and `0.2.28-dev-private` app version.
+  `mcl02m_custom_private` project name and `0.2.29-dev-private` app version.
 - Production ELF check: temporary `I2C ERRORS` menu/overlay code is absent while
   its guarded source remains available.
-- `tests/localization_check.py`: PASS; 101 used CJK glyphs, 68 static strings,
-  complete glyph coverage, no moving text and no 1× string wider than 64 px.
+- `tests/localization_check.py`: PASS; 112 used CJK glyphs, 76 Chinese strings,
+  81 Russian strings, complete glyph coverage, trilingual manual coverage, no
+  moving text and no string wider than the applicable 64-pixel rendering path.
 - `tools/generate_oled_assets.py --check`: PASS, 19 exact 384-byte frames.
 - `esptool image-info`: valid checksum and validation hash, ESP32/DIO/40 MHz/16 MiB.
 - Generated partition table: byte-identical to stock.
@@ -87,11 +107,13 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 
 ## Development-unit deployment
 
-This `0.2.28-dev` artifact has not been flashed. The exact hash-verified
-`0.2.26-dev` artifact was written only to stock `ota_1` at `0x170000` on the
-development unit on 2026-08-30 after explicit owner authorization. Esptool verified
-the written data. That operation did not write the
-bootloader, partition table, `otadata`, NVS, PHY, `ota_0` or eFuse.
+This `0.2.29-dev` artifact has not been flashed. The exact hash-verified
+`0.2.28-dev-private` artifact (903920 bytes; SHA-256
+`e992fc444f1a56af0d9ce260280c153a233adb8e022f4644c6cf0d1cb1312268`)
+was written only to stock `ota_1` at `0x170000` on the development unit on
+2026-08-30 after explicit owner authorization. Esptool verified the written data.
+That operation did not write the bootloader, partition table, `otadata`, NVS, PHY,
+`ota_0` or eFuse.
 
 ESP-IDF prints a generic `idf.py flash` suggestion after building. Project procedure
 forbids that broad command on this cooker. A successful build is not authorization

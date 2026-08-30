@@ -53,6 +53,7 @@ static int64_t s_last_temp_update_us;
 static int64_t s_timer_accumulator_us;
 static int64_t s_no_pan_since_us;
 static int64_t s_run_started_us;
+static int64_t s_complete_notice_since_us;
 static int64_t s_delayed_due_mono_us;
 static int64_t s_manual_pause_since_us;
 static int64_t s_heating_accumulator_us;
@@ -455,12 +456,33 @@ static void finish_normal_stop_locked(void)
 {
     const bool complete = s_stop_terminal == STOP_TERMINAL_COMPLETE;
     s_status.state = complete ? COOK_STATE_COMPLETE : COOK_STATE_IDLE;
+    s_complete_notice_since_us = complete ? esp_timer_get_time() : 0;
     s_run_started_us = 0;
     reset_session_timing_locked();
     if (complete) sound_play(SOUND_COMPLETE);
     strlcpy(s_status.detail, s_stop_reason[0] == '\0' ? "STOP" : s_stop_reason,
             sizeof(s_status.detail));
     emit_status(complete ? "complete" : "stop_confirmed");
+}
+
+static void update_complete_notice_locked(int64_t now_us)
+{
+    if (s_status.state != COOK_STATE_COMPLETE) {
+        s_complete_notice_since_us = 0;
+        return;
+    }
+    if (s_complete_notice_since_us == 0) {
+        s_complete_notice_since_us = now_us;
+        return;
+    }
+    if (now_us - s_complete_notice_since_us <
+        (int64_t)COOKER_COMPLETE_NOTICE_MS * 1000LL)
+        return;
+
+    s_complete_notice_since_us = 0;
+    s_status.state = COOK_STATE_IDLE;
+    strlcpy(s_status.detail, "COMPLETE NOTICE EXPIRED", sizeof(s_status.detail));
+    emit_status("complete_notice_expired");
 }
 
 static esp_err_t apply_output_locked(uint8_t gear)
@@ -976,6 +998,13 @@ static void handle_intent_locked(const intent_t *intent)
 #if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
         ESP_LOGI(TAG, "C,PR,%s", cooking_state_name(s_status.state));
 #endif
+        if (s_status.state == COOK_STATE_NO_PAN) {
+            /* NoPan is an attention state, not a resumable manual Pause. Keep
+             * every center-button path fail-safe even if a future caller sends
+             * the generic Pause/Resume intent instead of an explicit Stop. */
+            begin_normal_stop_locked("NO PAN INPUT", false);
+            break;
+        }
         const bool pan_return_transition = s_status.transition_pending &&
             (s_status.transition_kind == PB_TRANSITION_PAN_RETURN_HOLD ||
              s_status.transition_kind == PB_TRANSITION_PAN_RETURN_RESUME);
@@ -983,9 +1012,7 @@ static void handle_intent_locked(const intent_t *intent)
             /* Repeated short presses cannot invert an unconfirmed transition. */
             break;
         }
-        if (s_status.state == COOK_STATE_COOKING ||
-            s_status.state == COOK_STATE_NO_PAN) {
-            const bool pausing_no_pan = s_status.state == COOK_STATE_NO_PAN;
+        if (s_status.state == COOK_STATE_COOKING) {
             s_status.paused_gear = s_status.applied_gear;
             const esp_err_t pause_err = powerboard_control_pause();
 #if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
@@ -995,12 +1022,6 @@ static void handle_intent_locked(const intent_t *intent)
                 powerboard_status_t pb;
                 powerboard_control_get_status(&pb);
                 copy_transition_status_locked(&pb);
-                if (pausing_no_pan) cancel_no_pan_sound_locked();
-                if (pausing_no_pan) {
-                    s_no_pan_announced = false;
-                    s_no_pan_since_us = 0;
-                    s_pan_return_waiting_output = false;
-                }
                 if (control_mode_locked() == COOK_MODE_TEMPERATURE) {
                     temperature_ctrl_restart(&s_temperature);
                     s_status.hold_saturated = false;
@@ -1174,6 +1195,7 @@ static void engine_task(void *arg)
         update_session_time_buckets_locked(&pb, delta, now);
         update_timer_locked(delta);
         update_temperature_locked(now);
+        update_complete_notice_locked(now);
         renew_cooking_lease_locked();
         xSemaphoreGive(s_lock);
         vTaskDelay(pdMS_TO_TICKS(COOKER_CONTROL_PERIOD_MS));

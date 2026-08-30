@@ -1,7 +1,7 @@
 # Supervised Hardware Validation Plan
 
-Status: `0.2.26-dev` was flashed app-only after explicit authorization; physical boot
-and UI confirmation remain pending. The targeted `0.2.24-dev` boot, Delayed Start and
+Status: `0.2.28-dev-private` was flashed app-only after explicit authorization;
+supervised sound/localization confirmation remains pending. The targeted `0.2.24-dev` boot, Delayed Start and
 transactional Stop validation passed. This document does not authorize another flash
 or heating session by itself.
 
@@ -148,7 +148,7 @@ Pending for the next supervised `0.2.26-dev` session: repeat step 7 and verify t
 new persistent `time` artwork, lower-right countdown/mode badge, expiry into the
 selected cooking mode, and cancellation before the deadline.
 
-Pending after a future `0.2.28-dev` flash: verify one full 128-second NoPan melody,
+Pending on the deployed `0.2.28-dev-private`: verify one full 128-second NoPan melody,
 E02 only after its final note, cookware return before completion without E02, and a
 second removal restarting from the first note. For the private flavor, verify that
 ordinary input does not interrupt or queue delayed clicks behind Wake, Cancel stops

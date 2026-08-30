@@ -662,6 +662,10 @@ def manual_pause_state(elapsed_s: int) -> str:
     return "STOPPED" if elapsed_s >= 2 * 60 * 60 else "PAUSED"
 
 
+def complete_notice_state(elapsed_ms: int) -> str:
+    return "IDLE" if elapsed_ms >= 60_000 else "COMPLETE"
+
+
 def configure_mode(state: str) -> tuple[str, bool]:
     configurable = {"SLEEP", "IDLE", "READY", "COMPLETE"}
     return ("READY", True) if state in configurable else (state, False)
@@ -676,10 +680,10 @@ def start_transaction(arm_ok: bool, start_ok: bool) -> tuple[bool, bool]:
     return True, False
 
 
-def pause_no_pan_context(no_pan_elapsed_s: int) -> tuple[str, int]:
-    """Manual Pause starts a fresh NoPan window after a later Resume."""
-    assert no_pan_elapsed_s >= 0
-    return "PAUSED", 0
+def no_pan_user_action(action: str) -> str:
+    if action in {"CENTER_SHORT", "CENTER_LONG", "CANCEL"}:
+        return "STOPPING"
+    raise ValueError(action)
 
 
 def changed_temperature_output(
@@ -1145,11 +1149,6 @@ def run() -> None:
         assert transition.confirmed_state == final_state
         assert transition.confirmed_gear == gear
 
-    no_pan_pause = ConfirmedTransition()
-    no_pan_pause_generation = no_pan_pause.request("PAUSE", "PAUSED", 0)
-    assert no_pan_pause.transmit(no_pan_pause_generation, 0, (0x81, 0, 0))
-    assert no_pan_pause.feedback(500, r20=0x02, r26=2)
-
     zero_profile_start = ConfirmedTransition()
     zero_start_generation = zero_profile_start.request("START", "ACTIVE_ZERO", 0)
     assert zero_profile_start.transmit(zero_start_generation, 0, (0x81, 0, 0))
@@ -1244,6 +1243,8 @@ def run() -> None:
     assert active_zero_command("STOPPED") == (0, 0, 0)
     assert manual_pause_state(2 * 60 * 60 - 1) == "PAUSED"
     assert manual_pause_state(2 * 60 * 60) == "STOPPED"
+    assert complete_notice_state(59_999) == "COMPLETE"
+    assert complete_notice_state(60_000) == "IDLE"
     assert configure_mode("IDLE") == ("READY", True)
     assert configure_mode("READY") == ("READY", True)
     assert configure_mode("DELAYED") == ("DELAYED", False)
@@ -1252,7 +1253,9 @@ def run() -> None:
     assert start_transaction(False, False) == (False, False)
     assert start_transaction(True, False) == (False, True)
     assert start_transaction(True, True) == (True, False)
-    assert pause_no_pan_context(59) == ("PAUSED", 0)
+    assert no_pan_user_action("CENTER_SHORT") == "STOPPING"
+    assert no_pan_user_action("CENTER_LONG") == "STOPPING"
+    assert no_pan_user_action("CANCEL") == "STOPPING"
     assert changed_temperature_output("STARTING", 125, 130, True) == 0
     assert changed_temperature_output("STARTING", 125, 100, True) == 77
     assert changed_temperature_output("STARTING", 125, 100, False) == 0

@@ -13,12 +13,18 @@ from a request to edit or build software.
 - Xiaomi device model: `chunmi.ihcooker.v2`.
 - Interface controller: Espressif `ESP-WROOM-32D` (classic ESP32).
 - Display: monochrome 64×48 OLED, page-major 384-byte framebuffer.
-- Current custom source version: `0.2.28-dev`.
+- Current custom source version: `0.2.29-dev`.
+- `0.2.29-dev` completes the English/Russian/Simplified-Chinese OLED audit. It
+  localizes the remaining Chinese firmware/version and power-board headings, the
+  unknown-`R20` warning in all three languages, and the Chinese Stop state; it also
+  updates and automatically checks the self-contained trilingual user manual.
 - `0.2.28-dev` integrates the complete 128-second public-domain Nutcracker table as
   the mandatory one-shot NoPan warning. E02 follows confirmed sound completion, with
-  separate 30-second start and 132-second post-start watchdogs; cookware return,
-  Pause, and Stop selectively cancel NoPan,
-  and a later removal starts it again from the beginning. Wake, Sleep, NoPan, and the
+  separate 30-second start and 132-second post-start watchdogs; cookware return and
+  Stop selectively cancel NoPan, and a later removal starts it again from the
+  beginning. In current `0.2.29-dev`, center short, center long, and Cancel all use
+  that same idempotent Stop; the engine and lower driver reject NoPan-to-Pause so an
+  unconfirmed Pause cannot become a generic `EPB`. Wake, Sleep, NoPan, and the
   critical alarm are protected queue requests, so ordinary clicks do not accumulate
   behind a long melody. The default public build has no dependency on private sound
   sources. An opt-in `MCL02M_PRIVATE_SOUND_BUILD` compiles the ignored local Wake and
@@ -29,11 +35,12 @@ from a request to edit or build software.
   countdown and `P`/`t`/`pr` badge; restricted cookware uses its Small frame with
   `P<36` and a localized label; successful Wi-Fi connection uses its own frame.
   After five inactive seconds in Idle/Ready with a valid bottom reading above
-  60 °C, Hot blinks 2 s on / 1 s blank. COMPLETE Ready has priority until physical
-  acknowledgement, and both UI and engine reject Sleep until the reading is at or
-  below 60 °C. Reserved No-op, Too-hot and What-is-going-on frames compile without
+  60 °C, Hot blinks 2 s on / 1 s blank. COMPLETE Ready has priority for at most one
+  minute, then automatically returns to Idle so Hot/OLED/Sleep policy resumes; both
+  UI and engine reject Sleep until the reading is at or below 60 °C. Reserved No-op,
+  Too-hot and What-is-going-on frames compile without
   any runtime trigger.
-- Unflashed `0.2.27-dev` removes the exclamation mark from the small-cookware limit
+- `0.2.27-dev` removes the exclamation mark from the small-cookware limit
   and adds the previously missing `<` OLED glyph.
 - `0.2.25-dev` makes timed pictures dismissible by the next physical press or encoder
   movement while preserving a new picture created by that same action, keeps the
@@ -444,8 +451,9 @@ PAUSED, NO_PAN, COMPLETE, FAULT
   exact deadline is consumed before the deadline update and therefore wins. On real
   expiry the UI switches from any open menu to the selected POWER, TEMPERATURE, or
   PROFILE view; profile selection cannot change while the delay is active.
-- Completion stops output, plays the completion melody, shows the Ready image,
-  and waits for acknowledgement.
+- Completion stops output, plays the completion melody, and shows a rotating Ready
+  image. Acknowledgement closes it immediately; otherwise COMPLETE returns to Idle
+  automatically after one minute so Hot, OLED timeout, and Sleep policy can resume.
 - Timer is unavailable for an active profile because every profile stage already
   has a mandatory duration.
 
@@ -639,10 +647,11 @@ Before any release or hardware write:
    power tests with a water load.
 
 The reference artifact identified in `firmware/production/BUILD_MANIFEST.md` follows
-the current source. The deployed `0.2.26-dev` app (901408 bytes; SHA-256
-`e2baa60d3d61621e268ea31c5e5d57a4cee93d271a2c7db41e1c9ef2e5ef1326`) was flashed
-to stock `ota_1` at `0x170000` on 2026-08-30 after explicit owner authorization.
-Esptool verified the written data; physical boot and UI confirmation remain pending.
+the current source. The deployed `0.2.28-dev-private` app (903920 bytes; SHA-256
+`e992fc444f1a56af0d9ce260280c153a233adb8e022f4644c6cf0d1cb1312268`) was
+flashed to stock `ota_1` at `0x170000` on 2026-08-30 after explicit owner
+authorization. Esptool verified the written data and hard-reset the ESP32;
+supervised sound/localization confirmation remains pending.
 That deployment did not touch the bootloader, partition table, NVS, `otadata`,
 `ota_0`, PHY or eFuse. This status is not permission for another flash operation.
 

@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.2.29-dev — 2026-08-30
+
+- Completed the production OLED language audit for English, Russian, and
+  Simplified Chinese. The firmware/version and power-board headings are now
+  translated in Chinese, the unknown-`R20` warning is localized in all three
+  languages, and the Chinese `STOPPING` state no longer says Pause.
+- Added the required compact Chinese glyphs and strengthened the localization gate
+  to check Chinese fallback labels, the localized warning, Russian compact width,
+  and complete CJK coverage.
+- Updated the self-contained trilingual user manual for the current temperature,
+  active-zero, small-cookware, Hot/Ready, delayed-start, NoPan, private-sound,
+  session-limit, warning, and fault-code behavior. The manual now states explicitly
+  that LANGUAGE controls the OLED while the local web page remains English-only.
+- Bounded the timer-completion Ready state to one minute. If it is not acknowledged,
+  the engine returns to Idle so Hot, OLED timeout, and Sleep behavior resume normally.
+- Corrected NoPan input handling: short center, long center, and Cancel now converge
+  on the same idempotent Stop. NoPan can no longer enter a Pause transaction whose
+  unconfirmed active-zero response could surface as the generic `EPB` fault.
+- Recorded the explicitly authorized `0.2.28-dev-private` app-only deployment to
+  stock `ota_1`; bootloader, partition table, `otadata`, NVS and every other
+  partition remained untouched.
+
 ## 0.2.16-dev — 2026-08-29
 
 - Replaced the queued timer toggle with synchronous, explicit Set and Disable

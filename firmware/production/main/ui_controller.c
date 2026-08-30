@@ -212,7 +212,7 @@ static const char *setting_name(unsigned item, app_language_t language)
 #if COOKER_I2C_DEBUG_DISPLAY_ENABLED
         "显示",
 #endif
-        "WI-FI", "FIRMWARE",
+        "WI-FI", "固件",
         "恢复出厂"
     };
     if (item >= SETTING_ITEMS) return "?";
@@ -232,7 +232,7 @@ static const char *setting_name_second(unsigned item, app_language_t language)
     case SETTING_I2C_DEBUG_INDEX: return "I2C ERRORS";
 #endif
     case SETTING_FIRMWARE_VERSION_INDEX:
-        return tr(language, "VERSION", "ВЕРСИЯ", "VERSION");
+        return tr(language, "VERSION", "ВЕРСИЯ", "版本");
     default: return "";
     }
 }
@@ -576,9 +576,9 @@ static void render(void)
         else
             strlcpy(l0, "R28 --", sizeof(l0));
         display_prod_set_version_overlay(
-            tr(lang, "FIRMWARE", "ПРОШИВКА", "FIRMWARE"),
+            tr(lang, "FIRMWARE", "ПРОШИВКА", "固件"),
             MCL02M_FIRMWARE_VERSION,
-            tr(lang, "PWR BOARD", "СИЛ ПЛАТА", "PWR BOARD"),
+            tr(lang, "PWR BOARD", "СИЛ ПЛАТА", "功率板"),
             l0);
         return;
     case VIEW_FACTORY_CONFIRM:
@@ -805,10 +805,12 @@ static void central_short(void)
         return;
     }
     if (status.state == COOK_STATE_STOPPING) return;
-    const bool pausable_pan_return = status.state == COOK_STATE_NO_PAN &&
-        (status.transition_kind == PB_TRANSITION_PAN_RETURN_HOLD ||
-         status.transition_kind == PB_TRANSITION_PAN_RETURN_RESUME);
-    if (status.transition_pending && !pausable_pan_return) return;
+    if (status.state == COOK_STATE_NO_PAN) {
+        cooking_stop("NO PAN CENTER");
+        s_view = VIEW_HOME;
+        return;
+    }
+    if (status.transition_pending) return;
     if (s_timer_editing) {
         if (s_view == VIEW_TIMER_DISABLE) {
             if (cooking_timer_disable() == ESP_OK) close_timer_editor();
@@ -828,7 +830,7 @@ static void central_short(void)
         return;
     }
     if (status.state == COOK_STATE_COOKING || status.state == COOK_STATE_STARTING ||
-        status.state == COOK_STATE_PAUSED || status.state == COOK_STATE_NO_PAN) {
+        status.state == COOK_STATE_PAUSED) {
         cooking_pause_resume();
         return;
     }

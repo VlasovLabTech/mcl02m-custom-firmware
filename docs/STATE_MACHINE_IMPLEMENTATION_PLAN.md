@@ -4,9 +4,10 @@ Status: **in progress; the first bounded fix batch is implemented, while the rem
 
 Audit baseline: `0.2.10-dev`, commit `2b5784e` (`2026-08-28`)
 
-Current source: `0.2.28-dev`. The `0.2.26-dev` app image was flashed to the development cooker on
-2026-08-30 after explicit authorization; physical boot and UI confirmation remain
-pending. Supervised `0.2.24-dev` testing showed retained-session active zero without
+Current source: `0.2.29-dev`. The `0.2.28-dev-private` app image was flashed to the
+development cooker on 2026-08-30 after explicit authorization; supervised
+sound/localization confirmation remains pending. Supervised `0.2.24-dev` testing
+showed retained-session active zero without
 unexpected relay switching, and the targeted Delayed Start regression passed without
 `ETM`. The source also keeps the temporary I2C-loss
 OLED counter behind a disabled compile-time flag, so it is absent from the production
@@ -15,12 +16,14 @@ the internal `STOPPING` text from the physical UI while retaining the complete l
 transaction and diagnostics. Version `0.2.26-dev` changes only the presentation
 layer and Sleep eligibility: it installs the revised OLED pack, rotates completion
 artwork, adds dedicated delayed/Wi-Fi/small-cookware/hot-surface screens, and blocks
-Sleep while a valid bottom reading remains above 60 °C. Unflashed `0.2.27-dev`
+Sleep while a valid bottom reading remains above 60 °C. Version `0.2.27-dev`
 removes the cookware-limit exclamation mark and adds the missing `<` OLED glyph.
-Unflashed `0.2.28-dev` makes the full 128-second Nutcracker table the one-shot NoPan
+Version `0.2.28-dev` makes the full 128-second Nutcracker table the one-shot NoPan
 warning and uses its confirmed completion, rather than an unrelated repeating timer,
 to enter E02. It also separates default public and opt-in ignored private sound
 flavors while keeping all control and safety sources shared.
+Unflashed `0.2.29-dev` completes the three-language OLED audit and updates the
+self-contained trilingual user manual; it does not alter the cooking state machine.
 
 This document preserves the complete control-flow review so the findings can be
 discussed, prioritized, and implemented later without relying on chat history. It is
@@ -112,8 +115,8 @@ Before calling the firmware robust, the recommended minimum is:
 | `STARTING` | Start requested; waiting for heat confirmation | Cooking, Pause, Stop, NoPan, Fault |
 | `COOKING` | active session, including gear-zero coast | Pause, Stop, NoPan, Complete, Fault |
 | `PAUSED` | manual retained-session active zero | Resume, Stop, two-hour timeout, Fault |
-| `NO_PAN` | power board reports missing cookware | Pan return, Pause, Stop, timeout, Fault |
-| `COMPLETE` | timer/profile completed | Acknowledge, Wake, new selection |
+| `NO_PAN` | power board reports missing cookware | Pan return, transactional Stop from any center press/Cancel, E02 timeout, Fault |
+| `COMPLETE` | timer/profile completed; Ready is shown for at most 60 seconds | Acknowledge, Wake, new selection, or automatic Idle after 60 seconds |
 | `FAULT` | latched application or power-board fault | Acknowledge after the power side is safe |
 
 ### 2.2 Power-board layer
@@ -343,22 +346,15 @@ Recommended change:
   schedule's stored recipe atomically while remaining in `DELAYED`.
 - Never leave `delayed_start == true` outside a valid delayed-transition context.
 
-### M2. Pausing from NoPan retains the old NoPan timestamp
+### M2. NoPan must not enter manual Pause
 
-Implementation status: **implemented in `0.2.12-dev` and included in the deployed
-`0.2.14-dev`** and later superseded by completion-driven playback in
-`0.2.28-dev`. Entering manual Pause cancels the current NoPan melody; a later Resume
-with missing cookware starts a fresh full 128-second melody from its first note.
-
-The Pause path stops the NoPan sound, but it does not clearly reset
-`s_no_pan_since_us`. After Resume, a still-missing pan can inherit the previous elapsed
-time and reach E02 earlier than the user expects.
-
-Recommended change:
-
-- Specify policy: Pause should freeze the NoPan timer or reset it.
-- Store the remaining time explicitly if freezing is desired.
-- Reset all announcement flags and timestamps together in one transition helper.
+Implementation status: **closed in current `0.2.29-dev`**. Field use showed that a
+short center press in NoPan entered the generic Pause transaction. A power board that
+did not confirm active zero while reporting no cookware could then time out and expose
+the generic `EPB` code. Center short, center long, and Cancel now all converge on the
+same idempotent transactional Stop and immediately cancel the melody. The cooking
+engine converts any defensive Pause/Resume intent received in NoPan to Stop, and the
+lower power-board driver independently rejects a direct NoPan Pause request.
 
 ### M3. Very early Pause/Resume can leave the user in Pause with only a silent rejection
 
@@ -567,9 +563,9 @@ effect, audible/visual feedback, and whether the action is idempotent.
 | Cooking | Edit active target | Pause | Stop even over editors | Stop | Timer editor |
 | Active-zero cooking | Edit target | Pause | Stop | Stop | Timer editor |
 | Paused | Edit resume target | Resume | Stop | Stop | Timer policy |
-| NoPan | Edit target policy | Pause | Stop | Stop | Timer policy |
+| NoPan | Edit target policy | Stop | Stop | Stop | Timer policy |
 | Stopping | Ignore or queue | Idempotent Stop | Idempotent Stop | Idempotent Stop | Ignore |
-| Complete | Navigate after acknowledge | Acknowledge | Home/Sleep policy | Acknowledge | Ignore |
+| Complete | Navigate after acknowledge or 60-s expiry | Acknowledge | Home/Sleep policy | Acknowledge | Ignore |
 | Fault | No mutation | Acknowledge only if safe | Acknowledge policy | Acknowledge policy | Ignore |
 
 Special sequences that require explicit tests:
@@ -580,7 +576,7 @@ Special sequences that require explicit tests:
 4. Start above current setpoint and Start below current temperature;
 5. lower the setpoint sharply during `STARTING`;
 6. remove pan during PREHEAT, APPROACH, HOLD and active zero;
-7. Pause while NoPan, wait, Resume with and without pan;
+7. NoPan → short center, long center, and Cancel, including repeated input and a pending pan-return transition;
 8. schedule Start, then enter every menu and change mode/profile;
 9. scheduled Start → encoder adjustment;
 10. timer editor open → long center Stop;

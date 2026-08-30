@@ -175,8 +175,9 @@ modified. See [Flashing and recovery](docs/FLASHING.md) before writing anything.
 
 ## Development status
 
-The current source version is `0.2.28-dev`; the hash-verified `0.2.26-dev` app image was written
-only to stock `ota_1` at `0x170000` on the development unit on 2026-08-30.
+The current source version is `0.2.29-dev`; the hash-verified
+`0.2.28-dev-private` app image was written only to stock `ota_1` at `0x170000`
+on the development unit on 2026-08-30.
 Supervised testing of the preceding `0.2.24-dev` image confirmed retained-session active zero without
 unexpected relay switching, Sleep/Wake, the temporary I2C debug display, and
 temperature operation with water. A 125 °C empty-pan test then showed about 5 °C of first-heat
@@ -242,25 +243,35 @@ Delayed Start uses its dedicated picture with a compact countdown plus
 with `P<36` and a localized label. Successful Wi-Fi joins show the Wi-Fi picture,
 including when entering an already-connected Wi-Fi menu. After cooking stops, a
 valid surface reading above 60 °C produces a blinking hot-surface picture after
-five seconds of inactivity; timer-completion Ready keeps priority until
-acknowledged, and Sleep is blocked until the surface cools. Three additional
-frames are compiled but deliberately have no trigger yet. Unflashed `0.2.27-dev`
+five seconds of inactivity; timer-completion Ready keeps priority for at most one
+minute before Idle resumes Hot/OLED/Sleep policy, and Sleep remains blocked until
+the surface cools. Three additional
+frames are compiled but deliberately have no trigger yet. Version `0.2.27-dev`
 removes the exclamation mark from the cookware limit and adds the previously missing
-`<` OLED glyph. Unflashed `0.2.28-dev` replaces the NoPan loop with one complete,
+`<` OLED glyph. Version `0.2.28-dev` replaces the NoPan loop with one complete,
 mandatory 128-second Nutcracker melody and raises E02 only after playback completes.
 A separate watchdog faults if playback cannot start within 30 seconds or cannot
 report completion within 132 seconds after it starts. Returning cookware, Pause, or Stop cancels only
 that NoPan request, so removing cookware again restarts the melody from its beginning.
+While NoPan is active, center short, center long, and Cancel all perform the same
+idempotent transactional Stop and cancel the warning melody immediately; the
+NoPan path cannot enter Pause.
 Long transition melodies discard ordinary queued clicks. Public and opt-in ignored
 private builds share every source except the selected Wake/Sleep tables; their project
-names and build directories are distinct. The supervised
+names and build directories are distinct. Unflashed `0.2.29-dev` completes the
+English/Russian/Simplified-Chinese OLED audit, localizes the remaining Chinese
+version/status labels and the unknown-`R20` warning, and updates the self-contained
+trilingual user manual for the current control, safety, artwork and sound behavior.
+The supervised
 operator/monitor sequence is documented in the
 [hardware validation plan](docs/HARDWARE_VALIDATION_PLAN.md). The
 remaining findings and proposed fix sequence are preserved in the
 [state-machine implementation plan](docs/STATE_MACHINE_IMPLEMENTATION_PLAN.md).
-The `0.2.26-dev` app was flashed after explicit owner authorization. Esptool verified
-the written data; no bootloader, partition table, `otadata`, NVS or other partition
-was written. Physical boot and UI confirmation remain pending.
+The `0.2.28-dev-private` app (SHA-256
+`e992fc444f1a56af0d9ce260280c153a233adb8e022f4644c6cf0d1cb1312268`) was
+flashed after explicit owner authorization. Esptool verified the written data and
+hard-reset the ESP32; no bootloader, partition table, `otadata`, NVS or other
+partition was written. Supervised sound/localization validation remains pending.
 
 This is an independent community project, not an official Xiaomi or Chunmi
 product. Use it at your own risk. Licensed under the [MIT License](LICENSE).

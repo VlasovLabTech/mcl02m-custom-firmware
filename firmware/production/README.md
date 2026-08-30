@@ -13,7 +13,7 @@
 - `R26=01` restricted-cookware feedback is accepted as normal heating and caps every
   control path at real gear `35`/`A1`; POWER reports the permitted value, blocks only
   upward edits above 35, and displays a temporary explanatory message;
-- physical Settings shows both `0.2.28-dev` firmware and live raw `R28` power-board
+- physical Settings shows both `0.2.29-dev` firmware and live raw `R28` power-board
   revision/type with four left-aligned rows;
 - `R20=2B/29/2A` are silent nonfaults; another unknown nonzero `R20` shows its exact
   hex value as a persistent warning, and the first physical input dismisses only the
@@ -58,14 +58,18 @@
 - successful Wi-Fi connection and entry to an already-connected Wi-Fi menu show the
   Wi-Fi picture; small cookware shows a 3-s picture with `P<36` and localized label;
 - after five inactive seconds above a valid 60 °C surface reading, the Hot picture
-  blinks 2 s on / 1 s blank; completion Ready has priority until acknowledgement,
-  and automatic or manual Sleep is blocked until cooling;
+  blinks 2 s on / 1 s blank; completion Ready has priority for at most one minute,
+  then returns to Idle so Hot/OLED/Sleep policy resumes; automatic or manual Sleep
+  remains blocked until cooling;
 - delayed Start continuously shows the Time picture with countdown and mode badge;
   `noopls`, `toohot` and `whatisgoingon` are compiled but have no trigger yet;
 - any new physical press or encoder movement dismisses an existing timed picture;
   the action is still processed and may intentionally create its own new picture;
 - transactional Stop retains the clean large live screen and never exposes the
   internal five-line `STOPPING` status page;
+- NoPan treats center short, center long, and Cancel as the same idempotent Stop;
+  the warning melody is cancelled immediately and a NoPan Pause transition is
+  rejected at both the cooking-engine and power-board-control layers;
 - table-driven PWM melodies for boot/wake/complete/NoPan/critical/sleep. The public
   build contains the full public-domain Nutcracker NoPan table and the existing
   public Wake/Sleep tables. The opt-in private build substitutes only local Wake and
@@ -179,12 +183,12 @@ Its input is
 local generator workspace, `build_private/`, and all firmware binaries are ignored
 by Git. The artifacts have distinct project names:
 
-- public: `build/mcl02m_custom.bin`, app version `0.2.28-dev`;
+- public: `build/mcl02m_custom.bin`, app version `0.2.29-dev`;
 - private: `build_private/mcl02m_custom_private.bin`, app version
-  `0.2.28-dev-private`.
+  `0.2.29-dev-private`.
 
 The physical version screen intentionally shows the shared source version
-`0.2.28-dev`; `esptool image-info` exposes the private suffix. Never reuse one build
+`0.2.29-dev`; `esptool image-info` exposes the private suffix. Never reuse one build
 directory for both flavors.
 
 Допустимый артефакт для будущего отдельного согласования — только app image

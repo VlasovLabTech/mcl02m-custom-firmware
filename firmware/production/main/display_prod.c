@@ -169,13 +169,13 @@ static const char *state_name(cook_state_t state, app_language_t language)
         switch (state) {
         case COOK_STATE_SLEEP: return "休眠";
         case COOK_STATE_IDLE: return "就绪";
-        case COOK_STATE_READY: return "设置";
+        case COOK_STATE_READY: return "待启动";
         case COOK_STATE_DELAYED: return "等待";
         case COOK_STATE_STARTING: return "启动";
         case COOK_STATE_COOKING: return "加热";
         case COOK_STATE_PAUSED: return "暂停";
         case COOK_STATE_NO_PAN: return "无锅";
-        case COOK_STATE_STOPPING: return "暂停";
+        case COOK_STATE_STOPPING: return "停止";
         case COOK_STATE_COMPLETE: return "完成";
         case COOK_STATE_FAULT: return "故障";
         default: return "?";
@@ -429,8 +429,13 @@ static void display_task(void *arg)
             } else if (effective_r20_warning) {
                 char r20[12];
                 snprintf(r20, sizeof(r20), "R20 %02X", cooker.r20_warning_value);
+                const app_language_t lang = settings.language;
                 const char *warning[UI_OLED_TEXT_LINES] = {
-                    "WARNING", "UNKNOWN", r20, "PRESS", "ANY KEY"
+                    tr(lang, "WARNING", "ВНИМАНИЕ", "警告"),
+                    tr(lang, "UNKNOWN", "НЕИЗВЕСТНО", "未知状态"),
+                    r20,
+                    tr(lang, "PRESS", "НАЖМИТЕ", "按任意键"),
+                    tr(lang, "ANY KEY", "ЛЮБ КНОПКУ", "")
                 };
                 ui_oled_show_text(warning);
             } else if (effective_cookware_notice) {

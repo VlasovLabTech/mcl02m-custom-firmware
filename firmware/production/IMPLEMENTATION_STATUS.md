@@ -1,10 +1,10 @@
 # MCL02M custom firmware — implementation status
 
 Дата: 2026-08-30
-Версия исходников: `0.2.28-dev`
-Статус: the hash-verified `0.2.26-dev` app was written only to stock `ota_1` at
-`0x170000` on the development unit on 2026-08-30; physical boot and UI confirmation
-remain pending. Supervised testing of `0.2.24-dev` confirmed retained-session active zero without unwanted relay switching,
+Версия исходников: `0.2.29-dev`
+Статус: the hash-verified `0.2.28-dev-private` app was written only to stock
+`ota_1` at `0x170000` on the development unit on 2026-08-30; supervised
+sound/localization confirmation remains pending. Supervised testing of `0.2.24-dev` confirmed retained-session active zero without unwanted relay switching,
 Sleep/Wake, the temporary I2C debug display, and temperature operation. At a 125 °C
 empty-pan setpoint, initial heating overshot by approximately
 5 °C and subsequent holding was accurate. The source includes adaptive initial
@@ -67,19 +67,26 @@ compact countdown and `P`/`t`/`pr` badge; restricted cookware uses `small` with
 `P<36` and a localized label; Wi-Fi connection uses `wifipresent`. A stopped,
 idle cooker with a valid surface reading above 60 °C shows blinking `hot` after
 five inactive seconds and cannot enter automatic or manual Sleep until it cools.
-Completion Ready remains latched above Hot until acknowledged. `noopls`, `toohot`
-and `whatisgoingon` are compiled but not selected by any runtime path. Unflashed
+Completion Ready remains latched above Hot for at most one minute, then returns to
+Idle so Hot/OLED/Sleep policy resumes even without acknowledgement. `noopls`, `toohot`
+and `whatisgoingon` are compiled but not selected by any runtime path. Version
 `0.2.27-dev` removes the exclamation mark from the cookware limit and adds the
-previously missing `<` OLED glyph. The
-unflashed `0.2.28-dev` source replaces the repeating NoPan warning with the complete
+previously missing `<` OLED glyph. The `0.2.28-dev` source replaces the repeating
+NoPan warning with the complete
 128-second Nutcracker table. Confirmed melody completion enters E02; separate 30-second
 start and 132-second post-start watchdogs cover a failed sound task without truncating
-a legitimately queued melody. Cookware return, Pause, and Stop cancel
-only the NoPan request, so a later removal starts from the first note. Protected
+a legitimately queued melody. Cookware return and Stop cancel only the NoPan
+request, so a later removal starts from the first note. In current `0.2.29-dev`,
+short center, long center, and Cancel all converge on the same idempotent Stop;
+NoPan is rejected as a Pause source in both control layers, eliminating the
+unconfirmed Pause transition that could surface as `EPB`. Protected
 Wake/Sleep/NoPan/critical requests discard ordinary queued clicks. The default public
 build and opt-in ignored private-sound build compile identical control and safety
 sources; the private flavor substitutes only Wake and Sleep tables and has a distinct
-project name and build directory. The
+project name and build directory. The unflashed `0.2.29-dev` source localizes the
+remaining Chinese firmware/version,
+power-board and Stop labels, localizes the unknown-`R20` warning in all three OLED
+languages, adds its required CJK glyphs, and updates the trilingual user manual. The
 earlier one-time NVS refresh is complete and must not be repeated automatically.
 
 ## Реализованный пользовательский контур
@@ -97,7 +104,7 @@ earlier one-time NVS refresh is complete and must not be repeated automatically.
 | Stop/Sleep | hold центра 1,5 s с немедленным срабатыванием и звуком — Stop/Back; transactional STOPPING retains the clean large live screen instead of technical text; следующий hold в Idle — Sleep unless a valid surface reading remains above 60 °C; Cancel всегда Stop/Back |
 | Sleep | default 1 min Idle; automatic and manual Sleep are blocked above a valid 60 °C surface reading; wake returns to Home/Power, or Home/Temperature when Sleep began from Temperature; secondary menu selections are never restored; heartbeat and safety continue at zero output |
 | SOUND FLAVORS | public `mcl02m_custom` includes the 128 s Nutcracker NoPan table and public Wake/Sleep; private `mcl02m_custom_private` is opt-in, uses the ignored local Wake/Sleep tables, and is built only in ignored `build_private`; all non-sound sources are shared |
-| OLED | renderer использует полные `64×48` без отладочной рамки; 19 compiled frames include updated turn-on/wake/cooking/confirm/cancel/no-pan/error/Sleep artwork, three Ready variants rotated per completion, Wi-Fi, Hot, Time and Small plus three reserved inactive frames; Hot appears after five inactive seconds above 60 °C and blinks 2 s on / 1 s blank; a physical press/turn dismisses an existing timed picture before its own action; active timeout default 3 min; первое нажатие/вращение только будит; encoder guard 1,5 s |
+| OLED | renderer использует полные `64×48` без отладочной рамки; 19 compiled frames include updated turn-on/wake/cooking/confirm/cancel/no-pan/error/Sleep artwork, three Ready variants rotated per completion, Wi-Fi, Hot, Time and Small plus three reserved inactive frames; Ready auto-closes after one minute, then Hot/OLED/Sleep policy resumes; Hot appears after five inactive seconds above 60 °C and blinks 2 s on / 1 s blank; a physical press/turn dismisses an existing timed picture before its own action; active timeout default 3 min; первое нажатие/вращение только будит; encoder guard 1,5 s |
 | TIMER SCREEN | `AUTO` полностью гасит OLED; `ALWAYS` оставляет только countdown и перемещает его раз в минуту |
 | Cooking timer | large `MM:SS` editor confirms blinking seconds first and blinking minutes second, followed by a separate hours confirmation; maximum 5 h; Set and Disable complete synchronously, an all-zero value is rejected, and rapid disable/re-enable cannot race queued toggles; countdown freezes only in manual Pause and NoPan; at ≥1 h the running screen shows `H:MM′`, below one hour `MM:SS″`; RAM only |
 | Session timing | retained power session has a separate 8 h wall guard; manual Pause has its own 2 h limit; authenticated status separately reports actual heating, ordinary active zero, profile POWER-0 wait, Pause and NoPan elapsed time plus the independent 3 s cooking lease |
@@ -108,7 +115,7 @@ earlier one-time NVS refresh is complete and must not be repeated automatically.
 | Languages | English / Русский / `简体中文`; китайский использует встроенный 8×8 subset из фактически нужных глифов, UTF-8 decoder поддерживает трёхбайтовые code points, все текстовые строки статичны и проходят 64-px width/coverage gate; полноэкранные картинки не содержат языкового текста |
 | Sounds | Утверждённые PWM-таблицы: boot, wake, complete, NoPan, critical и sleep; normal duty 50%, sleep около 18%; Main, Timer и Cancel сохраняют UI click, encoder беззвучен, STAGE/WARNING остаются короткими; `SOUND OFF` не отключает NoPan и critical |
 | Critical | Stop + latched `error.png` с фактическим E-кодом; один мотив 2,5 s проигрывается дважды на burst, всего 3 bursts с паузами 4 s; ACK немедленно вызывает `sound_stop()`; Sleep запрещён до ACK |
-| NoPan | три последовательных отсчёта по 500 ms; отдельный `nopan.png`, orange blink, полная обязательная 128 s Nutcracker melody even with `SOUND OFF`, timer freeze, then E02 after confirmed playback completion; separate 30 s start and 132 s post-start watchdogs cover sound-task failure without consuming playback time while protected Wake/Sleep finishes; recognized return cancels the melody, first confirms active zero, then refreshes readings and recomputes POWER/TEMPERATURE/profile output under a new generation; another removal restarts the melody from its first note; unknown R20 cannot prove return; Stop/Pause cancel recovery |
+| NoPan | три последовательных отсчёта по 500 ms; отдельный `nopan.png`, orange blink, полная обязательная 128 s Nutcracker melody even with `SOUND OFF`, timer freeze, then E02 after confirmed playback completion; separate 30 s start and 132 s post-start watchdogs cover sound-task failure without consuming playback time while protected Wake/Sleep finishes; recognized return cancels the melody, first confirms active zero, then refreshes readings and recomputes POWER/TEMPERATURE/profile output under a new generation; another removal restarts the melody from its first note; unknown R20 cannot prove return; short/long center and Cancel immediately cancel the melody and converge on the same idempotent transactional Stop; NoPan cannot enter Pause |
 | Stock E-groups | известные устойчивые raw-группы сохраняют E03/E04/E05/E07/E08/E10/E12; communication — E09; неизвестные остаются generic |
 | I²C debug | The internal consecutive-bad-cycle counter, E09 threshold and diagnostic transport remain active. The temporary physical setting and OLED `0…6` overlay are compiled out of the production build with `COOKER_I2C_DEBUG_DISPLAY_ENABLED=0`; their source and two-second peak-hold implementation remain available for a future diagnostic build |
 | Active-zero debug | Compile-time removable compact UART frames retain full state, `R20…R27`, last `0D/00/0C`, temperatures, faults and counters, plus input and Pause/Resume decisions; authenticated Wi-Fi keeps the readable JSON snapshot |

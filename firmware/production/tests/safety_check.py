@@ -191,8 +191,8 @@ def main() -> int:
             "SOUND_WAKE" in sound and "play_table(k_sound_wake" in sound,
             "wake is queued only on a real Sleep-to-Idle transition without cutting Sleep")
     require("sound_cancel(SOUND_NO_PAN);" in engine and
-            "if (pausing_no_pan) cancel_no_pan_sound_locked();" in engine,
-            "NoPan is cancelled selectively on pan return, Stop or Pause")
+            "cancel_no_pan_sound_locked();\n    powerboard_control_stop" in engine,
+            "NoPan is cancelled selectively on pan return or transactional Stop")
     require("protected_pattern" in sound and
             "s_protected_pending" in sound and
             "if (!protect &&" in sound and
@@ -344,7 +344,7 @@ def main() -> int:
             "copy_transition_status_locked" in engine and
             "apply_confirmed_transition_locked" in engine and
             "Repeated short presses cannot invert an unconfirmed transition" in engine and
-            "if (status.transition_pending && !pausable_pan_return) return;" in ui and
+            "if (status.transition_pending) return;" in ui and
             '"PAUSE PENDING"' in engine and '"RESUME PENDING"' in engine and
             "class ConfirmedTransition" in
             (ROOT / "tests" / "policy_tests.py").read_text(encoding="utf-8"),
@@ -456,9 +456,26 @@ def main() -> int:
     require("bool armed = false;" in engine and
             "if (armed) powerboard_control_stop(\"START ROLLBACK\");" in engine,
             "a failed Start after Arm explicitly rolls the power board back to Stop")
-    require("if (pausing_no_pan) {" in pause_branch and
-            "s_no_pan_since_us = 0;" in pause_branch,
-            "Pause from NoPan starts a fresh NoPan timeout window after Resume")
+    central_short = ui[ui.find("static void central_short"):
+                       ui.find("static bool central_long")]
+    central_long = ui[ui.find("static bool central_long"):
+                      ui.find("static void cancel_action")]
+    cancel_action = ui[ui.find("static void cancel_action"):
+                       ui.find("static void input_event")]
+    lower_pause = power[power.find("esp_err_t powerboard_control_pause"):
+                        power.find("esp_err_t powerboard_control_pan_return_resume")]
+    require('cooking_stop("NO PAN CENTER");' in central_short and
+            central_short.find("status.state == COOK_STATE_NO_PAN") <
+                central_short.find("if (status.transition_pending) return;") and
+            "status.state == COOK_STATE_NO_PAN" in central_long and
+            'cooking_stop("CENTER HOLD");' in central_long and
+            "status.state == COOK_STATE_NO_PAN" in cancel_action and
+            'cooking_stop("CANCEL");' in cancel_action and
+            "if (s_status.state == COOK_STATE_NO_PAN)" in pause_branch and
+            'begin_normal_stop_locked("NO PAN INPUT", false);' in pause_branch and
+            "s_status.state == PB_STATE_NO_PAN" in lower_pause and
+            'reject_transition_locked("PAUSE NO PAN");' in lower_pause,
+            "NoPan center short/long and Cancel converge on idempotent Stop; Pause cannot arm an EPB-producing transition")
     require("s_status.state != COOK_STATE_STARTING &&" in engine and
             "s_status.state != COOK_STATE_COOKING" in engine and
             "const bool start_update = s_status.state == COOK_STATE_STARTING" in engine and
@@ -505,7 +522,11 @@ def main() -> int:
             "value == 0x2a" in power and
             "!r20_silent_nonfault(r20)" in power and
             "s_status.unknown_r20_seq" in power and
-            '"WARNING", "UNKNOWN", r20, "PRESS", "ANY KEY"' in display and
+            'tr(lang, "WARNING", "ВНИМАНИЕ", "警告")' in display and
+            'tr(lang, "UNKNOWN", "НЕИЗВЕСТНО", "未知状态")' in display and
+            'tr(lang, "PRESS", "НАЖМИТЕ", "按任意键")' in display and
+            'tr(lang, "ANY KEY", "ЛЮБ КНОПКУ", "")' in display and
+            "r20," in display and
             "cooking_acknowledge_warning();" in ui and
             "input_status.r20_warning_active && !true_urgent" in ui and
             'fault_locked("POWER TRANSITION")' not in power,
@@ -805,8 +826,12 @@ def main() -> int:
             "s_next_ready_image = (s_next_ready_image + 1U) % 3U" in display and
             "picture = oled_image_error;" in display and
             "picture = oled_image_no_pan;" in display and
-            "status.state == COOK_STATE_COMPLETE) &&" not in ui,
-            "three alternating ready pictures, error and no-pan remain state-latched")
+            "COOKER_COMPLETE_NOTICE_MS      60000U" in config and
+            "update_complete_notice_locked(now);" in engine and
+            's_status.state = COOK_STATE_IDLE;' in
+                engine[engine.find("static void update_complete_notice_locked"):
+                       engine.find("static esp_err_t apply_output_locked")],
+            "three alternating Ready pictures stay latched for one minute before Idle resumes Hot/OLED/Sleep policy")
     require("picture = oled_image_delayed_start;" in display and
             "format_timer_compact(cooker.delayed_remaining_s, delay);" in display and
             'snprintf(output, 12, "P%u", s->selected_gear);' in display and

@@ -1678,6 +1678,11 @@ esp_err_t powerboard_control_set_gear(unsigned gear)
 esp_err_t powerboard_control_pause(void)
 {
     xSemaphoreTake(s_status_lock, portMAX_DELAY);
+    if (s_status.state == PB_STATE_NO_PAN) {
+        reject_transition_locked("PAUSE NO PAN");
+        xSemaphoreGive(s_status_lock);
+        return ESP_ERR_INVALID_STATE;
+    }
     if (s_status.transition_pending) {
         const bool same = s_status.transition_kind == PB_TRANSITION_PAUSE;
         const bool replaces_pan_return =
