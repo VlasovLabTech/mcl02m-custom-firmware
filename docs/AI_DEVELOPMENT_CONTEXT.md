@@ -13,10 +13,11 @@ from a request to edit or build software.
 - Xiaomi device model: `chunmi.ihcooker.v2`.
 - Interface controller: Espressif `ESP-WROOM-32D` (classic ESP32).
 - Display: monochrome 64×48 OLED, page-major 384-byte framebuffer.
-- Current custom source version: `0.2.33-dev`.
+- Current custom source version: `0.2.34-dev`.
 - Native E07 remains `R20=17` after two consecutive matching samples. During an
   active session, two valid readings above 92 °C activate a continuous
-  `IGBT / >92°C` advisory with three short beeps every three seconds. Physical input
+  `IGBT / >92°C` advisory with three 4 kHz, 300 ms beeps separated by 100 ms every
+  three seconds. Physical input
   hides only the screen for seven seconds; exact 92 °C stays active, while a valid
   reading below 92 °C or Stop clears it. Two readings above 98 °C produce a marked
   interface E07, and Start is blocked above 80 °C. Raw sensor faults need two

@@ -1002,7 +1002,10 @@ def main() -> int:
             "display_prod_snooze_igbt_warning();" in ui and
             'snprintf(threshold, sizeof(threshold), ">%u°C", threshold_c);' in outputs and
             "case '>': return greater_than;" in outputs and
-            sound.count("note(3000, 140") == 3,
+            "#define IGBT_WARNING_FREQUENCY_HZ 4000U" in sound and
+            "#define IGBT_WARNING_ON_MS 300U" in sound and
+            "#define IGBT_WARNING_GAP_MS 100U" in sound and
+            sound.count("note(IGBT_WARNING_FREQUENCY_HZ, IGBT_WARNING_ON_MS") == 3,
             "active-session IGBT warning persists above/equal 92 C, beeps every 3 s and snoozes its screen for 7 s")
     require("FAULT_E07_INTERFACE_IGBT_LIMIT" in engine and
             'strstr(pb->fault, "IGBT INTERFACE LIMIT")' in engine and

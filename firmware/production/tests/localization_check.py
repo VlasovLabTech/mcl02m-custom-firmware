@@ -152,6 +152,21 @@ def main() -> int:
         fail("user manual does not contain exactly EN/RU/ZH language panels")
     if "data:image/png;base64," not in manual or re.search(r'<img[^>]+src="https?://', manual):
         fail("user manual is not a self-contained offline HTML document")
+    manual_ui_required = {
+        "en": ("Custom firmware", "user manual", "Safe first use", "Print / PDF"),
+        "ru": ("Пользовательская прошивка", "руководство пользователя",
+               "Безопасное первое включение", "Печать / PDF"),
+        "zh": ("自定义固件", "用户手册", "安全首次使用", "打印 / PDF"),
+    }
+    for language, phrases in manual_ui_required.items():
+        if manual.count(f'data-ui-lang="{language}"') != 2:
+            fail(f"user manual {language} does not localize both hero and quick navigation")
+        missing = [phrase for phrase in phrases if phrase not in manual]
+        if missing:
+            fail(f"user manual {language} top-level UI is stale: {', '.join(missing)}")
+    for token in ("document.title=text.title", "text.printTitle", "text.tiger", "text.footer"):
+        if token not in manual:
+            fail(f"user manual runtime UI localization is missing: {token}")
     for language in ("en", "ru", "zh"):
         if len(re.findall(rf'<section id="{language}-', manual)) != 10:
             fail(f"user manual {language} panel does not contain all ten sections")
@@ -160,16 +175,24 @@ def main() -> int:
                "Public and private sounds", "TIME / NOT SET", "eight-hour",
                "128-second", "one minute", "short or long center press", "R20", "EST", "ECL", "ETM",
                "R21/R25/R27", "320-ms", "80 °C", "92 °C", "98 °C",
-               "seven seconds", "retried once", "Cold-Start ramp", "0.2.33-dev"),
+               "seven seconds", "retried once", "Cold-Start ramp", "R26=01",
+               "every heating source", "not the IGBT limit", "six consecutive valid readings",
+               "not silently restored", "4 kHz", "each 300 ms", "100 ms gaps",
+               "0.2.34-dev"),
         "ru": ("40…190", "210", "P<36", "Маленькая посуда",
                "Горячая поверхность", "Публичные и приватные звуки",
                "ВРЕМЯ / НЕ ЗАДАНО", "восьмичасовой", "128-секундная", "одну минуту", "короткое или длинное нажатие центра",
                "R20", "EST", "ECL", "ETM", "R21/R25/R27", "320 мс", "80 °C", "92 °C",
-               "98 °C", "семь секунд", "ещё одну попытку", "Плавный холодный Start", "0.2.33-dev"),
+               "98 °C", "семь секунд", "ещё одну попытку", "Плавный холодный Start", "R26=01",
+               "для любой команды нагрева", "не предел температуры IGBT",
+               "шесть последовательных достоверных измерений", "сама не восстанавливается",
+               "4 кГц", "по 300 мс", "паузами 100 мс", "0.2.34-dev"),
         "zh": ("40…190", "210", "P<36", "小锅具", "热表面",
                "公开和私有声音", "时间 / 未设置", "8小时", "128秒", "一分钟", "短按中键、长按中键",
                "R20", "EST", "ECL", "ETM", "R21/R25/R27", "320毫秒", "80 °C", "92 °C",
-               "98 °C", "隐藏七秒", "再试一次", "冷启动渐升", "0.2.33-dev"),
+               "98 °C", "隐藏七秒", "再试一次", "冷启动渐升", "R26=01",
+               "适用于所有加热来源", "不是IGBT温度上限", "连续六次有效读数",
+               "不会自动恢复", "4 kHz", "300毫秒", "间隔100毫秒", "0.2.34-dev"),
     }
     for language, phrases in manual_required.items():
         panel_text = " ".join(" ".join(parser.panels[language]).split())

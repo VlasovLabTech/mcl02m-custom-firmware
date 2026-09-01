@@ -5,7 +5,7 @@ real cooker behavior. It covers the production build, not the deliberately stric
 laboratory power-test firmware. Update it whenever a production limit, timeout,
 debounce rule, or automatic Stop/Fault path changes.
 
-Status: source version `0.2.33-dev`, 1 September 2026.
+Status: source version `0.2.34-dev`, 1 September 2026.
 
 ## Corrected IGBT behavior
 
@@ -13,7 +13,8 @@ Status: source version `0.2.33-dev`, 1 September 2026.
   `R20=0x17` samples. At the normal 500 ms cadence, one isolated sample is ignored.
 - During Start, cooking, or Pause, two consecutive valid IGBT readings above 92 °C
   activate a continuous advisory episode. The large `IGBT / >92°C` screen remains
-  selected and three short beeps repeat every three seconds. Cooking continues with
+  selected and three 4 kHz, 300 ms beeps separated by 100 ms repeat every three
+  seconds. Cooking continues with
   no power reduction. Each physical action is still executed and suppresses only the
   warning screen for seven seconds from the latest action; the beeps continue. The
   episode remains active at exactly 92 °C and clears only on a valid reading below
@@ -122,7 +123,7 @@ about the stock interface algorithm.
 | Resume below setpoint | resumes when measurement is 1 °C below target | Current regulation behavior |
 | Hold saturation notice | gear 35 for 90 s with error ≥3 °C | Warning only; does not Stop or raise the ceiling |
 | Hot-surface indication | bottom temperature >60 °C | UI warning/sleep block only; does not limit cooking |
-| IGBT advisory | 2 samples above 92 °C; stays active at 92 °C and clears below 92 °C | Three beeps every 3 s; screen may be hidden for 7 s by activity; no Stop or power reduction |
+| IGBT advisory | 2 samples above 92 °C; stays active at 92 °C and clears below 92 °C | Three 4 kHz / 300 ms beeps with 100 ms gaps every 3 s; screen may be hidden for 7 s by activity; no Stop or power reduction |
 
 ## UI and scheduling limits that do not stop active cooking
 

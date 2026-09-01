@@ -3,7 +3,7 @@
 Build date: 2026-09-01
 ESP-IDF: 6.0.2
 Target: ESP32, Unicore
-Firmware: `0.2.33-dev`
+Firmware: `0.2.34-dev`
 
 The app header embeds compile metadata, so a clean rebuild may have a different
 SHA-256 while retaining the same source, layout, size and validation gates.
@@ -13,18 +13,18 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 
 - File: `build/mcl02m_custom.bin`
 - Size: `909872` bytes (`0xDE230`)
-- SHA-256: `91c2c5a374f373de880b139c84698513272a785e2183aa84c29a5b967a76746b`
-- ESP image validation hash: `604c48e740ab42445d5794fa19ad9054ed0aa7a8d26914011b17ef7649fec6eb`
+- SHA-256: `dd262e2ad127a8df47e826d361879d9b82f43f2e4866b90b8017a0d4c3796c57`
+- ESP image validation hash: `fd68f933ee043708202028b0c682b5ff20c23b60d03a50aaa0e880030f4a569b`
 - Stock OTA slot: `0x160000` bytes; image fits with `531920` bytes free.
 
 ## Private sound flavor
 
 - File: ignored `build_private/mcl02m_custom_private.bin`
 - Size: `910112` bytes (`0xDE320`)
-- SHA-256: `ff985439d1d8581b053cad5e3fc5e572878d17ac115f5828282afa91f98ef019`
-- ESP image validation hash: `2fc1707367e8ed4e02aff154027d2063724f387d64043f3557420aac9c4b9b85`
+- SHA-256: `f874c5e02e8dc12c36df6b6585ce1d7a99ca4ba9854a4bd9412fa6acd8ed5107`
+- ESP image validation hash: `0493afb5f5b1decaafd931682c6b14b3a6ed3c814eb370ba8d7f6afdc0c4ed4d`
 - Stock OTA slot: `0x160000` bytes; image fits with `531680` bytes free.
-- Project/app metadata: `mcl02m_custom_private`, `0.2.33-dev-private`.
+- Project/app metadata: `mcl02m_custom_private`, `0.2.34-dev-private`.
 
 ## Linked memory
 
@@ -110,10 +110,14 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
   99: targets 1-10 start directly, 11-35 ramp from 10, 36 starts directly,
   37-55 ramp from 36, 56 starts directly, and 57-99 ramp from 56. The exhaustive
   model also proves that a cold ramp never crosses a relay-topology boundary.
+  The `0.2.34-dev` gate additionally proves that the mandatory IGBT advisory uses
+  exactly three 4 kHz tones of 300 ms with two 100 ms gaps at the normal 50% duty.
+  The trilingual manual gate requires the same timing plus the cross-mode
+  small-cookware cap and the distinct bottom-NTC/IGBT threshold table.
 - `tests/safety_check.py`: PASS.
 - The public ELF contains no private LCE/SNM table or adapter symbols. The private
   flavor was built separately from the ignored local source and exposes the distinct
-  `mcl02m_custom_private` project name and `0.2.33-dev-private` app version.
+  `mcl02m_custom_private` project name and `0.2.34-dev-private` app version.
 - Production ELF check: temporary `I2C ERRORS` menu/overlay code is absent while
   its guarded source remains available.
 - `tests/localization_check.py`: PASS; 112 used CJK glyphs, 76 Chinese strings,
@@ -129,12 +133,13 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 
 ## Development-unit deployment
 
-The exact hash-verified `0.2.33-dev-private` artifact (910112 bytes; SHA-256
+Neither `0.2.34-dev` artifact has been flashed. The preceding exact hash-verified
+`0.2.33-dev-private` artifact (910112 bytes; SHA-256
 `ff985439d1d8581b053cad5e3fc5e572878d17ac115f5828282afa91f98ef019`)
 was written only to stock `ota_1` at `0x170000` on the development unit on
 2026-09-01 after explicit owner authorization. Esptool verified the written data.
 The operation did not write the bootloader, partition table, `otadata`, NVS, PHY,
-`ota_0` or eFuse. The public `0.2.33-dev` artifact has not been flashed.
+`ota_0` or eFuse.
 
 ESP-IDF prints a generic `idf.py flash` suggestion after building. Project procedure
 forbids that broad command on this cooker. A successful build is not authorization

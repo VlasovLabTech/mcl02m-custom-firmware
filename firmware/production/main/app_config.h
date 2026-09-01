@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 
-#define MCL02M_FIRMWARE_VERSION "0.2.33-dev"
+#define MCL02M_FIRMWARE_VERSION "0.2.34-dev"
 
 #define COOKER_MAX_GEAR                 99U
 #define COOKER_HOLD_MAX_GEAR            35U

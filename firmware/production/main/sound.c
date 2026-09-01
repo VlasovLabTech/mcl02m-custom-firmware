@@ -18,6 +18,9 @@
 #define CRITICAL_BURSTS 3U
 #define CRITICAL_MOTIFS_PER_BURST 2U
 #define CRITICAL_BURST_GAP_MS 4000U
+#define IGBT_WARNING_FREQUENCY_HZ 4000U
+#define IGBT_WARNING_ON_MS 300U
+#define IGBT_WARNING_GAP_MS 100U
 
 _Static_assert(COOKER_NO_PAN_TIMEOUT_MS == NUTCRACKER_PAS_DE_DEUX_DURATION_MS,
                "NoPan timeout must match the complete warning melody");
@@ -141,9 +144,11 @@ static bool play(const sound_request_t *request)
     case SOUND_WARNING:
         return note(3000, 180, 80, request) && note(3000, 180, 0, request);
     case SOUND_IGBT_WARNING:
-        return note(3000, 140, 70, request) &&
-               note(3000, 140, 70, request) &&
-               note(3000, 140, 0, request);
+        return note(IGBT_WARNING_FREQUENCY_HZ, IGBT_WARNING_ON_MS,
+                    IGBT_WARNING_GAP_MS, request) &&
+               note(IGBT_WARNING_FREQUENCY_HZ, IGBT_WARNING_ON_MS,
+                    IGBT_WARNING_GAP_MS, request) &&
+               note(IGBT_WARNING_FREQUENCY_HZ, IGBT_WARNING_ON_MS, 0, request);
     case SOUND_NO_PAN:
         return play_table(k_sound_midi_nutcracker_pas_de_deux,
                           SELECTED_SOUND_NORMAL_DUTY_PERMILLE, request);

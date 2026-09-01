@@ -13,7 +13,7 @@
 - `R26=01` restricted-cookware feedback is accepted as normal heating and caps every
   control path at real gear `35`/`A1`; POWER reports the permitted value, blocks only
   upward edits above 35, and displays a temporary explanatory message;
-- physical Settings shows both `0.2.33-dev` firmware and live raw `R28` power-board
+- physical Settings shows both `0.2.34-dev` firmware and live raw `R28` power-board
   revision/type with four left-aligned rows;
 - `R20=2B/29/2A` are silent nonfaults; another unknown nonzero `R20` shows its exact
   hex value as a persistent warning, and the first physical input dismisses only the
@@ -21,8 +21,9 @@
 - active zero `0x81/0/0` for POWER 0, temperature coast and Pause; manual Pause
   performs a full Stop after 2 h while ordinary zero-power sessions continue;
 - native E07 still requires two matching `R20=17` samples. During an active session,
-  two valid IGBT readings above 92 °C produce a persistent warning with three short
-  beeps every three seconds and no power reduction. Physical input hides only its
+  two valid IGBT readings above 92 °C produce a persistent warning with three 4 kHz,
+  300 ms beeps separated by 100 ms every three seconds and no power reduction.
+  Physical input hides only its
   screen for seven seconds; it remains active at 92 °C and clears below 92 °C. Two
   valid readings above 98 °C Stop with a separately marked interface E07, while a
   new Start is blocked above 80 °C;
@@ -197,12 +198,12 @@ Its input is
 local generator workspace, `build_private/`, and all firmware binaries are ignored
 by Git. The artifacts have distinct project names:
 
-- public: `build/mcl02m_custom.bin`, app version `0.2.33-dev`;
+- public: `build/mcl02m_custom.bin`, app version `0.2.34-dev`;
 - private: `build_private/mcl02m_custom_private.bin`, app version
-  `0.2.33-dev-private`.
+  `0.2.34-dev-private`.
 
 The physical version screen intentionally shows the shared source version
-`0.2.33-dev`; `esptool image-info` exposes the private suffix. Never reuse one build
+`0.2.34-dev`; `esptool image-info` exposes the private suffix. Never reuse one build
 directory for both flavors.
 
 Допустимый артефакт для будущего отдельного согласования — только app image

@@ -2,7 +2,7 @@
 
 Этот документ описывает будущую процедуру, но **не разрешает запись сейчас**.
 
-Current source version: `0.2.33-dev`; its reference public app artifact has not been
+Current source version: `0.2.34-dev`; its reference public app artifact has not been
 flashed. The exact size and SHA-256 are recorded in `BUILD_MANIFEST.md`. The matching
 `0.2.33-dev-private` artifact (SHA-256
 `ff985439d1d8581b053cad5e3fc5e572878d17ac115f5828282afa91f98ef019`) was

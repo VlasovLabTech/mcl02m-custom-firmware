@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.34-dev — 2026-09-01
+
+- Moved the mandatory active-session IGBT advisory to the buzzer's louder
+  4 kHz region. Each three-second warning cycle now contains three 300 ms tones
+  with 100 ms gaps at the unchanged 50% PWM duty.
+- Expanded the self-contained EN/RU/ZH user manual with one temperature-threshold
+  table and explicit small-cookware behavior across POWER, T°C, and preset stages.
+
 ## 0.2.33-dev — 2026-09-01
 
 - Changed only the cold-Start ramp entry point so the first nonzero command is

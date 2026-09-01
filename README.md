@@ -175,7 +175,7 @@ modified. See [Flashing and recovery](docs/FLASHING.md) before writing anything.
 
 ## Development status
 
-The current source version is `0.2.33-dev`; the hash-verified
+The current source version is `0.2.34-dev`; the hash-verified
 `0.2.33-dev-private` app image was written only to stock `ota_1` at `0x170000`
 on the development unit on 2026-09-01.
 Supervised testing of the preceding `0.2.24-dev` image confirmed retained-session active zero without
@@ -268,9 +268,10 @@ critical-bad cycles enter a 320-ms critical-only poll; two good critical cycles 
 recovery; continuous critical loss faults after five seconds and continuous command
 write loss after three seconds. The first-cause masks, timers, state and command
 snapshot remain in RAM and authenticated diagnostics.
-Current `0.2.33-dev` keeps native E07 debounced at two matching `R20=17` samples.
+Current `0.2.34-dev` keeps native E07 debounced at two matching `R20=17` samples.
 During an active session, two valid readings above 92 °C start a persistent
-`IGBT / >92°C` warning with three beeps every three seconds; physical input hides
+`IGBT / >92°C` warning with three 4 kHz, 300 ms beeps separated by 100 ms every
+three seconds; physical input hides
 only the screen for seven seconds and the warning clears strictly below 92 °C.
 Two valid readings above 98 °C produce a separately marked interface E07, and Start
 is blocked above 80 °C. Raw sensor faults require two samples and the bottom emergency

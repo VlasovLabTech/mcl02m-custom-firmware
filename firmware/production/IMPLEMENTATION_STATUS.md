@@ -1,7 +1,7 @@
 # MCL02M custom firmware — implementation status
 
 Дата: 2026-09-01
-Версия исходников: `0.2.33-dev`
+Версия исходников: `0.2.34-dev`
 Статус: the hash-verified `0.2.33-dev-private` app was written only to stock
 `ota_1` at `0x170000` on the development unit on 2026-09-01. Supervised testing
 of `0.2.24-dev` confirmed retained-session active zero without unwanted relay switching,
@@ -78,7 +78,7 @@ NoPan warning with the complete
 128-second Nutcracker table. Confirmed melody completion enters E02; separate 30-second
 start and 132-second post-start watchdogs cover a failed sound task without truncating
 a legitimately queued melody. Cookware return and Stop cancel only the NoPan
-request, so a later removal starts from the first note. In current `0.2.33-dev`,
+request, so a later removal starts from the first note. In current `0.2.34-dev`,
 short center, long center, and Cancel all converge on the same idempotent Stop;
 NoPan is rejected as a Pause source in both control layers, eliminating the
 unconfirmed Pause transition that could surface as `EPB`. Protected
@@ -94,7 +94,8 @@ communication incident evidence without changing the OLED menu. The
 `0.2.31-dev` source removed the accidental production 80 °C laboratory cutoff.
 The `0.2.32-dev` source keeps native two-sample E07 and turns the
 two-sample `IGBT / >92°C` advisory into a continuous active-session condition:
-three beeps every three seconds, seven-second display snooze after physical input,
+three 4 kHz, 300 ms beeps with 100 ms gaps every three seconds, seven-second display
+snooze after physical input,
 and reset only strictly below 92 °C or on Stop. It adds a separately marked
 interface E07 after two readings above 98 °C, blocks Start above 80 °C, requires
 two invalid samples for E08 and six samples strictly above 210 °C for the bottom
@@ -116,7 +117,7 @@ earlier one-time NVS refresh is complete and must not be repeated automatically.
 | UNKNOWN R20 | `2B`, `29`, and `2A` remain silent nonfaults; another unrecognized nonzero value shows a persistent `WARNING / UNKNOWN / R20 XX`; the first physical input dismisses only the warning and the established session continues |
 | TEMPERATURE | `40…190 °C`; entering T°C immediately copies and clamps the setpoint into editor-owned state; PREHEAT uses `56/77/99`; braking reserve is `clamp(10 °C + positive four-second rise, 10…20 °C)`, with a 15 °C minimum from 170 °C and 5 °C phase hysteresis; APPROACH uses `8 + 2 × error`; PI uses `4 + 2 × error + 0.08 × integral`; APPROACH/HOLD remain capped at `35`; output is active zero at/above target and PI resumes one degree below |
 | HOLD SATURATED | gear `35` в течение 90 s при ошибке не менее 3 °C: orange, warning и сообщение; предел не повышается |
-| IGBT WARNING / E07 | two consecutive valid readings above 92 °C keep large `IGBT / >92°C` selected and repeat three beeps every 3 s; cooking power is unchanged; each physical action works and hides only the screen for 7 s; exact 92 °C remains active and below 92 °C or Stop clears it. Two valid samples above 98 °C produce marked interface E07; native `R20=17` E07 remains plain; Start is blocked above 80 °C |
+| IGBT WARNING / E07 | two consecutive valid readings above 92 °C keep large `IGBT / >92°C` selected and repeat three 4 kHz / 300 ms beeps with 100 ms gaps every 3 s; cooking power is unchanged; each physical action works and hides only the screen for 7 s; exact 92 °C remains active and below 92 °C or Stop clears it. Two valid samples above 98 °C produce marked interface E07; native `R20=17` E07 remains plain; Start is blocked above 80 °C |
 | Start | only a separate center press; power preflight and generation-tagged `STARTING` remain pending until fresh compatible `R20` plus `R26=01/02` arrive after the matching successful heartbeat and strictly before the sole 8-s deadline; EST latches repeated Stop plus immutable first-cause evidence |
 | Pause/Resume | short center requests a generation-tagged transition and repeated presses remain idempotent until confirmation; Pause is confirmed from fresh retained-session feedback before its timer/state change; temperature trend sampling continues while PI is frozen; Resume recomputes and stages current output before its matching 3-s confirmation window, without Stop/re-arm; 2 h continuous confirmed manual Pause performs full Stop |
 | Stop/Sleep | hold центра 1,5 s с немедленным срабатыванием и звуком — Stop/Back; transactional STOPPING retains the clean large live screen instead of technical text; следующий hold в Idle — Sleep unless a valid surface reading remains above 60 °C; Cancel всегда Stop/Back |
