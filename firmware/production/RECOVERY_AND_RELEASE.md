@@ -4,8 +4,8 @@
 
 Current source version: `0.2.34-dev`; its reference public app artifact has not been
 flashed. The exact size and SHA-256 are recorded in `BUILD_MANIFEST.md`. The matching
-`0.2.33-dev-private` artifact (SHA-256
-`ff985439d1d8581b053cad5e3fc5e572878d17ac115f5828282afa91f98ef019`) was
+`0.2.34-dev-private` artifact (SHA-256
+`f874c5e02e8dc12c36df6b6585ce1d7a99ca4ba9854a4bd9412fa6acd8ed5107`) was
 flashed to stock `ota_1` at `0x170000` on 2026-09-01 after explicit authorization,
 and esptool verified the written data. No other partition was written.
 Чистая пересборка может иметь другой hash из-за compile metadata; для release

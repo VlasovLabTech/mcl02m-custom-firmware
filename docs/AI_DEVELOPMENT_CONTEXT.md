@@ -671,8 +671,8 @@ Before any release or hardware write:
    power tests with a water load.
 
 The reference artifact identified in `firmware/production/BUILD_MANIFEST.md` follows
-the current source. The deployed `0.2.33-dev-private` app (910112 bytes; SHA-256
-`ff985439d1d8581b053cad5e3fc5e572878d17ac115f5828282afa91f98ef019`) was
+the current source. The deployed `0.2.34-dev-private` app (910112 bytes; SHA-256
+`f874c5e02e8dc12c36df6b6585ce1d7a99ca4ba9854a4bd9412fa6acd8ed5107`) was
 flashed to stock `ota_1` at `0x170000` on 2026-09-01 after explicit owner
 authorization. Esptool verified the written data and hard-reset the ESP32.
 That deployment did not touch the bootloader, partition table, NVS, `otadata`,

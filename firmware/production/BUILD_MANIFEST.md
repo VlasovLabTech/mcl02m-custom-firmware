@@ -133,9 +133,9 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 
 ## Development-unit deployment
 
-Neither `0.2.34-dev` artifact has been flashed. The preceding exact hash-verified
-`0.2.33-dev-private` artifact (910112 bytes; SHA-256
-`ff985439d1d8581b053cad5e3fc5e572878d17ac115f5828282afa91f98ef019`)
+The public `0.2.34-dev` artifact has not been flashed. The exact hash-verified
+`0.2.34-dev-private` artifact (910112 bytes; SHA-256
+`f874c5e02e8dc12c36df6b6585ce1d7a99ca4ba9854a4bd9412fa6acd8ed5107`)
 was written only to stock `ota_1` at `0x170000` on the development unit on
 2026-09-01 after explicit owner authorization. Esptool verified the written data.
 The operation did not write the bootloader, partition table, `otadata`, NVS, PHY,

@@ -2,7 +2,7 @@
 
 Дата: 2026-09-01
 Версия исходников: `0.2.34-dev`
-Статус: the hash-verified `0.2.33-dev-private` app was written only to stock
+Статус: the hash-verified `0.2.34-dev-private` app was written only to stock
 `ota_1` at `0x170000` on the development unit on 2026-09-01. Supervised testing
 of `0.2.24-dev` confirmed retained-session active zero without unwanted relay switching,
 Sleep/Wake, the temporary I2C debug display, and temperature operation. At a 125 °C

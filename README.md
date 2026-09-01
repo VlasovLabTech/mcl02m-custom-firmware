@@ -176,7 +176,7 @@ modified. See [Flashing and recovery](docs/FLASHING.md) before writing anything.
 ## Development status
 
 The current source version is `0.2.34-dev`; the hash-verified
-`0.2.33-dev-private` app image was written only to stock `ota_1` at `0x170000`
+`0.2.34-dev-private` app image was written only to stock `ota_1` at `0x170000`
 on the development unit on 2026-09-01.
 Supervised testing of the preceding `0.2.24-dev` image confirmed retained-session active zero without
 unexpected relay switching, Sleep/Wake, the temporary I2C debug display, and
@@ -288,8 +288,8 @@ operator/monitor sequence is documented in the
 [hardware validation plan](docs/HARDWARE_VALIDATION_PLAN.md). The
 remaining findings and proposed fix sequence are preserved in the
 [state-machine implementation plan](docs/STATE_MACHINE_IMPLEMENTATION_PLAN.md).
-The `0.2.33-dev-private` app (SHA-256
-`ff985439d1d8581b053cad5e3fc5e572878d17ac115f5828282afa91f98ef019`) was
+The `0.2.34-dev-private` app (SHA-256
+`f874c5e02e8dc12c36df6b6585ce1d7a99ca4ba9854a4bd9412fa6acd8ed5107`) was
 flashed after explicit owner authorization. Esptool verified the written data and
 hard-reset the ESP32; no bootloader, partition table, `otadata`, NVS or other
 partition was written.

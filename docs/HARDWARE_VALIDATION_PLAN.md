@@ -1,6 +1,6 @@
 # Supervised Hardware Validation Plan
 
-Status: `0.2.28-dev-private` was flashed app-only after explicit authorization;
+Status: `0.2.34-dev-private` was flashed app-only after explicit authorization;
 supervised sound/localization confirmation remains pending. The targeted `0.2.24-dev` boot, Delayed Start and
 transactional Stop validation passed. This document does not authorize another flash
 or heating session by itself.
