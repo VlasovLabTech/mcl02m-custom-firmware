@@ -89,7 +89,9 @@ def main() -> int:
             "sound_start_count(SOUND_NO_PAN)" in engine and
             "sound_completion_count(SOUND_NO_PAN)" in engine and
             "no_pan_melody_finished_locked(now_us)" in engine and
-            "pattern == SOUND_NO_PAN || pattern == SOUND_CRITICAL" in sound,
+            "pattern == SOUND_IGBT_WARNING || pattern == SOUND_NO_PAN" in sound and
+            "return pattern == SOUND_WAKE || pattern == SOUND_SLEEP ||\n           pattern == SOUND_IGBT_WARNING" in sound and
+            "pattern == SOUND_CRITICAL" in sound,
             "NoPan plays one complete 128-second mandatory melody before faulting")
     require(len(nutcracker_notes) == 286 and nutcracker_notes[-1] == (0, 0, 0) and
             sum(on_ms + gap_ms for _, on_ms, gap_ms in nutcracker_notes) == 128000,
@@ -124,8 +126,14 @@ def main() -> int:
             "incident->transmitted_topology = s_last_successful_command_0d" in power and
             '"X,%" PRIu32' in power and
             '\\"start_incident\\"' in power and
-            "POWERBOARD_STATUS_JSON_MAX 3072" in web,
+            "POWERBOARD_STATUS_JSON_MAX 4096" in web,
             "EST preserves one first-cause RAM incident and exposes compact UART plus authenticated status evidence")
+    require("powerboard_i2c_incident_t" in power_header and
+            "capture_i2c_incident_locked" in power and
+            "read_error_mask" in power_header and "write_error_mask" in power_header and
+            '\\"i2c_incident\\"' in power and
+            '"COMMAND LOSS"' in power and '"CRITICAL LOSS"' in power,
+            "E09 preserves first-cause RAM evidence with read/write masks and timing")
     require("#define COOKER_MAX_TIMER_S              (5U * 60U * 60U)" in config,
             "cooking timer is capped at five hours")
     require("COOKER_HOLD_MAX_GEAR" in (MAIN / "temperature_ctrl.c").read_text(encoding="utf-8"),
@@ -368,7 +376,7 @@ def main() -> int:
             "free(buffers);" in web and
             "component json overflow" in web and
             "#if !MCL02M_COMPACT_UART_TELEMETRY" in power and
-            "char json[2560]" in power,
+            "static char json[4096]" in power,
             "expanded transition diagnostics avoid the power and HTTP task stacks")
     require("retained_session_issue_locked" in power and
             'return "R26 OUTPUT OFF"' in power and
@@ -919,8 +927,10 @@ def main() -> int:
     require("reg >= 0x20U && reg <= 0x2fU" in
             (SHARED_POWER / "safety.h").read_text(encoding="utf-8"),
             "power-board read selector remains 0x20..0x2f")
-    require("vTaskDelayUntil(&next, pdMS_TO_TICKS(MCL02M_CONTROL_HEARTBEAT_MS))" in power,
-            "verified 500-ms power heartbeat remains the sole pacing loop")
+    require("const unsigned next_period_ms = next_recovery_cycle ?" in power and
+            "MCL02M_I2C_RECOVERY_HEARTBEAT_MS : MCL02M_CONTROL_HEARTBEAT_MS" in power and
+            "vTaskDelayUntil(&next, pdMS_TO_TICKS(next_period_ms))" in power,
+            "power pacing switches only between verified normal and I2C-recovery periods")
     ramp = power[power.find("static uint8_t next_ramped_gear"):
                  power.find("static void advance_ramp")]
     require("MCL02M_LOW_TOPOLOGY_MAX_GEAR" in ramp and
@@ -928,10 +938,29 @@ def main() -> int:
             "candidate = MCL02M_HIGH_TOPOLOGY_MIN_GEAR" in ramp and
             "candidate = MCL02M_LOW_TOPOLOGY_MAX_GEAR" in ramp,
             "automatic ramps cross directly between low and high topologies without 36..55")
-    require("MCL02M_I2C_BAD_CYCLES_TO_FAULT=6U" in
-            (MAIN / "CMakeLists.txt").read_text(encoding="utf-8") and
-            "#define MCL02M_I2C_BAD_CYCLES_TO_FAULT 2U" in power_safety,
-            "E09 requires six consecutive bad 500-ms I2C cycles")
+    cold_start = power[power.find("static uint8_t cold_start_first_gear"):
+                       power.find("static uint8_t retained_resume_first_gear")]
+    require("target <= MCL02M_LOW_START_RAMP_GEAR" in cold_start and
+            "target <= MCL02M_LOW_TOPOLOGY_MAX_GEAR" in cold_start and
+            "return MCL02M_LOW_START_RAMP_GEAR" in cold_start and
+            "target < MCL02M_HIGH_TOPOLOGY_MIN_GEAR" in cold_start and
+            "return MCL02M_MID_TOPOLOGY_MIN_GEAR" in cold_start and
+            "return MCL02M_HIGH_TOPOLOGY_MIN_GEAR" in cold_start and
+            "cold_start_first_gear((uint8_t)gear)" in power,
+            "cold Start ramps only within the requested target's relay topology")
+    require("#define MCL02M_I2C_RECOVERY_TRIGGER_CYCLES 3U" in power_safety and
+            "#define MCL02M_I2C_RECOVERY_GOOD_CYCLES 2U" in power_safety and
+            "#define MCL02M_I2C_RECOVERY_HEARTBEAT_MS 320U" in power_safety and
+            "#define MCL02M_I2C_CRITICAL_LOSS_TIMEOUT_MS 5000U" in power_safety and
+            "#define MCL02M_I2C_COMMAND_LOSS_TIMEOUT_MS 3000U" in power_safety and
+            "PB_CRITICAL_READ_MASK" in power and "PB_SERVICE_READ_MASK" in power and
+            "recovery_read_order" in power and "service_read_bad" in power and
+            "complete_good_cycle" in power and
+            "update_i2c_health_locked" in power and
+            "MCL02M_I2C_BAD_CYCLES_TO_FAULT" not in power and
+            "MCL02M_I2C_BAD_CYCLES_TO_FAULT" not in
+            (MAIN / "CMakeLists.txt").read_text(encoding="utf-8"),
+            "E09 uses critical/service classification, accelerated recovery and time limits")
     require("s_force_stop || s_status.state == PB_STATE_FAULT" in power and
             "Preserve the fault latch so the control task keeps sending Stop" in power,
             "a latched power-board fault retransmits Stop on every heartbeat")
@@ -941,14 +970,68 @@ def main() -> int:
     require(all(code in power for code in ("E03 HIGH VOLT", "E04 LOW VOLT", "E05 BOTTOM",
                                             "E07 IGBT", "E08 SENSOR", "E10 CHANNEL", "E12 POWER")),
             "known persistent stock R20 groups retain their E-code numbers")
+    require("#define MCL02M_KNOWN_R20_FAULT_SAMPLES 2U" in power_safety and
+            'if (value == 0x17) return "E07 IGBT";' in power and
+            "s_r20_fault_samples >= MCL02M_KNOWN_R20_FAULT_SAMPLES" in power,
+            "native E07 requires two consecutive matching R20=17 samples")
+    require("MCL02M_IGBT_INTERFACE_CUTOFF_ENABLED=1" in cmake and
+            "MCL02M_MAX_IGBT_C=98U" in cmake and
+            "MCL02M_IGBT_INTERFACE_CUTOFF_SAMPLES=2U" in cmake and
+            "MCL02M_IGBT_START_INHIBIT_C=80U" in cmake and
+            "MCL02M_RAW_SENSOR_FAULT_SAMPLES=2U" in cmake and
+            "s_status.igbt_c > MCL02M_MAX_IGBT_C" in power and
+            "s_igbt_limit_samples >=" in power and
+            'fault_locked("IGBT INTERFACE LIMIT")' in power and
+            'return "IGBT START HOT"' in power,
+            "production blocks Start above 80 C and marks two samples above 98 C as interface E07")
+    require("#define COOKER_IGBT_WARNING_C            92U" in config and
+            "#define COOKER_IGBT_WARNING_CLEAR_C      92U" in config and
+            "#define COOKER_IGBT_WARNING_SAMPLES       2U" in config and
+            "#define COOKER_IGBT_WARNING_BEEP_MS     3000U" in config and
+            "#define COOKER_IGBT_WARNING_RESHOW_MS   7000U" in config and
+            "pb->igbt_c > COOKER_IGBT_WARNING_C" in engine and
+            "pb->igbt_c < COOKER_IGBT_WARNING_CLEAR_C" in engine and
+            "s_igbt_warning_samples >= COOKER_IGBT_WARNING_SAMPLES" in engine and
+            "s_status.igbt_warning_active = true" in engine and
+            "state_igbt_warning_enabled" in engine and
+            "sound_play(SOUND_IGBT_WARNING)" in engine and
+            "sound_cancel(SOUND_IGBT_WARNING)" in engine and
+            "pattern == SOUND_IGBT_WARNING" in sound and
+            "ui_oled_show_igbt_warning(COOKER_IGBT_WARNING_C)" in display and
+            "display_prod_snooze_igbt_warning" in display and
+            "display_prod_snooze_igbt_warning();" in ui and
+            'snprintf(threshold, sizeof(threshold), ">%u°C", threshold_c);' in outputs and
+            "case '>': return greater_than;" in outputs and
+            sound.count("note(3000, 140") == 3,
+            "active-session IGBT warning persists above/equal 92 C, beeps every 3 s and snoozes its screen for 7 s")
+    require("FAULT_E07_INTERFACE_IGBT_LIMIT" in engine and
+            'strstr(pb->fault, "IGBT INTERFACE LIMIT")' in engine and
+            "ui_oled_show_bitmap_text_marked" in display and
+            "60, 29" in display and
+            "ui_oled_show_bitmap_text_marked" in outputs,
+            "interface E07 has an OLED marker while native R20=17 E07 remains plain")
+    require('fault_locked("E08 IGBT SENSOR")' in power and
+            power.find('fault_locked("E08 IGBT SENSOR")') <
+            power.find('fault_locked("IGBT INTERFACE LIMIT")') and
+            "s_igbt_raw_fault_samples >= MCL02M_RAW_SENSOR_FAULT_SAMPLES" in power,
+            "two invalid IGBT sensor samples stay a sensor fault, not temperature E07")
     require("MCL02M_MAX_BOTTOM_C=210U" in
             (MAIN / "CMakeLists.txt").read_text(encoding="utf-8") and
-            "bottom_temperature_interface_safe" in power,
-            "production interface cutoff is 210 C above the 190 C setpoint range")
+            "MCL02M_BOTTOM_INTERFACE_CUTOFF_SAMPLES=6U" in cmake and
+            "return temperature_c <= MCL02M_MAX_BOTTOM_C" in power and
+            "s_bottom_limit_samples >=" in power,
+            "production interface cutoff needs six samples strictly above 210 C")
     require('fault_locked("E08 BOTTOM SENSOR")' in power and
             power.find('fault_locked("E08 BOTTOM SENSOR")') <
-            power.find('fault_locked("BOTTOM LIMIT")'),
-            "the 210 C production cutoff retains separate NTC fault detection")
+            power.find('fault_locked("BOTTOM LIMIT")') and
+            "s_bottom_raw_fault_samples >= MCL02M_RAW_SENSOR_FAULT_SAMPLES" in power,
+            "the six-sample 210 C cutoff retains separate two-sample NTC fault detection")
+    require("#define COOKER_DELAYED_START_ATTEMPTS      2U" in config and
+            "s_status.delayed_start_attempts < COOKER_DELAYED_START_ATTEMPTS" in engine and
+            "scheduled_start_retry_after_timeout" in engine and
+            "powerboard_control_clear_fault() == ESP_OK" in engine and
+            "mapped_fault == FAULT_START_TIMEOUT" in engine,
+            "Delayed Start retries both an immediate rejection and a confirmed Start timeout once")
 
     actual: dict[str, tuple[int, int]] = {}
     with (ROOT / "partitions.csv").open(newline="", encoding="utf-8") as stream:

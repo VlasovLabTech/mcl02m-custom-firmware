@@ -13,13 +13,19 @@
 - `R26=01` restricted-cookware feedback is accepted as normal heating and caps every
   control path at real gear `35`/`A1`; POWER reports the permitted value, blocks only
   upward edits above 35, and displays a temporary explanatory message;
-- physical Settings shows both `0.2.29-dev` firmware and live raw `R28` power-board
+- physical Settings shows both `0.2.33-dev` firmware and live raw `R28` power-board
   revision/type with four left-aligned rows;
 - `R20=2B/29/2A` are silent nonfaults; another unknown nonzero `R20` shows its exact
   hex value as a persistent warning, and the first physical input dismisses only the
   warning without changing the cooking state;
 - active zero `0x81/0/0` for POWER 0, temperature coast and Pause; manual Pause
   performs a full Stop after 2 h while ordinary zero-power sessions continue;
+- native E07 still requires two matching `R20=17` samples. During an active session,
+  two valid IGBT readings above 92 °C produce a persistent warning with three short
+  beeps every three seconds and no power reduction. Physical input hides only its
+  screen for seven seconds; it remains active at 92 °C and clears below 92 °C. Two
+  valid readings above 98 °C Stop with a separately marked interface E07, while a
+  new Start is blocked above 80 °C;
 - every normal and safety Stop enters one idempotent `STOPPING` transaction, repeats
   `00/00/00` until two fresh `R26=00` samples, and exposes preserved timeout/I²C
   evidence without falsely announcing `IDLE` or `COMPLETE`;
@@ -107,17 +113,25 @@
   and HOLD remain capped at gear 35.
 - Temperature Pause keeps observing the NTC trend but freezes PI. Resume computes and
   installs a fresh output before reactivating the retained power-board session.
-- Automatic low/high ramps cross directly between gears 35 and 56 without transiently
-  commanding the middle topology. Manual POWER gears 36…55 remain available.
-- Production keeps the interface-side 80 °C IGBT guard and uses a separate
-  210 °C bottom emergency cutoff. The power MCU's native E05 remains active.
-- Interface-generated E09 now requires six consecutive bad 500-ms I²C cycles.
-  While any power-board fault remains latched, the complete Stop sequence is
-  retransmitted every heartbeat.
+- Cold Start chooses the target's final topology before applying output: `1…10`
+  direct, `11…35` from 10, `36` direct, `37…55` from 36, `56` direct, and
+  `57…99` from 56. Ten-level heartbeat steps then remain inside that topology,
+  eliminating artificial cold-Start relay/IGBT transitions. A live low/high target
+  change still crosses directly at 35↔56; manual POWER gears 36…55 remain available.
+- Production has a persistent active-session IGBT advisory after two readings above
+  92 °C and a separately marked interface E07 after two readings above 98 °C. Start
+  is blocked above 80 °C. Raw sensor faults require two samples; the separate bottom
+  emergency cutoff requires six consecutive readings strictly above 210 °C. The
+  power MCU's native E05/E07 protections remain active.
+- Interface-generated E09 classifies `R20/R22/R23/R24/R26` and all control writes as
+  critical, while `R21/R25/R27` are service-only and cannot cause E09 alone. Three
+  critical-bad cycles enter a 320-ms critical-only recovery poll; two good critical
+  cycles return to the normal 500-ms schedule. Continuous critical loss faults after
+  5 s, or failed control writes after 3 s. A latched fault keeps retransmitting Stop.
 - The production build omits the temporary `Settings → Show → I2C Errors` item and
   OLED overlay. Their implementation, stored field, and two-second displayed-peak
   hold remain in the source behind `COOKER_I2C_DEBUG_DISPLAY_ENABLED=0`; changing the
-  flag creates a future diagnostic build. The internal counter, six-cycle E09 policy,
+  flag creates a future diagnostic build. The classified recovery state and counters,
   compact UART frame, and authenticated status data remain active.
 - Active-zero diagnostics are available as a compact fixed UART frame and through
   authenticated `/api/status`. The UART frame retains the full driver state, last
@@ -183,12 +197,12 @@ Its input is
 local generator workspace, `build_private/`, and all firmware binaries are ignored
 by Git. The artifacts have distinct project names:
 
-- public: `build/mcl02m_custom.bin`, app version `0.2.29-dev`;
+- public: `build/mcl02m_custom.bin`, app version `0.2.33-dev`;
 - private: `build_private/mcl02m_custom_private.bin`, app version
-  `0.2.29-dev-private`.
+  `0.2.33-dev-private`.
 
 The physical version screen intentionally shows the shared source version
-`0.2.29-dev`; `esptool image-info` exposes the private suffix. Never reuse one build
+`0.2.33-dev`; `esptool image-info` exposes the private suffix. Never reuse one build
 directory for both flavors.
 
 Допустимый артефакт для будущего отдельного согласования — только app image

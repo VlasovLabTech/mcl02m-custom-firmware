@@ -64,8 +64,12 @@ endif()
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     MCL02M_POWER_TEST_BUILD=0
     MCL02M_MAX_RUN_MS=28800000U
-    MCL02M_MAX_IGBT_C=80U
-    MCL02M_I2C_BAD_CYCLES_TO_FAULT=6U
+    # Advisory at >92 C; two runtime samples above 98 C produce a separately
+    # marked interface E07. A stopped cooker cannot Start above 80 C.
+    MCL02M_IGBT_INTERFACE_CUTOFF_ENABLED=1
+    MCL02M_MAX_IGBT_C=98U
+    MCL02M_IGBT_INTERFACE_CUTOFF_SAMPLES=2U
+    MCL02M_IGBT_START_INHIBIT_C=80U
     # Stock-firmware static analysis shows 0x81/0x00/0x00 as the distinct
     # in-session zero-output command. Keep both switches here for quick lab
     # fallback after the first supervised hardware validation.
@@ -78,4 +82,6 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     # Separate interface-side emergency cutoff above the 190 C setpoint range.
     # The stock power MCU continues to enforce its native E05 protection.
     MCL02M_MAX_BOTTOM_C=210U
+    MCL02M_BOTTOM_INTERFACE_CUTOFF_SAMPLES=6U
+    MCL02M_RAW_SENSOR_FAULT_SAMPLES=2U
 )

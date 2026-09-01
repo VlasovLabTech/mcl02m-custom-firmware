@@ -37,6 +37,7 @@ typedef enum {
     FAULT_E04_LOW_VOLTAGE,
     FAULT_E05_BOTTOM_OVERHEAT,
     FAULT_E07_IGBT_OVERHEAT,
+    FAULT_E07_INTERFACE_IGBT_LIMIT,
     FAULT_E08_SENSOR,
     FAULT_E09_COMMUNICATION,
     FAULT_E10_WIRE_OR_CHANNEL,
@@ -98,6 +99,9 @@ typedef struct {
     bool r20_warning_active;
     uint8_t r20_warning_value;
     uint32_t r20_warning_seq;
+    bool igbt_warning_active;
+    uint8_t igbt_warning_temperature_c;
+    uint32_t igbt_warning_seq;
     bool active_zero;
     bool timer_enabled;
     uint32_t timer_remaining_s;
@@ -106,6 +110,8 @@ typedef struct {
     bool delayed_absolute;
     int64_t delayed_epoch_s;
     uint32_t delayed_remaining_s;
+    uint8_t delayed_start_attempts;
+    bool delayed_start_retry_pending;
     bool clock_valid;
     bool hold_saturated;
     uint32_t pause_remaining_s;

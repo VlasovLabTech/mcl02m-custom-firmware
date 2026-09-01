@@ -159,14 +159,17 @@ def main() -> int:
         "en": ("40…190", "210", "P<36", "Small cookware", "Hot surface",
                "Public and private sounds", "TIME / NOT SET", "eight-hour",
                "128-second", "one minute", "short or long center press", "R20", "EST", "ECL", "ETM",
-               "0.2.29-dev"),
+               "R21/R25/R27", "320-ms", "80 °C", "92 °C", "98 °C",
+               "seven seconds", "retried once", "Cold-Start ramp", "0.2.33-dev"),
         "ru": ("40…190", "210", "P<36", "Маленькая посуда",
                "Горячая поверхность", "Публичные и приватные звуки",
                "ВРЕМЯ / НЕ ЗАДАНО", "восьмичасовой", "128-секундная", "одну минуту", "короткое или длинное нажатие центра",
-               "R20", "EST", "ECL", "ETM", "0.2.29-dev"),
+               "R20", "EST", "ECL", "ETM", "R21/R25/R27", "320 мс", "80 °C", "92 °C",
+               "98 °C", "семь секунд", "ещё одну попытку", "Плавный холодный Start", "0.2.33-dev"),
         "zh": ("40…190", "210", "P<36", "小锅具", "热表面",
                "公开和私有声音", "时间 / 未设置", "8小时", "128秒", "一分钟", "短按中键、长按中键",
-               "R20", "EST", "ECL", "ETM", "0.2.29-dev"),
+               "R20", "EST", "ECL", "ETM", "R21/R25/R27", "320毫秒", "80 °C", "92 °C",
+               "98 °C", "隐藏七秒", "再试一次", "冷启动渐升", "0.2.33-dev"),
     }
     for language, phrases in manual_required.items():
         panel_text = " ".join(" ".join(parser.panels[language]).split())

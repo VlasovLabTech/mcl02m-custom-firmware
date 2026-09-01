@@ -9,6 +9,7 @@ esp_err_t display_prod_init(void);
 void display_prod_activity(void);
 bool display_prod_is_awake(void);
 void display_prod_dismiss_transient(void);
+void display_prod_snooze_igbt_warning(void);
 void display_prod_show_confirm(void);
 void display_prod_show_cancel(void);
 void display_prod_show_wifi_present(void);

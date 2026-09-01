@@ -23,6 +23,9 @@ esp_err_t ui_oled_show_pattern(unsigned pattern);
 esp_err_t ui_oled_show_bitmap(const uint8_t bitmap[UI_OLED_BITMAP_BYTES]);
 esp_err_t ui_oled_show_bitmap_text(const uint8_t bitmap[UI_OLED_BITMAP_BYTES],
                                    const char *text, int x, int y, unsigned scale);
+esp_err_t ui_oled_show_bitmap_text_marked(const uint8_t bitmap[UI_OLED_BITMAP_BYTES],
+                                          const char *text, int x, int y,
+                                          unsigned scale, int marker_x, int marker_y);
 esp_err_t ui_oled_show_bitmap_right_text(const uint8_t bitmap[UI_OLED_BITMAP_BYTES],
                                          const char *top, int top_y,
                                          const char *bottom, int bottom_y);
@@ -42,6 +45,7 @@ esp_err_t ui_oled_show_time_editor(const char *title, const char *value,
                                    const char *footer);
 esp_err_t ui_oled_show_complete(const char *text);
 esp_err_t ui_oled_show_info(unsigned voltage_v, unsigned ntc_c, unsigned igbt_c, bool valid);
+esp_err_t ui_oled_show_igbt_warning(unsigned threshold_c);
 esp_err_t ui_oled_show_version(const char *firmware_title, const char *firmware_version,
                                const char *board_title, const char *board_revision);
 esp_err_t ui_oled_show_sleep_clock(const char *text, unsigned y, unsigned alignment);

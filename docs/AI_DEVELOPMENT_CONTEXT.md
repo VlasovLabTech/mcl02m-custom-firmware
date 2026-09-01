@@ -13,7 +13,22 @@ from a request to edit or build software.
 - Xiaomi device model: `chunmi.ihcooker.v2`.
 - Interface controller: Espressif `ESP-WROOM-32D` (classic ESP32).
 - Display: monochrome 64×48 OLED, page-major 384-byte framebuffer.
-- Current custom source version: `0.2.29-dev`.
+- Current custom source version: `0.2.33-dev`.
+- Native E07 remains `R20=17` after two consecutive matching samples. During an
+  active session, two valid readings above 92 °C activate a continuous
+  `IGBT / >92°C` advisory with three short beeps every three seconds. Physical input
+  hides only the screen for seven seconds; exact 92 °C stays active, while a valid
+  reading below 92 °C or Stop clears it. Two readings above 98 °C produce a marked
+  interface E07, and Start is blocked above 80 °C. Raw sensor faults need two
+  samples and the bottom cutoff needs six valid readings strictly above 210 °C.
+  The complete custom-limit inventory is maintained in
+  `docs/PRODUCTION_LIMITS_AND_AUTOMATIC_STOPS.md`.
+- `0.2.30-dev` classifies runtime communication instead of treating every register
+  equally. `R20/R22/R23/R24/R26` and all `0D/00/0C` writes are critical;
+  `R21/R25/R27` are service-only. Three critical-bad cycles enter a 320-ms
+  critical-only recovery poll, two complete good cycles restore 500-ms polling,
+  and E09 requires 5 s of continuous critical loss or 3 s of continuous command
+  write loss. The first-cause masks/timers/state/commands are frozen in RAM.
 - `0.2.29-dev` completes the English/Russian/Simplified-Chinese OLED audit. It
   localizes the remaining Chinese firmware/version and power-board headings, the
   unknown-`R20` warning in all three languages, and the Chinese Stop state; it also
@@ -22,7 +37,7 @@ from a request to edit or build software.
   the mandatory one-shot NoPan warning. E02 follows confirmed sound completion, with
   separate 30-second start and 132-second post-start watchdogs; cookware return and
   Stop selectively cancel NoPan, and a later removal starts it again from the
-  beginning. In current `0.2.29-dev`, center short, center long, and Cancel all use
+  beginning. In current `0.2.32-dev`, center short, center long, and Cancel all use
   that same idempotent Stop; the engine and lower driver reject NoPan-to-Pause so an
   unconfirmed Pause cannot become a generic `EPB`. Wake, Sleep, NoPan, and the
   critical alarm are protected queue requests, so ordinary clicks do not accumulate
@@ -395,10 +410,17 @@ PAUSED, NO_PAN, COMPLETE, FAULT
 - Slow encoder movement changes by 1; fast movement changes by 5.
 - Turning the encoder never starts heat.
 - Gear ranges select topology automatically: 1–35 A1, 36–55 C1, 56–99 E1.
-- A ramp whose target is in the low or high range crosses directly between gears
-  35 and 56 instead of commanding the intermediate topology. Ten-gear heartbeat
-  steps remain inside each topology; explicitly selected POWER targets 36–55 still
-  use C1 normally.
+- Cold Start selects the target's final relay topology in its first nonzero command:
+  targets 1…10 start directly, 11…35 start at 10, 36 starts directly, 37…55 start
+  at 36, 56 starts directly, and 57…99 start at 56. Ten-gear heartbeat steps then
+  remain inside that topology. A live low↔high target change still crosses directly
+  at 35↔56, and explicitly selected POWER targets 36–55 use C1 normally.
+  This is **not stock-derived behavior**: stock captures contain direct `STOP→35`,
+  `STOP→22/25`, and active `35→99` commands, and decompiled stock code writes the
+  selected gear directly. An exact preselected `STOP→99` capture is still absent,
+  but the evidence already disproves a universal stock gear-10 clamp or fixed
+  `+10` ramp. Version `0.2.33-dev` therefore records the ramp as an explicit
+  owner-approved custom policy, not as reconstructed stock behavior.
 - Gear 0 enters active zero. Returning to a positive gear does not deliberately
   send a full Stop/re-arm sequence.
 
@@ -429,8 +451,9 @@ PAUSED, NO_PAN, COMPLETE, FAULT
   gear first.
 - If gear 35 remains saturated for 90 seconds while error is at least 3 °C,
   set `HOLD SATURATED`, show an orange warning, but do not raise the cap.
-- Production has a separate interface emergency cutoff at 210 °C, above the
-  maximum 190 °C setpoint. The stock power MCU's native E05 remains active.
+- Production has a separate interface emergency cutoff after six consecutive
+  valid readings strictly above 210 °C, above the maximum 190 °C setpoint. The
+  stock power MCU's native E05 remains active.
 
 ### Cooking timer
 
@@ -647,11 +670,10 @@ Before any release or hardware write:
    power tests with a water load.
 
 The reference artifact identified in `firmware/production/BUILD_MANIFEST.md` follows
-the current source. The deployed `0.2.28-dev-private` app (903920 bytes; SHA-256
-`e992fc444f1a56af0d9ce260280c153a233adb8e022f4644c6cf0d1cb1312268`) was
-flashed to stock `ota_1` at `0x170000` on 2026-08-30 after explicit owner
-authorization. Esptool verified the written data and hard-reset the ESP32;
-supervised sound/localization confirmation remains pending.
+the current source. The deployed `0.2.33-dev-private` app (910112 bytes; SHA-256
+`ff985439d1d8581b053cad5e3fc5e572878d17ac115f5828282afa91f98ef019`) was
+flashed to stock `ota_1` at `0x170000` on 2026-09-01 after explicit owner
+authorization. Esptool verified the written data and hard-reset the ESP32.
 That deployment did not touch the bootloader, partition table, NVS, `otadata`,
 `ota_0`, PHY or eFuse. This status is not permission for another flash operation.
 
@@ -662,14 +684,19 @@ That deployment did not touch the bootloader, partition table, NVS, `otadata`,
   `0.2.9-dev` held accurately after an approximately 5 °C initial overshoot. The
   adaptive braking, Pause recomputation, and direct topology crossing present in the
   current source still require complete supervised cookware characterization.
-- Production retains the 80 °C interface-side IGBT guard and uses 210 °C for
-  the separate interface-side bottom cutoff; the power MCU's native E05 also
-  remains active.
+- Production has a marked interface E07 after two valid IGBT samples above 98 °C
+  and blocks Start above 80 °C. The advisory above 92 °C remains non-limiting and
+  clears strictly below 92 °C. The separate interface bottom cutoff needs six
+  consecutive samples strictly above 210 °C; the power MCU's native E05/E07
+  protections remain independently active.
 - E09 is generated by the interface firmware, not received as a stock E-code.
-  It now requires six consecutive bad 500-ms I²C cycles (about three seconds),
-  logs individual read errors, and retransmits the complete Stop sequence on
-  every heartbeat while the fault remains latched. Wiring, pull-ups, supply
-  integrity, and EMI coupling still need physical inspection if E09 recurs.
+  Service-only `R21/R25/R27` failures never trigger it alone. After three
+  critical-bad cycles the task polls the critical set every 320 ms and returns to
+  its full 500-ms schedule only after two complete good critical cycles. E09 latches
+  after 5 s of continuous critical-path loss or 3 s of continuous `0D/00/0C` write
+  loss; its RAM incident freezes masks, timers, state and commands. The complete Stop
+  sequence is still retransmitted while the fault remains latched. Wiring, pull-ups,
+  supply integrity, and EMI coupling still need physical inspection if E09 recurs.
 - Long-duration soak of web/network tasks while heating.
 - Exercise every stable and transient power-board error path.
 - Optionally trace GPIO32 physically; it is not a functional blocker.

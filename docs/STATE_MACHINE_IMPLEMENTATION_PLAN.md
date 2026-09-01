@@ -4,9 +4,9 @@ Status: **in progress; the first bounded fix batch is implemented, while the rem
 
 Audit baseline: `0.2.10-dev`, commit `2b5784e` (`2026-08-28`)
 
-Current source: `0.2.29-dev`. The `0.2.28-dev-private` app image was flashed to the
-development cooker on 2026-08-30 after explicit authorization; supervised
-sound/localization confirmation remains pending. Supervised `0.2.24-dev` testing
+Current source: `0.2.33-dev`. The `0.2.33-dev-private` app image was flashed to the
+development cooker on 2026-09-01 after explicit authorization and hash verification.
+Supervised `0.2.24-dev` testing
 showed retained-session active zero without
 unexpected relay switching, and the targeted Delayed Start regression passed without
 `ETM`. The source also keeps the temporary I2C-loss
@@ -22,8 +22,12 @@ Version `0.2.28-dev` makes the full 128-second Nutcracker table the one-shot NoP
 warning and uses its confirmed completion, rather than an unrelated repeating timer,
 to enter E02. It also separates default public and opt-in ignored private sound
 flavors while keeping all control and safety sources shared.
-Unflashed `0.2.29-dev` completes the three-language OLED audit and updates the
+Version `0.2.29-dev` completed the three-language OLED audit and updated the
 self-contained trilingual user manual; it does not alter the cooking state machine.
+Version `0.2.30-dev` closed the actionable communication part of M5: runtime
+registers are split into critical and service sets, repeated critical loss enters a
+faster recovery poll, E09 uses elapsed-time limits, and first-cause evidence is kept
+in RAM. Idle communication readiness remains a separate deferred UX decision.
 
 This document preserves the complete control-flow review so the findings can be
 discussed, prioritized, and implemented later without relying on chat history. It is
@@ -348,7 +352,7 @@ Recommended change:
 
 ### M2. NoPan must not enter manual Pause
 
-Implementation status: **closed in current `0.2.29-dev`**. Field use showed that a
+Implementation status: **closed in current `0.2.30-dev`**. Field use showed that a
 short center press in NoPan entered the generic Pause transaction. A power board that
 did not confirm active zero while reporting no cookware could then time out and expose
 the generic `EPB` code. Center short, center long, and Cancel now all converge on the
@@ -387,9 +391,13 @@ Recommended change:
 
 ### M5. Fault visibility while stopped is intentionally weaker
 
-Consecutive I2C failure becomes E09 only when the lower state is neither `STOPPED` nor
-already `FAULT`. This avoids nuisance E09 while the cooker is idle, but it can also
-hide a persistent communication fault until the next Start attempt.
+Implementation status: **partially closed in `0.2.30-dev`**. E09 still does not latch
+while the lower state is `STOPPED` or already `FAULT`, avoiding an idle nuisance
+fault. Runtime failures are now classified: service-only `R21/R25/R27` loss cannot
+cause E09; three critical-bad cycles enter a 320-ms critical-only recovery poll; two
+complete good cycles return to normal; 5 s continuous critical loss or 3 s continuous
+control-write loss latches E09 with immutable RAM evidence. A persistent idle outage
+can still remain a readiness/preflight issue rather than a displayed E09.
 
 Recommended change:
 

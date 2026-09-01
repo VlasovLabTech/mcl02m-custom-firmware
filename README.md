@@ -175,9 +175,9 @@ modified. See [Flashing and recovery](docs/FLASHING.md) before writing anything.
 
 ## Development status
 
-The current source version is `0.2.29-dev`; the hash-verified
-`0.2.28-dev-private` app image was written only to stock `ota_1` at `0x170000`
-on the development unit on 2026-08-30.
+The current source version is `0.2.33-dev`; the hash-verified
+`0.2.33-dev-private` app image was written only to stock `ota_1` at `0x170000`
+on the development unit on 2026-09-01.
 Supervised testing of the preceding `0.2.24-dev` image confirmed retained-session active zero without
 unexpected relay switching, Sleep/Wake, the temporary I2C debug display, and
 temperature operation with water. A 125 °C empty-pan test then showed about 5 °C of first-heat
@@ -258,20 +258,40 @@ idempotent transactional Stop and cancel the warning melody immediately; the
 NoPan path cannot enter Pause.
 Long transition melodies discard ordinary queued clicks. Public and opt-in ignored
 private builds share every source except the selected Wake/Sleep tables; their project
-names and build directories are distinct. Unflashed `0.2.29-dev` completes the
+names and build directories are distinct. Version `0.2.29-dev` completed the
 English/Russian/Simplified-Chinese OLED audit, localizes the remaining Chinese
 version/status labels and the unknown-`R20` warning, and updates the self-contained
 trilingual user manual for the current control, safety, artwork and sound behavior.
+Version `0.2.30-dev` replaced the coarse cycle-count E09 trigger with classified,
+time-based recovery: service-only `R21/R25/R27` failures cannot trip E09; three
+critical-bad cycles enter a 320-ms critical-only poll; two good critical cycles leave
+recovery; continuous critical loss faults after five seconds and continuous command
+write loss after three seconds. The first-cause masks, timers, state and command
+snapshot remain in RAM and authenticated diagnostics.
+Current `0.2.33-dev` keeps native E07 debounced at two matching `R20=17` samples.
+During an active session, two valid readings above 92 °C start a persistent
+`IGBT / >92°C` warning with three beeps every three seconds; physical input hides
+only the screen for seven seconds and the warning clears strictly below 92 °C.
+Two valid readings above 98 °C produce a separately marked interface E07, and Start
+is blocked above 80 °C. Raw sensor faults require two samples and the bottom emergency
+ceiling requires six consecutive samples strictly above 210 °C. Delayed Start now
+retries one immediate rejection or confirmed Start timeout once. The complete inventory of custom runtime
+limits is maintained in the
+[production limits and automatic-stop audit](docs/PRODUCTION_LIMITS_AND_AUTOMATIC_STOPS.md).
+Cold Start now selects the target's final relay topology immediately and ramps only
+inside it: `1…10` direct, `11…35` from 10, `36` direct, `37…55` from 36, `56`
+direct, and `57…99` from 56. This preserves a gentle ramp without artificial
+intermediate relay/IGBT transitions.
 The supervised
 operator/monitor sequence is documented in the
 [hardware validation plan](docs/HARDWARE_VALIDATION_PLAN.md). The
 remaining findings and proposed fix sequence are preserved in the
 [state-machine implementation plan](docs/STATE_MACHINE_IMPLEMENTATION_PLAN.md).
-The `0.2.28-dev-private` app (SHA-256
-`e992fc444f1a56af0d9ce260280c153a233adb8e022f4644c6cf0d1cb1312268`) was
+The `0.2.33-dev-private` app (SHA-256
+`ff985439d1d8581b053cad5e3fc5e572878d17ac115f5828282afa91f98ef019`) was
 flashed after explicit owner authorization. Esptool verified the written data and
 hard-reset the ESP32; no bootloader, partition table, `otadata`, NVS or other
-partition was written. Supervised sound/localization validation remains pending.
+partition was written.
 
 This is an independent community project, not an official Xiaomi or Chunmi
 product. Use it at your own risk. Licensed under the [MIT License](LICENSE).

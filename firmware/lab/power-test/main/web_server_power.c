@@ -169,12 +169,20 @@ static esp_err_t ws_handler(httpd_req_t *req)
 
 static esp_err_t status_handler(httpd_req_t *req)
 {
-    char response[2560];
-    if (powerboard_control_status_json(response, sizeof(response)) >= sizeof(response)) {
+    const size_t response_size = 4096;
+    char *response = calloc(1, response_size);
+    if (response == NULL) {
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        return httpd_resp_sendstr(req, "status memory unavailable");
+    }
+    if (powerboard_control_status_json(response, response_size) >= response_size) {
+        free(response);
         httpd_resp_set_status(req, "500 Internal Server Error");
         return httpd_resp_sendstr(req, "status json overflow");
     }
-    return send_json(req, response);
+    const esp_err_t result = send_json(req, response);
+    free(response);
+    return result;
 }
 
 static esp_err_t stop_handler(httpd_req_t *req)

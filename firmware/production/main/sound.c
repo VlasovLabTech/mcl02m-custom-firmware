@@ -40,13 +40,15 @@ static int s_current_pattern = -1;
 
 static bool mandatory_pattern(sound_pattern_t pattern)
 {
-    return pattern == SOUND_NO_PAN || pattern == SOUND_CRITICAL;
+    return pattern == SOUND_IGBT_WARNING || pattern == SOUND_NO_PAN ||
+           pattern == SOUND_CRITICAL;
 }
 
 static bool protected_pattern(sound_pattern_t pattern)
 {
     return pattern == SOUND_WAKE || pattern == SOUND_SLEEP ||
-           pattern == SOUND_NO_PAN || pattern == SOUND_CRITICAL;
+           pattern == SOUND_IGBT_WARNING || pattern == SOUND_NO_PAN ||
+           pattern == SOUND_CRITICAL;
 }
 
 static bool request_valid(const sound_request_t *request)
@@ -138,6 +140,10 @@ static bool play(const sound_request_t *request)
         return note(3500, 120, 90, request) && note(4200, 150, 0, request);
     case SOUND_WARNING:
         return note(3000, 180, 80, request) && note(3000, 180, 0, request);
+    case SOUND_IGBT_WARNING:
+        return note(3000, 140, 70, request) &&
+               note(3000, 140, 70, request) &&
+               note(3000, 140, 0, request);
     case SOUND_NO_PAN:
         return play_table(k_sound_midi_nutcracker_pas_de_deux,
                           SELECTED_SOUND_NORMAL_DUTY_PERMILLE, request);

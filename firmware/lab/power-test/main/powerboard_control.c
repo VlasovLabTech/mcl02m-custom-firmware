@@ -21,6 +21,26 @@
 #define PB_CLOCK_HZ 10000
 #define PB_READ_RESPONSE_DELAY_MS 30U
 
+#define PB_REG_MASK(reg) ((uint16_t)(1U << ((reg) - 0x20U)))
+#define PB_CRITICAL_READ_MASK \
+    (PB_REG_MASK(0x20U) | PB_REG_MASK(0x22U) | PB_REG_MASK(0x23U) | \
+     PB_REG_MASK(0x24U) | PB_REG_MASK(0x26U))
+#define PB_SERVICE_READ_MASK \
+    (PB_REG_MASK(0x21U) | PB_REG_MASK(0x25U) | PB_REG_MASK(0x27U))
+#define PB_WRITE_0D_MASK (1U << 0)
+#define PB_WRITE_00_MASK (1U << 1)
+#define PB_WRITE_0C_MASK (1U << 2)
+#define PB_ALL_WRITE_MASK \
+    (PB_WRITE_0D_MASK | PB_WRITE_00_MASK | PB_WRITE_0C_MASK)
+
+#define PB_RECOVERY_READ_SLOT_MS 40U
+#define PB_RECOVERY_COMMAND_0D_MS 220U
+#define PB_RECOVERY_COMMAND_00_MS 270U
+#define PB_RECOVERY_COMMAND_0C_MS 274U
+
+_Static_assert(PB_RECOVERY_COMMAND_0C_MS < MCL02M_I2C_RECOVERY_HEARTBEAT_MS,
+               "recovery command schedule must fit its heartbeat");
+
 #ifndef MCL02M_ACTIVE_ZERO_ENABLED
 #define MCL02M_ACTIVE_ZERO_ENABLED 0
 #endif
@@ -62,7 +82,14 @@ static bool s_unknown_r20_present;
 static uint8_t s_unknown_r20_present_value;
 static unsigned s_stop_active_samples;
 static unsigned s_stop_zero_samples;
+static unsigned s_igbt_raw_fault_samples;
+static unsigned s_bottom_raw_fault_samples;
+static unsigned s_igbt_limit_samples;
+static unsigned s_bottom_limit_samples;
 static uint32_t s_start_incident_sequence;
+static uint32_t s_i2c_incident_sequence;
+static int64_t s_i2c_critical_bad_since_us;
+static int64_t s_i2c_command_bad_since_us;
 static uint8_t s_last_successful_command_0d;
 static uint8_t s_last_successful_command_0c;
 static uint32_t s_transition_feedback_baseline;
@@ -115,6 +142,13 @@ static uint32_t remaining_ms(int64_t deadline_us, int64_t now_us)
     if (deadline_us <= now_us) return 0;
     const int64_t delta = deadline_us - now_us;
     return (uint32_t)((delta + 999) / 1000);
+}
+
+static uint32_t elapsed_ms(int64_t started_us, int64_t now_us)
+{
+    if (started_us == 0 || now_us <= started_us) return 0;
+    const uint64_t elapsed = (uint64_t)(now_us - started_us) / 1000U;
+    return elapsed > UINT32_MAX ? UINT32_MAX : (uint32_t)elapsed;
 }
 
 static uint8_t bottom_temperature(uint8_t raw)
@@ -199,7 +233,7 @@ static bool bottom_temperature_interface_safe(uint8_t temperature_c)
     (void)temperature_c;
     return true;
 #else
-    return temperature_c < MCL02M_MAX_BOTTOM_C;
+    return temperature_c <= MCL02M_MAX_BOTTOM_C;
 #endif
 }
 
@@ -308,15 +342,25 @@ static esp_err_t write_register(uint8_t reg, uint8_t value)
     return err;
 }
 
-static esp_err_t send_stop_sequence(void)
+static esp_err_t send_stop_sequence(uint8_t *attempt_mask, uint8_t *error_mask)
 {
+    uint8_t attempted = 0;
+    uint8_t failed = 0;
+    attempted |= PB_WRITE_0D_MASK;
     esp_err_t result = write_register(0x0d, 0x00);
+    if (result != ESP_OK) failed |= PB_WRITE_0D_MASK;
     vTaskDelay(pdMS_TO_TICKS(50));
+    attempted |= PB_WRITE_00_MASK;
     const esp_err_t e00 = write_register(0x00, 0x00);
+    if (e00 != ESP_OK) failed |= PB_WRITE_00_MASK;
     vTaskDelay(pdMS_TO_TICKS(4));
+    attempted |= PB_WRITE_0C_MASK;
     const esp_err_t e0c = write_register(0x0c, 0x00);
+    if (e0c != ESP_OK) failed |= PB_WRITE_0C_MASK;
     if (result == ESP_OK && e00 != ESP_OK) result = e00;
     if (result == ESP_OK && e0c != ESP_OK) result = e0c;
+    if (attempt_mask != NULL) *attempt_mask |= attempted;
+    if (error_mask != NULL) *error_mask |= failed;
     xSemaphoreTake(s_status_lock, portMAX_DELAY);
     s_status.last_command_0d = 0;
     s_status.last_command_00 = 0;
@@ -397,6 +441,66 @@ static void capture_start_incident_locked(const char *reason,
              incident->completed_cycles, incident->bad_cycles,
              incident->consecutive_bad_cycles, incident->reason);
 #endif
+}
+
+static void capture_i2c_incident_locked(const char *reason,
+                                        powerboard_state_t previous_state,
+                                        uint16_t read_error_mask,
+                                        uint8_t write_error_mask,
+                                        uint32_t critical_loss_ms,
+                                        uint32_t command_loss_ms)
+{
+    if (s_status.i2c_incident.valid) return;
+
+    powerboard_i2c_incident_t *incident = &s_status.i2c_incident;
+    incident->valid = true;
+    incident->sequence = ++s_i2c_incident_sequence;
+    incident->timestamp_ms = (uint64_t)(esp_timer_get_time() / 1000);
+    incident->lower_state = previous_state;
+    incident->read_error_mask = read_error_mask;
+    incident->write_error_mask = write_error_mask;
+    incident->valid_mask = s_status.valid_mask;
+    incident->r20 = s_status.registers[0];
+    incident->r26 = s_status.registers[6];
+    incident->command_0d = s_status.last_command_0d;
+    incident->command_00 = s_status.last_command_00;
+    incident->command_0c = s_status.last_command_0c;
+    incident->completed_cycles = s_status.completed_cycles;
+    incident->bad_cycles = s_status.bad_cycles;
+    incident->consecutive_bad_cycles = s_status.consecutive_bad_cycles;
+    incident->critical_loss_ms = critical_loss_ms;
+    incident->command_loss_ms = command_loss_ms;
+    incident->recovery_entries = s_status.i2c_recovery_entries;
+    strlcpy(incident->reason, reason == NULL ? "I2C LOST" : reason,
+            sizeof(incident->reason));
+
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+    ESP_LOGE(TAG,
+             "I,F,%" PRIu32 ",%" PRIu64 ",%s,%04X,%02X,%04X,%02X,%02X,"
+             "%02X,%02X,%02X,%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%s",
+             incident->sequence, incident->timestamp_ms,
+             powerboard_state_name(incident->lower_state),
+             incident->read_error_mask, incident->write_error_mask,
+             incident->valid_mask, incident->r20, incident->r26,
+             incident->command_0d, incident->command_00, incident->command_0c,
+             incident->critical_loss_ms, incident->command_loss_ms,
+             incident->recovery_entries, incident->reason);
+#endif
+}
+
+static void reset_i2c_health_locked(bool clear_incident)
+{
+    s_i2c_critical_bad_since_us = 0;
+    s_i2c_command_bad_since_us = 0;
+    s_status.consecutive_bad_cycles = 0;
+    s_status.i2c_recovery_active = false;
+    s_status.i2c_recovery_good_cycles = 0;
+    s_status.i2c_critical_loss_ms = 0;
+    s_status.i2c_command_loss_ms = 0;
+    s_status.last_i2c_read_error_mask = 0;
+    s_status.last_i2c_write_error_mask = 0;
+    if (clear_incident)
+        memset(&s_status.i2c_incident, 0, sizeof(s_status.i2c_incident));
 }
 
 static void start_stop_evidence_locked(const char *reason)
@@ -572,6 +676,102 @@ static void fault_locked(const char *reason)
 #endif
 }
 
+static void update_i2c_health_locked(int64_t now_us,
+                                     uint16_t read_attempt_mask,
+                                     uint16_t read_error_mask,
+                                     bool command_expected,
+                                     uint8_t write_attempt_mask,
+                                     uint8_t write_error_mask)
+{
+    const bool critical_read_bad =
+        (read_error_mask & PB_CRITICAL_READ_MASK) != 0;
+    const bool service_read_bad =
+        (read_error_mask & PB_SERVICE_READ_MASK) != 0;
+    const bool command_bad = write_error_mask != 0;
+    const bool critical_bad = critical_read_bad || command_bad;
+    const bool critical_reads_complete =
+        (read_attempt_mask & PB_CRITICAL_READ_MASK) == PB_CRITICAL_READ_MASK;
+    const bool commands_complete = !command_expected ||
+        (write_attempt_mask & PB_ALL_WRITE_MASK) == PB_ALL_WRITE_MASK;
+    const bool complete_good_cycle = critical_reads_complete && commands_complete &&
+        !critical_bad;
+
+    s_status.last_i2c_read_error_mask = read_error_mask;
+    s_status.last_i2c_write_error_mask = write_error_mask;
+    ++s_status.completed_cycles;
+    if (read_error_mask != 0 || write_error_mask != 0) ++s_status.bad_cycles;
+    if (critical_bad) ++s_status.critical_bad_cycles;
+    if (service_read_bad) ++s_status.service_bad_cycles;
+
+    if (critical_bad) {
+        ++s_status.consecutive_bad_cycles;
+        s_status.i2c_recovery_good_cycles = 0;
+        if (s_i2c_critical_bad_since_us == 0)
+            s_i2c_critical_bad_since_us = now_us;
+        if (!s_status.i2c_recovery_active &&
+            s_status.consecutive_bad_cycles >=
+                MCL02M_I2C_RECOVERY_TRIGGER_CYCLES &&
+            s_status.state != PB_STATE_STOPPED &&
+            s_status.state != PB_STATE_FAULT) {
+            s_status.i2c_recovery_active = true;
+            ++s_status.i2c_recovery_entries;
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+            ESP_LOGW(TAG, "I,REC,1,%" PRIu32 ",%04X,%02X",
+                     s_status.consecutive_bad_cycles, read_error_mask,
+                     write_error_mask);
+#endif
+        }
+    } else if (complete_good_cycle) {
+        s_status.consecutive_bad_cycles = 0;
+        s_i2c_critical_bad_since_us = 0;
+        if (s_status.i2c_recovery_active) {
+            if (s_status.i2c_recovery_good_cycles < UINT8_MAX)
+                ++s_status.i2c_recovery_good_cycles;
+            if (s_status.i2c_recovery_good_cycles >=
+                MCL02M_I2C_RECOVERY_GOOD_CYCLES) {
+                s_status.i2c_recovery_active = false;
+                s_status.i2c_recovery_good_cycles = 0;
+#if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
+                ESP_LOGI(TAG, "I,REC,0,GOOD");
+#endif
+            }
+        }
+    }
+
+    if (command_bad) {
+        if (s_i2c_command_bad_since_us == 0)
+            s_i2c_command_bad_since_us = now_us;
+    } else if (commands_complete) {
+        s_i2c_command_bad_since_us = 0;
+    }
+
+    s_status.i2c_critical_loss_ms =
+        elapsed_ms(s_i2c_critical_bad_since_us, now_us);
+    s_status.i2c_command_loss_ms =
+        elapsed_ms(s_i2c_command_bad_since_us, now_us);
+
+    const bool command_timed_out = s_status.i2c_command_loss_ms >=
+        MCL02M_I2C_COMMAND_LOSS_TIMEOUT_MS;
+    const bool critical_timed_out = s_status.i2c_critical_loss_ms >=
+        MCL02M_I2C_CRITICAL_LOSS_TIMEOUT_MS;
+    if ((command_timed_out || critical_timed_out) &&
+        s_status.state != PB_STATE_STOPPED &&
+        s_status.state != PB_STATE_FAULT) {
+        const char *incident_reason = command_timed_out ?
+            "COMMAND LOSS" : "CRITICAL LOSS";
+        capture_i2c_incident_locked(incident_reason, s_status.state,
+                                    read_error_mask, write_error_mask,
+                                    s_status.i2c_critical_loss_ms,
+                                    s_status.i2c_command_loss_ms);
+        if (s_status.state == PB_STATE_STOPPING) {
+            record_stop_issue_locked("I2C LOST");
+            s_force_stop = true;
+        } else {
+            fault_locked("I2C LOST");
+        }
+    }
+}
+
 static void begin_stop_locked(const char *reason)
 {
     if (s_status.state == PB_STATE_STOPPING || s_status.state == PB_STATE_FAULT) {
@@ -651,7 +851,13 @@ static const char *preflight_issue_locked(void)
         return "IGBT SENSOR";
     if (s_status.registers[4] < 0x0b || s_status.registers[4] >= 0xfc)
         return "BOTTOM SENSOR";
-    if (s_status.igbt_c >= MCL02M_MAX_IGBT_C) return "IGBT LIMIT";
+#if MCL02M_IGBT_START_INHIBIT_C > 0U
+    if (s_status.igbt_c > MCL02M_IGBT_START_INHIBIT_C)
+        return "IGBT START HOT";
+#endif
+#if MCL02M_IGBT_INTERFACE_CUTOFF_ENABLED
+    if (s_status.igbt_c > MCL02M_MAX_IGBT_C) return "IGBT LIMIT";
+#endif
     if (!bottom_temperature_interface_safe(s_status.bottom_c))
         return "BOTTOM LIMIT";
     return NULL;
@@ -673,7 +879,9 @@ static const char *retained_session_issue_locked(void)
         return "IGBT SENSOR";
     if (s_status.registers[4] < 0x0b || s_status.registers[4] >= 0xfc)
         return "BOTTOM SENSOR";
-    if (s_status.igbt_c >= MCL02M_MAX_IGBT_C) return "IGBT LIMIT";
+#if MCL02M_IGBT_INTERFACE_CUTOFF_ENABLED
+    if (s_status.igbt_c > MCL02M_MAX_IGBT_C) return "IGBT LIMIT";
+#endif
     if (!bottom_temperature_interface_safe(s_status.bottom_c))
         return "BOTTOM LIMIT";
     return NULL;
@@ -808,17 +1016,47 @@ static void update_time_and_safety(int64_t now_us)
     }
 
     if (state_session_open(s_status.state)) {
-        if ((s_status.valid_mask & (1U << 3)) != 0 &&
-            (s_status.registers[3] < 0x41 || s_status.registers[3] >= 0xf8 ||
-             s_status.igbt_c >= MCL02M_MAX_IGBT_C)) {
-            fault_locked("IGBT LIMIT");
-        } else if ((s_status.valid_mask & (1U << 4)) != 0 &&
-                   (s_status.registers[4] < 0x0b || s_status.registers[4] >= 0xfc)) {
+        const bool igbt_valid = (s_status.valid_mask & (1U << 3)) != 0;
+        const bool bottom_valid = (s_status.valid_mask & (1U << 4)) != 0;
+        const bool igbt_raw_invalid = igbt_valid &&
+            (s_status.registers[3] < 0x41 || s_status.registers[3] >= 0xf8);
+        const bool bottom_raw_invalid = bottom_valid &&
+            (s_status.registers[4] < 0x0b || s_status.registers[4] >= 0xfc);
+
+        s_igbt_raw_fault_samples = igbt_raw_invalid ?
+            s_igbt_raw_fault_samples + 1U : 0U;
+        s_bottom_raw_fault_samples = bottom_raw_invalid ?
+            s_bottom_raw_fault_samples + 1U : 0U;
+
+#if MCL02M_IGBT_INTERFACE_CUTOFF_ENABLED
+        s_igbt_limit_samples = igbt_valid && !igbt_raw_invalid &&
+            s_status.igbt_c > MCL02M_MAX_IGBT_C ?
+            s_igbt_limit_samples + 1U : 0U;
+#else
+        s_igbt_limit_samples = 0;
+#endif
+        s_bottom_limit_samples = bottom_valid && !bottom_raw_invalid &&
+            !bottom_temperature_interface_safe(s_status.bottom_c) ?
+            s_bottom_limit_samples + 1U : 0U;
+
+        if (s_igbt_raw_fault_samples >= MCL02M_RAW_SENSOR_FAULT_SAMPLES) {
+            fault_locked("E08 IGBT SENSOR");
+        } else if (s_bottom_raw_fault_samples >= MCL02M_RAW_SENSOR_FAULT_SAMPLES) {
             fault_locked("E08 BOTTOM SENSOR");
-        } else if ((s_status.valid_mask & (1U << 4)) != 0 &&
-                   !bottom_temperature_interface_safe(s_status.bottom_c)) {
+#if MCL02M_IGBT_INTERFACE_CUTOFF_ENABLED
+        } else if (s_igbt_limit_samples >=
+                   MCL02M_IGBT_INTERFACE_CUTOFF_SAMPLES) {
+            fault_locked("IGBT INTERFACE LIMIT");
+#endif
+        } else if (s_bottom_limit_samples >=
+                   MCL02M_BOTTOM_INTERFACE_CUTOFF_SAMPLES) {
             fault_locked("BOTTOM LIMIT");
         }
+    } else {
+        s_igbt_raw_fault_samples = 0;
+        s_bottom_raw_fault_samples = 0;
+        s_igbt_limit_samples = 0;
+        s_bottom_limit_samples = 0;
     }
     xSemaphoreGive(s_status_lock);
 }
@@ -1049,6 +1287,22 @@ static uint8_t next_ramped_gear(uint8_t current, uint8_t target)
     return (uint8_t)candidate;
 }
 
+static uint8_t cold_start_first_gear(uint8_t target)
+{
+    /*
+     * Select the final target's relay topology in the very first nonzero
+     * command, then ramp only inside that topology. This preserves a gentle
+     * cold start without forcing the power board through one or two needless
+     * relay/IGBT transitions on the way to the requested range.
+     */
+    if (target <= MCL02M_LOW_START_RAMP_GEAR) return target;
+    if (target <= MCL02M_LOW_TOPOLOGY_MAX_GEAR)
+        return MCL02M_LOW_START_RAMP_GEAR;
+    if (target < MCL02M_HIGH_TOPOLOGY_MIN_GEAR)
+        return MCL02M_MID_TOPOLOGY_MIN_GEAR;
+    return MCL02M_HIGH_TOPOLOGY_MIN_GEAR;
+}
+
 static uint8_t retained_resume_first_gear(uint8_t target)
 {
     /*
@@ -1127,7 +1381,7 @@ static void emit_status(void)
              s.transition_rejection_sequence, s.transition_rejection);
 #endif
 #if !MCL02M_COMPACT_UART_TELEMETRY
-    char json[2560];
+    static char json[4096];
     powerboard_control_status_json(json, sizeof(json));
     telemetry_emit(json);
 #endif
@@ -1137,7 +1391,7 @@ static void control_task(void *arg)
 {
     (void)arg;
     const esp_err_t watchdog = esp_task_wdt_add(NULL);
-    esp_err_t boot_stop = send_stop_sequence();
+    esp_err_t boot_stop = send_stop_sequence(NULL, NULL);
     esp_err_t startup = startup_probe();
     xSemaphoreTake(s_status_lock, portMAX_DELAY);
     if (watchdog == ESP_OK && boot_stop == ESP_OK && startup == ESP_OK) {
@@ -1150,18 +1404,47 @@ static void control_task(void *arg)
     xSemaphoreGive(s_status_lock);
     if (watchdog == ESP_OK) esp_task_wdt_reset();
 
-    static const uint8_t read_order[] = {0x26,0x27,0x20,0x21,0x22,0x23,0x24,0x25};
+    static const uint8_t normal_read_order[] = {
+        0x26,0x27,0x20,0x21,0x22,0x23,0x24,0x25
+    };
+    static const uint8_t recovery_read_order[] = {
+        0x26,0x20,0x22,0x23,0x24
+    };
     for (;;) {
         const TickType_t cycle_start = xTaskGetTickCount();
-        unsigned cycle_errors = 0;
+        uint16_t read_attempt_mask = 0;
+        uint16_t read_error_mask = 0;
+        uint8_t write_attempt_mask = 0;
+        uint8_t write_error_mask = 0;
+        bool command_expected = false;
         bool interrupted = false;
 
-        for (unsigned i = 0; i < sizeof(read_order); ++i) {
-            if (i != 0 && !wait_until_or_stop(cycle_start, i * 50U)) {
+        xSemaphoreTake(s_status_lock, portMAX_DELAY);
+        const bool recovery_cycle = s_status.i2c_recovery_active;
+        xSemaphoreGive(s_status_lock);
+        const uint8_t *read_order = recovery_cycle ?
+            recovery_read_order : normal_read_order;
+        const size_t read_count = recovery_cycle ?
+            sizeof(recovery_read_order) : sizeof(normal_read_order);
+        const unsigned read_slot_ms = recovery_cycle ?
+            PB_RECOVERY_READ_SLOT_MS : 50U;
+        const unsigned command_0d_ms = recovery_cycle ?
+            PB_RECOVERY_COMMAND_0D_MS : 400U;
+        const unsigned command_00_ms = recovery_cycle ?
+            PB_RECOVERY_COMMAND_00_MS : 450U;
+        const unsigned command_0c_ms = recovery_cycle ?
+            PB_RECOVERY_COMMAND_0C_MS : 454U;
+
+        for (size_t i = 0; i < read_count; ++i) {
+            if (i != 0 && !wait_until_or_stop(
+                    cycle_start, (unsigned)i * read_slot_ms)) {
                 interrupted = true;
                 break;
             }
-            if (read_and_store(read_order[i]) != ESP_OK) ++cycle_errors;
+            const uint16_t reg_mask = PB_REG_MASK(read_order[i]);
+            read_attempt_mask |= reg_mask;
+            if (read_and_store(read_order[i]) != ESP_OK)
+                read_error_mask |= reg_mask;
         }
 
         update_status_feedback();
@@ -1172,7 +1455,8 @@ static void control_task(void *arg)
         if (s_force_stop || s_status.state == PB_STATE_FAULT) interrupted = true;
         xSemaphoreGive(s_status_lock);
 
-        if (!interrupted && !wait_until_or_stop(cycle_start, 400)) interrupted = true;
+        if (!interrupted && !wait_until_or_stop(cycle_start, command_0d_ms))
+            interrupted = true;
 
         if (!interrupted) {
             xSemaphoreTake(s_status_lock, portMAX_DELAY);
@@ -1190,6 +1474,7 @@ static void control_task(void *arg)
             xSemaphoreGive(s_status_lock);
 
             if (command_state != PB_STATE_HEARTBEAT_GAP) {
+                command_expected = true;
                 uint8_t command_0d = 0;
                 uint8_t command_00 = 0;
                 uint8_t command_0c = 0;
@@ -1232,22 +1517,27 @@ static void control_task(void *arg)
                 s_status.last_command_00 = command_00;
                 s_status.last_command_0c = command_0c;
                 xSemaphoreGive(s_status_lock);
+                write_attempt_mask |= PB_WRITE_0D_MASK;
                 if (write_register(0x0d, command_0d) != ESP_OK) {
-                    ++cycle_errors;
+                    write_error_mask |= PB_WRITE_0D_MASK;
                     command_transmitted = false;
                 }
-                if (!wait_until_or_stop(cycle_start, 450)) {
+                if (!wait_until_or_stop(cycle_start, command_00_ms)) {
                     interrupted = true;
                 } else {
+                    write_attempt_mask |= PB_WRITE_00_MASK;
                     if (write_register(0x00, command_00) != ESP_OK) {
-                        ++cycle_errors;
+                        write_error_mask |= PB_WRITE_00_MASK;
                         command_transmitted = false;
                     }
-                    if (!wait_until_or_stop(cycle_start, 454)) {
+                    if (!wait_until_or_stop(cycle_start, command_0c_ms)) {
                         interrupted = true;
-                    } else if (write_register(0x0c, command_0c) != ESP_OK) {
-                        ++cycle_errors;
-                        command_transmitted = false;
+                    } else {
+                        write_attempt_mask |= PB_WRITE_0C_MASK;
+                        if (write_register(0x0c, command_0c) != ESP_OK) {
+                            write_error_mask |= PB_WRITE_0C_MASK;
+                            command_transmitted = false;
+                        }
                     }
                 }
 
@@ -1316,8 +1606,9 @@ static void control_task(void *arg)
         }
 
         if (interrupted) {
-            const esp_err_t stop_err = send_stop_sequence();
-            if (stop_err != ESP_OK) ++cycle_errors;
+            command_expected = true;
+            const esp_err_t stop_err = send_stop_sequence(
+                &write_attempt_mask, &write_error_mask);
             xSemaphoreTake(s_status_lock, portMAX_DELAY);
             /* Retry an unsuccessful safety Stop on the next heartbeat. */
             s_force_stop = stop_err != ESP_OK;
@@ -1325,22 +1616,11 @@ static void control_task(void *arg)
         }
 
         xSemaphoreTake(s_status_lock, portMAX_DELAY);
-        ++s_status.completed_cycles;
-        if (cycle_errors != 0) {
-            ++s_status.bad_cycles;
-            ++s_status.consecutive_bad_cycles;
-        } else {
-            s_status.consecutive_bad_cycles = 0;
-        }
-        if (s_status.consecutive_bad_cycles >= MCL02M_I2C_BAD_CYCLES_TO_FAULT &&
-            s_status.state != PB_STATE_STOPPED && s_status.state != PB_STATE_FAULT) {
-            if (s_status.state == PB_STATE_STOPPING) {
-                record_stop_issue_locked("I2C LOST");
-                s_force_stop = true;
-            } else {
-                fault_locked("I2C LOST");
-            }
-        }
+        update_i2c_health_locked(esp_timer_get_time(),
+                                 read_attempt_mask, read_error_mask,
+                                 command_expected, write_attempt_mask,
+                                 write_error_mask);
+        const bool next_recovery_cycle = s_status.i2c_recovery_active;
         xSemaphoreGive(s_status_lock);
 
         advance_ramp();
@@ -1348,7 +1628,9 @@ static void control_task(void *arg)
         if (watchdog == ESP_OK) esp_task_wdt_reset();
 
         TickType_t next = cycle_start;
-        vTaskDelayUntil(&next, pdMS_TO_TICKS(MCL02M_CONTROL_HEARTBEAT_MS));
+        const unsigned next_period_ms = next_recovery_cycle ?
+            MCL02M_I2C_RECOVERY_HEARTBEAT_MS : MCL02M_CONTROL_HEARTBEAT_MS;
+        vTaskDelayUntil(&next, pdMS_TO_TICKS(next_period_ms));
     }
 }
 
@@ -1389,6 +1671,8 @@ void powerboard_control_get_status(powerboard_status_t *status)
     status->lease_remaining_ms = remaining_ms(s_lease_deadline_us, now);
     status->transition_remaining_ms = remaining_ms(s_transition_deadline_us, now);
     status->heartbeat_gap_remaining_ms = remaining_ms(s_heartbeat_gap_deadline_us, now);
+    status->i2c_critical_loss_ms = elapsed_ms(s_i2c_critical_bad_since_us, now);
+    status->i2c_command_loss_ms = elapsed_ms(s_i2c_command_bad_since_us, now);
     if (s_stop_started_us != 0 && now >= s_stop_started_us)
         status->stop_elapsed_ms = (uint32_t)((now - s_stop_started_us) / 1000);
     if (s_run_started_us != 0 && now >= s_run_started_us) {
@@ -1441,6 +1725,11 @@ size_t powerboard_control_status_json(char *output, size_t output_size)
         "\"hb_gap_ms\":%" PRIu32 ","
         "\"hb_gap_observed_stop\":%s,\"cycles\":%" PRIu32 ",\"bad_cycles\":%" PRIu32 ","
         "\"consecutive_bad_cycles\":%" PRIu32 ","
+        "\"critical_bad_cycles\":%" PRIu32 ",\"service_bad_cycles\":%" PRIu32 ","
+        "\"i2c_recovery_active\":%s,\"i2c_recovery_good_cycles\":%u,"
+        "\"i2c_recovery_entries\":%" PRIu32 ","
+        "\"i2c_critical_loss_ms\":%" PRIu32 ",\"i2c_command_loss_ms\":%" PRIu32 ","
+        "\"i2c_read_error_mask\":%u,\"i2c_write_error_mask\":%u,"
         "\"active_zero_entries\":%" PRIu32 ",\"active_zero_resumes\":%" PRIu32 ","
         "\"active_zero_enabled\":%s,\"cookware_limited\":%s,"
         "\"unknown_r20_value\":%u,\"unknown_r20_seq\":%" PRIu32 ",\"fault\":\"%s\","
@@ -1450,7 +1739,15 @@ size_t powerboard_control_status_json(char *output, size_t output_size)
         "\"transmitted_gear\":%u,\"transmitted_topology\":%u,"
         "\"cmd_0d\":%u,\"cmd_00\":%u,\"cmd_0c\":%u,"
         "\"cycles\":%" PRIu32 ",\"bad_cycles\":%" PRIu32 ","
-        "\"consecutive_bad_cycles\":%" PRIu32 ",\"reason\":\"%s\"}}",
+        "\"consecutive_bad_cycles\":%" PRIu32 ",\"reason\":\"%s\"},"
+        "\"i2c_incident\":{\"valid\":%s,\"sequence\":%" PRIu32 ","
+        "\"t_ms\":%" PRIu64 ",\"state\":\"%s\","
+        "\"read_error_mask\":%u,\"write_error_mask\":%u,\"valid_mask\":%u,"
+        "\"r20\":%u,\"r26\":%u,\"cmd_0d\":%u,\"cmd_00\":%u,\"cmd_0c\":%u,"
+        "\"cycles\":%" PRIu32 ",\"bad_cycles\":%" PRIu32 ","
+        "\"consecutive_bad_cycles\":%" PRIu32 ","
+        "\"critical_loss_ms\":%" PRIu32 ",\"command_loss_ms\":%" PRIu32 ","
+        "\"recovery_entries\":%" PRIu32 ",\"reason\":\"%s\"}}",
         esp_timer_get_time() / 1000, powerboard_state_name(s.state),
         s.target_gear, s.applied_gear, s.topology,
         s.last_command_0d, s.last_command_00, s.last_command_0c,
@@ -1486,6 +1783,11 @@ size_t powerboard_control_status_json(char *output, size_t output_size)
         s.heartbeat_gap_remaining_ms,
         s.heartbeat_gap_observed_stop ? "true" : "false", s.completed_cycles,
         s.bad_cycles, s.consecutive_bad_cycles,
+        s.critical_bad_cycles, s.service_bad_cycles,
+        s.i2c_recovery_active ? "true" : "false",
+        s.i2c_recovery_good_cycles, s.i2c_recovery_entries,
+        s.i2c_critical_loss_ms, s.i2c_command_loss_ms,
+        s.last_i2c_read_error_mask, s.last_i2c_write_error_mask,
         s.active_zero_entries, s.active_zero_resumes,
         MCL02M_ACTIVE_ZERO_ENABLED ? "true" : "false",
         s.cookware_limited ? "true" : "false", s.unknown_r20_value,
@@ -1499,7 +1801,17 @@ size_t powerboard_control_status_json(char *output, size_t output_size)
         s.start_incident.transmitted_topology, s.start_incident.command_0d,
         s.start_incident.command_00, s.start_incident.command_0c,
         s.start_incident.completed_cycles, s.start_incident.bad_cycles,
-        s.start_incident.consecutive_bad_cycles, s.start_incident.reason);
+        s.start_incident.consecutive_bad_cycles, s.start_incident.reason,
+        s.i2c_incident.valid ? "true" : "false", s.i2c_incident.sequence,
+        s.i2c_incident.timestamp_ms,
+        powerboard_state_name(s.i2c_incident.lower_state),
+        s.i2c_incident.read_error_mask, s.i2c_incident.write_error_mask,
+        s.i2c_incident.valid_mask, s.i2c_incident.r20, s.i2c_incident.r26,
+        s.i2c_incident.command_0d, s.i2c_incident.command_00,
+        s.i2c_incident.command_0c, s.i2c_incident.completed_cycles,
+        s.i2c_incident.bad_cycles, s.i2c_incident.consecutive_bad_cycles,
+        s.i2c_incident.critical_loss_ms, s.i2c_incident.command_loss_ms,
+        s.i2c_incident.recovery_entries, s.i2c_incident.reason);
 }
 
 esp_err_t powerboard_control_arm(unsigned window_ms)
@@ -1558,9 +1870,10 @@ esp_err_t powerboard_control_start(unsigned gear, unsigned duration_ms)
     }
     s_status.target_gear = (uint8_t)gear;
     memset(&s_status.start_incident, 0, sizeof(s_status.start_incident));
+    reset_i2c_health_locked(true);
     s_last_successful_command_0d = 0;
     s_last_successful_command_0c = 0;
-    const uint8_t first_gear = (uint8_t)(gear > 10 ? 10 : gear);
+    const uint8_t first_gear = cold_start_first_gear((uint8_t)gear);
     s_status.applied_gear = 0;
     s_status.topology = 0;
     s_status.cookware_limited = false;
@@ -1917,7 +2230,7 @@ esp_err_t powerboard_control_clear_fault(void)
     s_status.applied_gear = 0;
     s_status.topology = 0;
     s_status.cookware_limited = false;
-    s_status.consecutive_bad_cycles = 0;
+    reset_i2c_health_locked(false);
     s_start_confirm_deadline_us = 0;
     s_stop_confirm_deadline_us = 0;
     strlcpy(s_status.fault, "NONE", sizeof(s_status.fault));

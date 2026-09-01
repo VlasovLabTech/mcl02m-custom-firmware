@@ -64,6 +64,7 @@ static uint32_t s_cookware_notice_seq;
 static int64_t s_cookware_notice_deadline_us;
 static unsigned s_ready_image;
 static unsigned s_next_ready_image;
+static int64_t s_igbt_warning_snooze_until_us;
 
 static const uint8_t s_blank_frame[OLED_ASSET_FRAME_BYTES] = {0};
 
@@ -131,6 +132,7 @@ static void format_fault_code(cooker_fault_t fault, char output[4])
     case FAULT_E04_LOW_VOLTAGE: code = "E04"; break;
     case FAULT_E05_BOTTOM_OVERHEAT: code = "E05"; break;
     case FAULT_E07_IGBT_OVERHEAT: code = "E07"; break;
+    case FAULT_E07_INTERFACE_IGBT_LIMIT: code = "E07"; break;
     case FAULT_E08_SENSOR: code = "E08"; break;
     case FAULT_E09_COMMUNICATION: code = "E09"; break;
     case FAULT_E10_WIRE_OR_CHANNEL: code = "E10"; break;
@@ -278,6 +280,9 @@ static void display_task(void *arg)
         }
         const bool cookware_notice = s_cookware_notice_deadline_us > now;
         const bool r20_warning = cooker.r20_warning_active;
+        if (!cooker.igbt_warning_active) s_igbt_warning_snooze_until_us = 0;
+        const bool igbt_warning = cooker.igbt_warning_active &&
+            now >= s_igbt_warning_snooze_until_us;
         const bool overlay = s_overlay;
         const overlay_kind_t overlay_kind = s_overlay_kind;
         const unsigned overlay_value = s_overlay_value;
@@ -367,17 +372,17 @@ static void display_task(void *arg)
         } else if (cooker.state == COOK_STATE_DELAYED) {
             picture = oled_image_delayed_start;
             picture_has_delay_info = true;
-        } else if (!r20_warning && !cookware_notice &&
+        } else if (!igbt_warning && !r20_warning && !cookware_notice &&
                    s_transient_image != TRANSIENT_NONE) {
             picture = transient_bitmap(s_transient_image);
-        } else if (!r20_warning && !cookware_notice && hot_visible) {
+        } else if (!igbt_warning && !r20_warning && !cookware_notice && hot_visible) {
             picture = oled_image_hot;
         } else if (sleep_picture) {
             picture = oled_image_sleep;
         } else if (sleep_warning) {
             picture = oled_image_sleep_warning;
         }
-        show = picture != NULL || hot_due || r20_warning || cookware_notice || sleep_clock ||
+        show = picture != NULL || hot_due || igbt_warning || r20_warning || cookware_notice || sleep_clock ||
                cooker.state == COOK_STATE_FAULT ||
                cooker.state == COOK_STATE_COMPLETE ||
                cooker.state == COOK_STATE_NO_PAN || cooker.hold_saturated ||
@@ -396,10 +401,13 @@ static void display_task(void *arg)
                                 cooker.state == COOK_STATE_COMPLETE ||
                                 cooker.state == COOK_STATE_NO_PAN ||
                                 cooker.hold_saturated;
-            const bool effective_r20_warning = r20_warning && !urgent;
+            const bool effective_igbt_warning = igbt_warning && !urgent;
+            const bool effective_r20_warning = r20_warning && !urgent &&
+                                                 !effective_igbt_warning;
             const bool effective_cookware_notice = cookware_notice && !urgent &&
                                                    !effective_r20_warning;
             const bool effective_overlay = overlay && !urgent &&
+                                           !effective_igbt_warning &&
                                            !effective_r20_warning &&
                                            !effective_cookware_notice && !hot_due;
             const bool timer_only_due = settings.timer_screen_mode == TIMER_SCREEN_ALWAYS &&
@@ -415,7 +423,11 @@ static void display_task(void *arg)
                 if (!timer_only_due) normal_screen(&cooker, &settings, lines);
             }
             if (picture != NULL) {
-                if (picture_has_fault_code)
+                if (picture_has_fault_code &&
+                    cooker.fault == FAULT_E07_INTERFACE_IGBT_LIMIT)
+                    ui_oled_show_bitmap_text_marked(picture, fault_code, 30, 32, 2,
+                                                    60, 29);
+                else if (picture_has_fault_code)
                     ui_oled_show_bitmap_text(picture, fault_code, 30, 32, 2);
                 else if (picture_has_delay_info) {
                     char delay[16];
@@ -426,6 +438,8 @@ static void display_task(void *arg)
                 }
                 else
                     ui_oled_show_bitmap(picture);
+            } else if (effective_igbt_warning) {
+                ui_oled_show_igbt_warning(COOKER_IGBT_WARNING_C);
             } else if (effective_r20_warning) {
                 char r20[12];
                 snprintf(r20, sizeof(r20), "R20 %02X", cooker.r20_warning_value);
@@ -558,6 +572,7 @@ esp_err_t display_prod_init(void)
     s_previous_state_valid = false;
     s_ready_image = 0;
     s_next_ready_image = 0;
+    s_igbt_warning_snooze_until_us = 0;
     s_awake = true;
     return xTaskCreate(display_task, "display", 4096, NULL, 3, NULL) == pdPASS ?
            ESP_OK : ESP_ERR_NO_MEM;
@@ -587,6 +602,14 @@ void display_prod_dismiss_transient(void)
     xSemaphoreTake(s_lock, portMAX_DELAY);
     set_transient_locked(TRANSIENT_NONE, 0, esp_timer_get_time());
     s_cookware_notice_deadline_us = 0;
+    xSemaphoreGive(s_lock);
+}
+
+void display_prod_snooze_igbt_warning(void)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_igbt_warning_snooze_until_us = esp_timer_get_time() +
+        (int64_t)COOKER_IGBT_WARNING_RESHOW_MS * 1000LL;
     xSemaphoreGive(s_lock);
 }
 

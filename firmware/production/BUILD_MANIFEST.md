@@ -1,9 +1,9 @@
 # Reference offline build manifest
 
-Build date: 2026-08-30
+Build date: 2026-09-01
 ESP-IDF: 6.0.2
 Target: ESP32, Unicore
-Firmware: `0.2.29-dev`
+Firmware: `0.2.33-dev`
 
 The app header embeds compile metadata, so a clean rebuild may have a different
 SHA-256 while retaining the same source, layout, size and validation gates.
@@ -12,26 +12,26 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 ## App image
 
 - File: `build/mcl02m_custom.bin`
-- Size: `904256` bytes (`0xDCC40`)
-- SHA-256: `b9a3770f383564c6f0d95bfc169498b92b7f91e2d107c15e0ba39482de6f88f9`
-- ESP image validation hash: `2e56a6d7c0756a79abc86a68984b48fc19dff3848fc81b828de3b48f61979a23`
-- Stock OTA slot: `0x160000` bytes; image fits with `537536` bytes free.
+- Size: `909872` bytes (`0xDE230`)
+- SHA-256: `91c2c5a374f373de880b139c84698513272a785e2183aa84c29a5b967a76746b`
+- ESP image validation hash: `604c48e740ab42445d5794fa19ad9054ed0aa7a8d26914011b17ef7649fec6eb`
+- Stock OTA slot: `0x160000` bytes; image fits with `531920` bytes free.
 
 ## Private sound flavor
 
 - File: ignored `build_private/mcl02m_custom_private.bin`
-- Size: `904480` bytes (`0xDCD20`)
-- SHA-256: `476c6940d174cdb6a6f8e6f26c93686f6e1319fde3a69599139f005696ef2de5`
-- ESP image validation hash: `8bf93a73f5fae7754d122b973735db61a1267712e07dc169d64b9da5dbf49a03`
-- Stock OTA slot: `0x160000` bytes; image fits with `537312` bytes free.
-- Project/app metadata: `mcl02m_custom_private`, `0.2.29-dev-private`.
+- Size: `910112` bytes (`0xDE320`)
+- SHA-256: `ff985439d1d8581b053cad5e3fc5e572878d17ac115f5828282afa91f98ef019`
+- ESP image validation hash: `2fc1707367e8ed4e02aff154027d2063724f387d64043f3557420aac9c4b9b85`
+- Stock OTA slot: `0x160000` bytes; image fits with `531680` bytes free.
+- Project/app metadata: `mcl02m_custom_private`, `0.2.33-dev-private`.
 
 ## Linked memory
 
-- Flash code: 643902 bytes
-- Flash data: 155676 bytes
+- Flash code: 648374 bytes
+- Flash data: 156828 bytes
 - IRAM: 89047 / 131072 bytes (67.94%)
-- DRAM static: 37180 / 180736 bytes (20.57%)
+- DRAM static: 37388 / 180736 bytes (20.69%)
 - RTC slow: 64 / 8192 bytes
 
 ## Offline gates
@@ -88,10 +88,32 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
   one idempotent transactional Stop, immediately cancel the warning melody, and that
   neither the cooking engine nor the lower power-board driver can arm a NoPan Pause
   transition capable of timing out as `EPB`.
+  The `0.2.30-dev` cases additionally prove that service-only `R21/R25/R27`
+  failures cannot enter E09 recovery, three critical-bad cycles enter the 320-ms
+  critical-only schedule, two complete good cycles restore normal polling, transient
+  outages recover, continuous critical loss faults at five seconds, continuous
+  command-write loss faults at three seconds, Stop preserves its origin, and the
+  first E09 RAM incident remains immutable after later feedback.
+  The `0.2.31-dev` cases additionally prove that native `R20=17` E07 requires
+  two consecutive matching samples, the former custom 80 °C production cutoff
+  is compiled out, invalid IGBT raw data remains E08, and two valid readings
+  above 92 °C create only a dismissible audible advisory with an 88 °C rearm
+  threshold and no Stop or power reduction.
+  The `0.2.32-dev` cases additionally prove that the advisory remains active at
+  exactly 92 °C, clears below 92 °C or on Stop, repeats three beeps every three
+  seconds and snoozes only its screen for seven seconds after physical input.
+  They distinguish marked interface E07 after two readings above 98 °C from plain
+  native E07, block Start above 80 °C, require two invalid raw sensor samples and
+  six bottom readings strictly above 210 °C, and give Delayed Start at most two
+  attempts including a retry after a confirmed lower-board Start timeout.
+  The `0.2.33-dev` cases additionally prove every cold-Start boundary from 1 to
+  99: targets 1-10 start directly, 11-35 ramp from 10, 36 starts directly,
+  37-55 ramp from 36, 56 starts directly, and 57-99 ramp from 56. The exhaustive
+  model also proves that a cold ramp never crosses a relay-topology boundary.
 - `tests/safety_check.py`: PASS.
 - The public ELF contains no private LCE/SNM table or adapter symbols. The private
   flavor was built separately from the ignored local source and exposes the distinct
-  `mcl02m_custom_private` project name and `0.2.29-dev-private` app version.
+  `mcl02m_custom_private` project name and `0.2.33-dev-private` app version.
 - Production ELF check: temporary `I2C ERRORS` menu/overlay code is absent while
   its guarded source remains available.
 - `tests/localization_check.py`: PASS; 112 used CJK glyphs, 76 Chinese strings,
@@ -107,13 +129,12 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 
 ## Development-unit deployment
 
-The public `0.2.29-dev` artifact has not been flashed. The exact hash-verified
-`0.2.29-dev-private` artifact (904480 bytes; SHA-256
-`476c6940d174cdb6a6f8e6f26c93686f6e1319fde3a69599139f005696ef2de5`)
+The exact hash-verified `0.2.33-dev-private` artifact (910112 bytes; SHA-256
+`ff985439d1d8581b053cad5e3fc5e572878d17ac115f5828282afa91f98ef019`)
 was written only to stock `ota_1` at `0x170000` on the development unit on
-2026-08-30 after explicit owner authorization. Esptool verified the written data.
-That operation did not write the bootloader, partition table, `otadata`, NVS, PHY,
-`ota_0` or eFuse.
+2026-09-01 after explicit owner authorization. Esptool verified the written data.
+The operation did not write the bootloader, partition table, `otadata`, NVS, PHY,
+`ota_0` or eFuse. The public `0.2.33-dev` artifact has not been flashed.
 
 ESP-IDF prints a generic `idf.py flash` suggestion after building. Project procedure
 forbids that broad command on this cooker. A successful build is not authorization

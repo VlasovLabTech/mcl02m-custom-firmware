@@ -65,6 +65,8 @@ def main() -> int:
             "each run is hard-limited to five minutes")
     require(macro_value(safety, "MCL02M_MAX_IGBT_C") == 80,
             "indicated IGBT temperature limit is 80 C")
+    require(macro_value(safety, "MCL02M_IGBT_INTERFACE_CUTOFF_ENABLED") == 1,
+            "laboratory firmware keeps its explicit 80 C IGBT cutoff")
     require(macro_value(safety, "MCL02M_MAX_BOTTOM_C") == 120,
             "indicated bottom NTC temperature limit is 120 C")
     require(macro_value(safety, "MCL02M_MAX_HEARTBEAT_GAP_MS") == 5_000,
@@ -99,7 +101,7 @@ def main() -> int:
     offsets = [stop.find(fragment) for fragment in expected_stop]
     require(all(offset >= 0 for offset in offsets) and offsets == sorted(offsets),
             "Stop sends 0D=0, 00=0, 0C=0 in order")
-    boot_stop = control.find("esp_err_t boot_stop = send_stop_sequence();")
+    boot_stop = control.find("esp_err_t boot_stop = send_stop_sequence(NULL, NULL);")
     boot_probe = control.find("esp_err_t startup = startup_probe();")
     require(0 <= boot_stop < boot_probe, "boot issues Stop before probing the power board")
     startup = function_body(control, "startup_probe")
@@ -111,9 +113,12 @@ def main() -> int:
             "return required_result;" in startup,
             "required startup capabilities are independent from best-effort R2C-R2F diagnostics")
 
-    require("if (!interrupted && !wait_until_or_stop(cycle_start, 400))" in control and
-            "if (!wait_until_or_stop(cycle_start, 450))" in control and
-            "if (!wait_until_or_stop(cycle_start, 454))" in control,
+    require("wait_until_or_stop(cycle_start, command_0d_ms)" in control and
+            "wait_until_or_stop(cycle_start, command_00_ms)" in control and
+            "wait_until_or_stop(cycle_start, command_0c_ms)" in control and
+            "PB_RECOVERY_COMMAND_0D_MS" in control and
+            "PB_RECOVERY_COMMAND_00_MS" in control and
+            "PB_RECOVERY_COMMAND_0C_MS" in control,
             "remote/fault Stop interrupts every heartbeat-write boundary")
     require("s_status.applied_gear > 10" in control and
             "MCL02M_MAX_HEARTBEAT_GAP_MS" in control,
@@ -133,8 +138,10 @@ def main() -> int:
             "MCL02M_GEAR_STEP_PER_HEARTBEAT" in ramp_step,
             "ramps skip 36..55 only when crossing directly between low and high topologies")
     control_task = function_body(control, "control_task")
-    require("vTaskDelayUntil(&next, pdMS_TO_TICKS(MCL02M_CONTROL_HEARTBEAT_MS))" in control_task,
-            "control task is paced by the verified 500-ms stock heartbeat")
+    require("const unsigned next_period_ms = next_recovery_cycle ?" in control_task and
+            "MCL02M_I2C_RECOVERY_HEARTBEAT_MS : MCL02M_CONTROL_HEARTBEAT_MS" in control_task and
+            "vTaskDelayUntil(&next, pdMS_TO_TICKS(next_period_ms))" in control_task,
+            "control task uses only the verified normal or recovery heartbeat")
     feedback = function_body(control, "update_status_feedback")
     transition_finish = function_body(control, "finish_transition_locked")
     start_body = function_body(control, "powerboard_control_start")
@@ -172,9 +179,13 @@ def main() -> int:
     require('begin_stop_locked("RUN LIMIT")' in timing and
             'fault_locked("RUN LIMIT")' not in timing,
             "normal run-duration expiry begins a verified safe Stop transaction")
-    require("MCL02M_MAX_IGBT_C" in control and "MCL02M_MAX_BOTTOM_C" in control and
-            "MCL02M_I2C_BAD_CYCLES_TO_FAULT" in control,
-            "temperature and I2C-loss faults are active")
+    require("MCL02M_MAX_IGBT_C" in control and
+            "MCL02M_IGBT_INTERFACE_CUTOFF_ENABLED" in control and
+            "MCL02M_MAX_BOTTOM_C" in control and
+            "MCL02M_I2C_CRITICAL_LOSS_TIMEOUT_MS" in control and
+            "MCL02M_I2C_COMMAND_LOSS_TIMEOUT_MS" in control and
+            "PB_CRITICAL_READ_MASK" in control and "PB_SERVICE_READ_MASK" in control,
+            "temperature guards and classified time-based I2C-loss faults are active")
 
     stop_web = function_body(web, "stop_handler")
     require("require_token" not in stop_web and "powerboard_control_stop" in stop_web,

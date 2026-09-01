@@ -24,6 +24,121 @@ class StartIncident:
     reason: str
 
 
+@dataclass(frozen=True)
+class I2CIncident:
+    state: str
+    timestamp_ms: int
+    read_error_mask: int
+    write_error_mask: int
+    critical_loss_ms: int
+    command_loss_ms: int
+    reason: str
+
+
+@dataclass
+class IgbtAdvisory:
+    """Model the active-session warning; it never changes the cooking state."""
+
+    samples: int = 0
+    episode: bool = False
+    active: bool = False
+    sequence: int = 0
+    beeps: int = 0
+    last_beep_ms: int | None = None
+    screen_snooze_until_ms: int = 0
+
+    def sample(self, temperature_c: int, *, now_ms: int = 0,
+               valid: bool = True, session_active: bool = True) -> None:
+        if not session_active:
+            self.samples = 0
+            self.episode = False
+            self.active = False
+            self.last_beep_ms = None
+            self.screen_snooze_until_ms = 0
+            return
+        if valid and temperature_c > 92:
+            if not self.episode:
+                self.samples = min(self.samples + 1, 2)
+            if not self.episode and self.samples >= 2:
+                self.episode = True
+                self.active = True
+                self.sequence += 1
+                self.last_beep_ms = None
+        elif valid and temperature_c < 92:
+            self.samples = 0
+            self.episode = False
+            self.active = False
+            self.last_beep_ms = None
+        elif valid:
+            self.samples = 0
+        elif not self.episode:
+            self.samples = 0
+
+        if self.episode and (
+            self.last_beep_ms is None or now_ms - self.last_beep_ms >= 3_000
+        ):
+            self.beeps += 1
+            self.last_beep_ms = now_ms
+
+    def physical_action(self, now_ms: int) -> None:
+        if self.active:
+            self.screen_snooze_until_ms = now_ms + 7_000
+
+    def screen_visible(self, now_ms: int) -> bool:
+        return self.active and now_ms >= self.screen_snooze_until_ms
+
+
+@dataclass
+class InterfaceTemperatureSafety:
+    """Model production consecutive-sample interface limits."""
+
+    igbt_raw_bad: int = 0
+    bottom_raw_bad: int = 0
+    igbt_hot: int = 0
+    bottom_hot: int = 0
+    fault: str | None = None
+
+    def sample(self, igbt_c: int, bottom_c: int, *,
+               igbt_raw_valid: bool = True,
+               bottom_raw_valid: bool = True) -> None:
+        self.igbt_raw_bad = 0 if igbt_raw_valid else self.igbt_raw_bad + 1
+        self.bottom_raw_bad = 0 if bottom_raw_valid else self.bottom_raw_bad + 1
+        self.igbt_hot = (
+            self.igbt_hot + 1 if igbt_raw_valid and igbt_c > 98 else 0
+        )
+        self.bottom_hot = (
+            self.bottom_hot + 1 if bottom_raw_valid and bottom_c > 210 else 0
+        )
+        if self.igbt_raw_bad >= 2 or self.bottom_raw_bad >= 2:
+            self.fault = "E08"
+        elif self.igbt_hot >= 2:
+            self.fault = "E07_INTERFACE"
+        elif self.bottom_hot >= 6:
+            self.fault = "E05_INTERFACE"
+
+
+@dataclass
+class DelayedStartAttempts:
+    """Model one retry for immediate rejection or Start confirmation timeout."""
+
+    attempts: int = 0
+    retry_pending: bool = False
+    fault: str | None = None
+
+    def attempt(self, result: str) -> None:
+        self.attempts += 1
+        if result in {"accepted", "no_pan"}:
+            self.retry_pending = False
+        elif self.attempts < 2:
+            self.retry_pending = True
+        else:
+            self.retry_pending = False
+            self.fault = "EST"
+
+    def confirmed(self) -> None:
+        self.retry_pending = False
+
+
 @dataclass
 class StartProtocol:
     """Deterministic model of the lower Start-confirmation boundary contract."""
@@ -44,6 +159,14 @@ class StartProtocol:
     cookware_limited: bool = False
     warning: int | None = None
     incident: StartIncident | None = None
+    i2c_incident: I2CIncident | None = None
+    critical_bad_since_ms: int | None = None
+    command_bad_since_ms: int | None = None
+    recovery_active: bool = False
+    recovery_good_cycles: int = 0
+    recovery_entries: int = 0
+    critical_bad_cycles: int = 0
+    service_bad_cycles: int = 0
 
     def start(self, gear: int = 99) -> None:
         assert self.state == "ARMED" and 0 < gear <= 99
@@ -53,6 +176,7 @@ class StartProtocol:
         self.transmitted_topology = 0xA1
         self.deadline_ms = None
         self.incident = None
+        self.i2c_incident = None
 
     def heartbeat(self, now_ms: int) -> None:
         if self.state == "STARTING" and self.deadline_ms is None:
@@ -84,17 +208,46 @@ class StartProtocol:
         self.state = "FAULT"
 
     def sample(self, now_ms: int, r20: int = 0, r26: int = 0,
-               *, i2c_ok: bool = True) -> None:
+               *, i2c_ok: bool = True, service_ok: bool = True,
+               command_ok: bool = True) -> None:
         self.completed_cycles += 1
+        critical_bad = not i2c_ok or not command_ok
+        if critical_bad or not service_ok:
+            self.bad_cycles += 1
+        if critical_bad:
+            self.critical_bad_cycles += 1
+        if not service_ok:
+            self.service_bad_cycles += 1
+
         if i2c_ok:
             self.r20 = r20
             self.r26 = r26
-            self.consecutive_bad_cycles = 0
             feedback_valid = True
         else:
-            self.bad_cycles += 1
-            self.consecutive_bad_cycles += 1
             feedback_valid = False
+
+        if critical_bad:
+            self.consecutive_bad_cycles += 1
+            self.recovery_good_cycles = 0
+            if self.critical_bad_since_ms is None:
+                self.critical_bad_since_ms = now_ms
+            if self.consecutive_bad_cycles >= 3 and not self.recovery_active:
+                self.recovery_active = True
+                self.recovery_entries += 1
+        else:
+            self.consecutive_bad_cycles = 0
+            self.critical_bad_since_ms = None
+            if self.recovery_active:
+                self.recovery_good_cycles += 1
+                if self.recovery_good_cycles >= 2:
+                    self.recovery_active = False
+                    self.recovery_good_cycles = 0
+
+        if not command_ok:
+            if self.command_bad_since_ms is None:
+                self.command_bad_since_ms = now_ms
+        else:
+            self.command_bad_since_ms = None
 
         confirmation_open = self._confirmation_open(now_ms)
         heating_feedback_open = self.state == "HEATING" or confirmation_open
@@ -140,10 +293,27 @@ class StartProtocol:
         ):
             self._fault("START TIMEOUT")
 
+        critical_loss_ms = 0 if self.critical_bad_since_ms is None else (
+            now_ms - self.critical_bad_since_ms
+        )
+        command_loss_ms = 0 if self.command_bad_since_ms is None else (
+            now_ms - self.command_bad_since_ms
+        )
         if (
-            self.consecutive_bad_cycles >= 6
+            (critical_loss_ms >= 5_000 or command_loss_ms >= 3_000)
             and self.state not in {"STOPPED", "FAULT"}
         ):
+            if self.i2c_incident is None:
+                self.i2c_incident = I2CIncident(
+                    state=self.state,
+                    timestamp_ms=now_ms,
+                    read_error_mask=0 if i2c_ok else 0x005D,
+                    write_error_mask=0 if command_ok else 0x07,
+                    critical_loss_ms=critical_loss_ms,
+                    command_loss_ms=command_loss_ms,
+                    reason="COMMAND LOSS" if command_loss_ms >= 3_000
+                    else "CRITICAL LOSS",
+                )
             self._fault("I2C LOST")
 
     def observe_stop_feedback(self, r20: int, r26: int) -> None:
@@ -167,6 +337,9 @@ class StopTransaction:
     timed_out: bool = False
     write_attempts: int = 0
     consecutive_i2c_bad: int = 0
+    critical_bad_since_ms: int | None = None
+    command_bad_since_ms: int | None = None
+    last_write_ok: bool = True
 
     def begin(self, reason: str, terminal: str, now_ms: int = 0) -> None:
         if self.state in {"STOPPING", "FAULT"}:
@@ -184,6 +357,7 @@ class StopTransaction:
     def write_heartbeat(self, results: tuple[bool, bool, bool]) -> None:
         assert len(results) == 3
         self.write_attempts += 1
+        self.last_write_ok = all(results)
 
     def feedback(self, now_ms: int, *, r26: int = 1, valid: bool = True,
                  i2c_bad: bool = False, r20: int = 0) -> None:
@@ -191,10 +365,25 @@ class StopTransaction:
             return
         if i2c_bad:
             self.consecutive_i2c_bad += 1
-            if self.consecutive_i2c_bad >= 6 and self.issue == "NONE":
-                self.issue = "I2C LOST"
+            if self.critical_bad_since_ms is None:
+                self.critical_bad_since_ms = now_ms
         else:
             self.consecutive_i2c_bad = 0
+            self.critical_bad_since_ms = None
+
+        if not self.last_write_ok:
+            if self.command_bad_since_ms is None:
+                self.command_bad_since_ms = now_ms
+        else:
+            self.command_bad_since_ms = None
+        critical_loss_ms = 0 if self.critical_bad_since_ms is None else (
+            now_ms - self.critical_bad_since_ms
+        )
+        command_loss_ms = 0 if self.command_bad_since_ms is None else (
+            now_ms - self.command_bad_since_ms
+        )
+        if (critical_loss_ms >= 5_000 or command_loss_ms >= 3_000) and self.issue == "NONE":
+            self.issue = "I2C LOST"
 
         if r20 in KNOWN_R20_FAULTS and self.issue == "NONE":
             self.issue = "KNOWN R20"
@@ -579,6 +768,24 @@ def ramp_step(current: int, target: int) -> int:
     return candidate
 
 
+def cold_start_first_gear(target: int) -> int:
+    if target <= 10:
+        return target
+    if target <= 35:
+        return 10
+    if target < 56:
+        return 36
+    return 56
+
+
+def gear_topology(gear: int) -> str:
+    if gear <= 35:
+        return "LOW"
+    if gear <= 55:
+        return "MID"
+    return "HIGH"
+
+
 def cookware_feedback(r26: int, command_active: bool, requested: int,
                       applied: int) -> tuple[bool, bool, int, str]:
     """Model stock R26 cookware capability feedback and the effective command."""
@@ -886,6 +1093,16 @@ def run() -> None:
     assert ramp_step(57, 28) == 35
     assert ramp_step(20, 45) == 30
     assert ramp_step(60, 45) == 50
+    assert [cold_start_first_gear(target) for target in
+            (0, 1, 10, 11, 35, 36, 37, 55, 56, 57, 99)] == \
+           [0, 1, 10, 10, 10, 36, 36, 36, 56, 56, 56]
+    for target in range(1, 100):
+        current = cold_start_first_gear(target)
+        assert current <= target
+        assert gear_topology(current) == gear_topology(target)
+        while current != target:
+            current = ramp_step(current, target)
+            assert gear_topology(current) == gear_topology(target)
     assert cookware_feedback(1, True, 99, 66) == (True, True, 35, "A1")
     assert cookware_feedback(1, True, 20, 20) == (True, True, 20, "A1")
     assert cookware_feedback(2, True, 99, 66) == (True, False, 66, "normal")
@@ -959,17 +1176,61 @@ def run() -> None:
     recovered_i2c = StartProtocol()
     recovered_i2c.start()
     recovered_i2c.heartbeat(0)
-    for timestamp in (500, 1_000, 1_500, 2_000, 2_500):
+    for timestamp in (500, 1_000, 1_500):
         recovered_i2c.sample(timestamp, i2c_ok=False)
-    recovered_i2c.sample(3_000, r20=0, r26=2)
-    assert recovered_i2c.state == "HEATING"
+    assert recovered_i2c.recovery_active and recovered_i2c.recovery_entries == 1
+    recovered_i2c.sample(1_820, r20=0, r26=2)
+    assert recovered_i2c.state == "HEATING" and recovered_i2c.recovery_active
+    recovered_i2c.sample(2_140, r20=0, r26=2)
+    assert not recovered_i2c.recovery_active
 
     lost_i2c = StartProtocol()
     lost_i2c.start()
     lost_i2c.heartbeat(0)
-    for timestamp in (500, 1_000, 1_500, 2_000, 2_500, 3_000):
+    for timestamp in (500, 1_000, 1_500, *range(1_820, 5_500, 320)):
         lost_i2c.sample(timestamp, i2c_ok=False)
+    assert lost_i2c.state == "STARTING" and lost_i2c.recovery_active
+    lost_i2c.sample(5_500, i2c_ok=False)
     assert lost_i2c.state == "FAULT" and lost_i2c.incident is None
+    assert lost_i2c.i2c_incident is not None
+    assert lost_i2c.i2c_incident.reason == "CRITICAL LOSS"
+    assert lost_i2c.i2c_incident.read_error_mask == 0x005D
+
+    service_only = StartProtocol()
+    service_only.start()
+    service_only.heartbeat(0)
+    for timestamp in range(500, 7_001, 500):
+        service_only.sample(timestamp, r20=0, r26=2, service_ok=False)
+    assert service_only.state == "HEATING"
+    assert service_only.service_bad_cycles == 14
+    assert service_only.critical_bad_cycles == 0
+    assert not service_only.recovery_active and service_only.i2c_incident is None
+
+    command_loss = StartProtocol()
+    command_loss.start()
+    command_loss.heartbeat(0)
+    for timestamp in (500, 1_000, 1_500, 1_820, 2_140, 2_460, 2_780, 3_100):
+        command_loss.sample(timestamp, r20=0, r26=2, command_ok=False)
+    assert command_loss.state == "HEATING" and command_loss.recovery_active
+    command_loss.sample(3_500, r20=0, r26=2, command_ok=False)
+    assert command_loss.state == "FAULT"
+    assert command_loss.i2c_incident is not None
+    assert command_loss.i2c_incident.reason == "COMMAND LOSS"
+    assert command_loss.i2c_incident.write_error_mask == 0x07
+    frozen_i2c_incident = command_loss.i2c_incident
+    command_loss.sample(3_820, r20=0, r26=2)
+    assert command_loss.i2c_incident == frozen_i2c_incident
+
+    transient_command = StartProtocol()
+    transient_command.start()
+    transient_command.heartbeat(0)
+    for timestamp in (500, 1_000, 1_500, 1_820, 2_140, 2_460, 2_780, 3_100):
+        transient_command.sample(timestamp, r20=0, r26=2, command_ok=False)
+    transient_command.sample(3_180, r20=0, r26=2)
+    transient_command.sample(3_500, r20=0, r26=2)
+    assert transient_command.state == "HEATING"
+    assert not transient_command.recovery_active
+    assert transient_command.i2c_incident is None
 
     before_boundary = StartProtocol()
     before_boundary.start()
@@ -1044,13 +1305,13 @@ def run() -> None:
 
     lost_stop = StopTransaction()
     lost_stop.begin("TIMER COMPLETE", "COMPLETE")
-    for timestamp in (500, 1_000, 1_500, 2_000, 2_500, 3_000):
+    for timestamp in (500, 1_000, 1_500, 2_000, 2_500, 3_000, 3_500):
         lost_stop.write_heartbeat((False, False, False))
         lost_stop.feedback(timestamp, valid=False, i2c_bad=True)
     assert lost_stop.state == "STOPPING"
     assert lost_stop.reason == "TIMER COMPLETE" and lost_stop.issue == "I2C LOST"
-    lost_stop.feedback(3_500, r26=0)
     lost_stop.feedback(4_000, r26=0)
+    lost_stop.feedback(4_500, r26=0)
     assert lost_stop.state == "COMPLETE"
 
     orthogonal_stop = StopTransaction()
@@ -1308,6 +1569,66 @@ def run() -> None:
     assert live_screen_kind("STOPPING") == "FOCUS"
     assert start_at_view(False) == "START_AT_NO_CLOCK"
     assert start_at_view(True) == "START_AT_HOURS"
+    igbt = IgbtAdvisory()
+    igbt.sample(93, now_ms=0)
+    assert not igbt.active and igbt.sequence == 0
+    igbt.sample(93, now_ms=100, valid=False)
+    igbt.sample(93, now_ms=200)
+    assert not igbt.active and igbt.sequence == 0
+    igbt.sample(94, now_ms=300)
+    assert igbt.active and igbt.sequence == 1 and igbt.beeps == 1
+    assert igbt.screen_visible(300)
+    igbt.physical_action(400)
+    igbt.sample(94, now_ms=3_299)
+    assert igbt.beeps == 1
+    igbt.sample(94, now_ms=3_300)
+    assert igbt.beeps == 2
+    assert not igbt.screen_visible(7_399)
+    igbt.physical_action(5_000)
+    igbt.sample(92, now_ms=6_300)
+    assert igbt.active and igbt.episode and igbt.beeps == 3
+    assert not igbt.screen_visible(11_999)
+    assert igbt.screen_visible(12_000)
+    igbt.sample(91, now_ms=12_100)
+    assert not igbt.active and not igbt.episode
+    igbt.sample(93, now_ms=13_000)
+    igbt.sample(94, now_ms=13_100)
+    assert igbt.active and igbt.sequence == 2
+    igbt.sample(94, now_ms=13_200, session_active=False)
+    assert not igbt.active and not igbt.screen_visible(20_000)
+
+    safety = InterfaceTemperatureSafety()
+    safety.sample(99, 210)
+    assert safety.fault is None
+    safety.sample(98, 211)
+    assert safety.fault is None
+    for _ in range(5):
+        safety.sample(98, 211)
+    assert safety.fault == "E05_INTERFACE"
+    safety = InterfaceTemperatureSafety()
+    safety.sample(99, 100)
+    safety.sample(99, 100)
+    assert safety.fault == "E07_INTERFACE"
+    safety = InterfaceTemperatureSafety()
+    safety.sample(80, 100, igbt_raw_valid=False)
+    assert safety.fault is None
+    safety.sample(80, 100, igbt_raw_valid=False)
+    assert safety.fault == "E08"
+
+    assert 80 <= 80 and not (81 <= 80)  # Start is allowed at 80 C, blocked above it.
+    delayed = DelayedStartAttempts()
+    delayed.attempt("rejected")
+    assert delayed.attempts == 1 and delayed.retry_pending and delayed.fault is None
+    delayed.attempt("accepted")
+    delayed.confirmed()
+    assert delayed.attempts == 2 and not delayed.retry_pending and delayed.fault is None
+    delayed = DelayedStartAttempts()
+    delayed.attempt("timeout")
+    delayed.attempt("timeout")
+    assert delayed.attempts == 2 and delayed.fault == "EST"
+    delayed = DelayedStartAttempts()
+    delayed.attempt("no_pan")
+    assert delayed.attempts == 1 and not delayed.retry_pending and delayed.fault is None
     print("POLICY TESTS: PASS")
 
 

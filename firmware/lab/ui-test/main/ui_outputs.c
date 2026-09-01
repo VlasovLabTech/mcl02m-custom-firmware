@@ -525,6 +525,7 @@ static const uint8_t *oled_glyph(char c)
     static const uint8_t slash[5] = {0x20, 0x10, 0x08, 0x04, 0x02};
     static const uint8_t equals[5] = {0x14, 0x14, 0x14, 0x14, 0x14};
     static const uint8_t less_than[5] = {0x08, 0x14, 0x22, 0x41, 0x00};
+    static const uint8_t greater_than[5] = {0x41, 0x22, 0x14, 0x08, 0x00};
     static const uint8_t question[5] = {0x02, 0x01, 0x51, 0x09, 0x06};
     static const uint8_t exclamation[5] = {0x00, 0x00, 0x5f, 0x00, 0x00};
     if (c >= 'a' && c <= 'z') c = (char)(c - 'a' + 'A');
@@ -537,6 +538,7 @@ static const uint8_t *oled_glyph(char c)
     case '/': return slash;
     case '=': return equals;
     case '<': return less_than;
+    case '>': return greater_than;
     case '?': return question;
     case '!': return exclamation;
     default: return blank;
@@ -841,6 +843,15 @@ static void oled_make_info(unsigned voltage_v, unsigned ntc_c, unsigned igbt_c, 
     oled_draw_info_line(0, "VOLT", voltage_v, "V", valid);
     oled_draw_info_line(16, "NTC", ntc_c, "°C", valid);
     oled_draw_info_line(32, "IGBT", igbt_c, "°C", valid);
+}
+
+static void oled_make_igbt_warning(unsigned threshold_c)
+{
+    memset(s_oled_frame, 0, sizeof(s_oled_frame));
+    char threshold[12];
+    snprintf(threshold, sizeof(threshold), ">%u°C", threshold_c);
+    oled_draw_centered_fit("IGBT", 3, 2, 2);
+    oled_draw_centered_fit(threshold, 29, 2, 2);
 }
 
 static void oled_make_version(const char *firmware_title, const char *firmware_version,
@@ -1155,6 +1166,31 @@ esp_err_t ui_oled_show_bitmap_text(const uint8_t bitmap[UI_OLED_BITMAP_BYTES],
     return err;
 }
 
+esp_err_t ui_oled_show_bitmap_text_marked(const uint8_t bitmap[UI_OLED_BITMAP_BYTES],
+                                          const char *text, int x, int y,
+                                          unsigned scale, int marker_x, int marker_y)
+{
+    if (bitmap == NULL || text == NULL || *text == '\0' || scale == 0 || scale > 2 ||
+        x < 0 || x + oled_text_width(text, scale, false) > OLED_WIDTH ||
+        y < 0 || y + (int)(7U * scale) > OLED_HEIGHT ||
+        marker_x < 0 || marker_x + 1 >= OLED_WIDTH ||
+        marker_y < 0 || marker_y + 1 >= OLED_HEIGHT)
+        return ESP_ERR_INVALID_ARG;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    esp_err_t err = oled_init_once();
+    if (err == ESP_OK) {
+        memcpy(s_oled_frame, bitmap, OLED_FRAME_BYTES);
+        oled_draw_scaled_text(text, x, y, scale, scale);
+        oled_set_pixel(marker_x, marker_y, true);
+        oled_set_pixel(marker_x + 1, marker_y, true);
+        oled_set_pixel(marker_x, marker_y + 1, true);
+        oled_set_pixel(marker_x + 1, marker_y + 1, true);
+        err = oled_flush();
+    }
+    xSemaphoreGive(s_lock);
+    return err;
+}
+
 esp_err_t ui_oled_show_bitmap_right_text(const uint8_t bitmap[UI_OLED_BITMAP_BYTES],
                                          const char *top, int top_y,
                                          const char *bottom, int bottom_y)
@@ -1322,6 +1358,18 @@ esp_err_t ui_oled_show_info(unsigned voltage_v, unsigned ntc_c, unsigned igbt_c,
     esp_err_t err = oled_init_once();
     if (err == ESP_OK) {
         oled_make_info(voltage_v, ntc_c, igbt_c, valid);
+        err = oled_flush();
+    }
+    xSemaphoreGive(s_lock);
+    return err;
+}
+
+esp_err_t ui_oled_show_igbt_warning(unsigned threshold_c)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    esp_err_t err = oled_init_once();
+    if (err == ESP_OK) {
+        oled_make_igbt_warning(threshold_c);
         err = oled_flush();
     }
     xSemaphoreGive(s_lock);

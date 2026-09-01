@@ -1072,6 +1072,13 @@ static void input_event(const ui_input_event_t *event)
         display_prod_dismiss_transient();
     cooker_snapshot_t input_status;
     cooking_engine_get_snapshot(&input_status);
+    const bool physical_action = event->type == UI_INPUT_ENCODER ||
+        event->type == UI_INPUT_MAIN_PRESSED ||
+        event->type == UI_INPUT_TOUCH_A_PRESSED ||
+        event->type == UI_INPUT_TOUCH_B_PRESSED ||
+        event->type == UI_INPUT_TOUCH_BOTH_PRESSED;
+    if (physical_action && input_status.igbt_warning_active)
+        display_prod_snooze_igbt_warning();
     const bool true_urgent = input_status.state == COOK_STATE_FAULT ||
                              input_status.state == COOK_STATE_COMPLETE ||
                              input_status.state == COOK_STATE_NO_PAN ||
@@ -1190,6 +1197,7 @@ static void ui_task(void *arg)
             s_temperature_edit_deadline_us = 0;
         }
         if (!status.r20_warning_active &&
+            !status.igbt_warning_active &&
             !surface_hot &&
             (status.state == COOK_STATE_IDLE || status.state == COOK_STATE_READY) &&
             now - s_last_input_us >= (int64_t)settings.sleep_minutes * 60 * 1000000LL) {

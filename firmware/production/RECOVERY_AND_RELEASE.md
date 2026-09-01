@@ -2,11 +2,11 @@
 
 Этот документ описывает будущую процедуру, но **не разрешает запись сейчас**.
 
-Current source version: `0.2.29-dev`; its reference public app artifact has not been
-flashed. The exact size and SHA-256 are recorded in `BUILD_MANIFEST.md`. The preceding
-`0.2.28-dev-private` artifact (SHA-256
-`e992fc444f1a56af0d9ce260280c153a233adb8e022f4644c6cf0d1cb1312268`) was
-flashed to stock `ota_1` at `0x170000` on 2026-08-30 after explicit authorization,
+Current source version: `0.2.33-dev`; its reference public app artifact has not been
+flashed. The exact size and SHA-256 are recorded in `BUILD_MANIFEST.md`. The matching
+`0.2.33-dev-private` artifact (SHA-256
+`ff985439d1d8581b053cad5e3fc5e572878d17ac115f5828282afa91f98ef019`) was
+flashed to stock `ota_1` at `0x170000` on 2026-09-01 after explicit authorization,
 and esptool verified the written data. No other partition was written.
 Чистая пересборка может иметь другой hash из-за compile metadata; для release
 нужно сохранить новый manifest и заново пройти все gates.
@@ -63,9 +63,13 @@ required. The firmware contains no automatic NVS erase.
 8. Fault screen/alarm test without artificial overheating.
 9. Only then short TEMPERATURE tests, starting at low target; HOLD must never
    exceed 35 and `HOLD SATURATED` must not raise it.
-10. Во время обычных supervised-тестов проверять правдоподобность NTC/IGBT
-   readings; не доводить плиту намеренно до IGBT interface guard 80 °C или
-   штатной E05 силовой платы.
+10. Во время обычных supervised-тестов проверять правдоподобность NTC/IGBT.
+    Проверить непрерывное предупреждение после двух измерений выше 92 °C, тройной
+    писк каждые 3 s, скрытие только экрана на 7 s и сброс строго ниже 92 °C. Не
+    доводить плиту намеренно до interface E07 (два измерения выше 98 °C),
+    шестиизмерительного bottom cutoff строго выше 210 °C или штатной защиты
+    силовой платы. Отдельно безопасно проверить блокировку Start выше 80 °C после
+    естественного нагрева и разрешение запуска после охлаждения.
 11. Проверить, что web-страница позволяет редактировать Presets, including a
     timed POWER-0 wait stage, но не содержит
     и не принимает Start/Stop/Pause/setpoint/timer/delayed Start; reset/power

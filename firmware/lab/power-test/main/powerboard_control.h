@@ -60,6 +60,28 @@ typedef struct {
 } powerboard_start_incident_t;
 
 typedef struct {
+    bool valid;
+    uint32_t sequence;
+    uint64_t timestamp_ms;
+    powerboard_state_t lower_state;
+    uint16_t read_error_mask;
+    uint8_t write_error_mask;
+    uint16_t valid_mask;
+    uint8_t r20;
+    uint8_t r26;
+    uint8_t command_0d;
+    uint8_t command_00;
+    uint8_t command_0c;
+    uint32_t completed_cycles;
+    uint32_t bad_cycles;
+    uint32_t consecutive_bad_cycles;
+    uint32_t critical_loss_ms;
+    uint32_t command_loss_ms;
+    uint32_t recovery_entries;
+    char reason[24];
+} powerboard_i2c_incident_t;
+
+typedef struct {
     powerboard_state_t state;
     uint8_t target_gear;
     uint8_t applied_gear;
@@ -108,6 +130,11 @@ typedef struct {
     uint32_t completed_cycles;
     uint32_t bad_cycles;
     uint32_t consecutive_bad_cycles;
+    uint32_t critical_bad_cycles;
+    uint32_t service_bad_cycles;
+    uint32_t i2c_recovery_entries;
+    uint32_t i2c_critical_loss_ms;
+    uint32_t i2c_command_loss_ms;
     uint32_t active_zero_entries;
     uint32_t active_zero_resumes;
     uint32_t unknown_r20_seq;
@@ -122,12 +149,17 @@ typedef struct {
     bool confirmation_inferred;
     bool feedback_gear_known;
     bool heartbeat_gap_observed_stop;
+    bool i2c_recovery_active;
+    uint8_t i2c_recovery_good_cycles;
+    uint16_t last_i2c_read_error_mask;
+    uint8_t last_i2c_write_error_mask;
     char fault[24];
     char stop_reason[24];
     char stop_issue[24];
     char transition_result[24];
     char transition_rejection[32];
     powerboard_start_incident_t start_incident;
+    powerboard_i2c_incident_t i2c_incident;
 } powerboard_status_t;
 
 esp_err_t powerboard_control_init(void);

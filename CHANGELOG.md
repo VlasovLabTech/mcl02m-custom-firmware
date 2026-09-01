@@ -1,5 +1,76 @@
 # Changelog
 
+## 0.2.33-dev — 2026-09-01
+
+- Changed only the cold-Start ramp entry point so the first nonzero command is
+  already inside the requested target's final relay topology: targets `1…10` start
+  directly, `11…35` start at 10, `36` starts directly, `37…55` start at 36,
+  `56` starts directly, and `57…99` start at 56.
+- The existing ten-level/500-ms ramp continues only inside that selected topology.
+  It can no longer force one or two unnecessary relay/IGBT transitions merely while
+  climbing from 10 to a middle- or high-range cold-Start target. Active-zero Resume,
+  Pause Resume and pan-return Resume retain their separately confirmed direct-output
+  behavior.
+
+## 0.2.32-dev — 2026-09-01
+
+- Changed the active-session IGBT advisory into a continuous condition. After two
+  valid readings above 92 °C, the OLED keeps selecting `IGBT / >92°C` and three
+  short beeps repeat every three seconds. Physical input still works and suppresses
+  only the warning screen for seven seconds after the latest action. The episode
+  stays active at exactly 92 °C, clears below 92 °C, and is cancelled by Stop.
+- Added an interface-side IGBT ceiling: two consecutive valid session readings above
+  98 °C produce a repeated-Stop E07 whose OLED code carries a small marker above the
+  `7`. Native power-board `R20=17` remains a plain E07. Start and fault
+  acknowledgement are blocked above 80 °C.
+- Debounced raw IGBT/bottom sensor faults to two consecutive valid samples and the
+  separate bottom-temperature cutoff to six consecutive samples strictly above
+  210 °C.
+- Delayed Start now makes at most two attempts. One retry covers both an immediate
+  Start rejection and an actual lower-board Start-confirmation timeout; NoPan stays
+  on its separate cookware path.
+- Audited the stock power ramp from the original dump and passive captures. The
+  stock interface has no universal gear-10 Start clamp or fixed `+10` ramp; direct
+  `STOP→35`, `STOP→22/25`, and active `35→99` commands were captured. The existing
+  custom ramp remains unchanged pending a separate owner decision.
+
+## 0.2.31-dev — 2026-09-01
+
+- Removed the accidental production IGBT cutoff at 80 °C. That conservative limit
+  came from the supervised laboratory power-test image and is now explicitly
+  compiled out of both public and private production builds.
+- Kept the power board's native E07 protection: `R20=17` must still be observed in
+  two consecutive matching 500-ms samples before the stock IGBT-overheat fault is
+  latched.
+- Added an advisory-only IGBT temperature warning. Two consecutive valid readings
+  above 92 °C play a mandatory two-beep warning and show a large
+  `IGBT / >92°C` screen without stopping or reducing cooking power. Any physical
+  action dismisses the screen without being swallowed; the warning rearms only
+  after the IGBT reading falls to 88 °C or below.
+- Corrected an invalid interface-side IGBT raw reading to map to the sensor-fault
+  class E08 instead of being mislabeled as a temperature E07.
+- Added a canonical production-limit and automatic-stop audit documenting every
+  custom timeout, cutoff, watchdog, ramp, debounce and user-visible functional cap.
+
+## 0.2.30-dev — 2026-08-31
+
+- Replaced the coarse six-cycle E09 rule with classified, time-based communication
+  recovery. Runtime `R20/R22/R23/R24/R26` reads and all `0D/00/0C` writes are
+  critical; service-only `R21/R25/R27` failures remain diagnostic and cannot cause
+  E09 by themselves.
+- After three consecutive critical-bad cycles, the power task temporarily polls only
+  the critical set on a 320-ms heartbeat. Two complete good critical cycles return it
+  to the normal 500-ms/full-register schedule.
+- E09 now requires either five seconds of continuous critical-path loss or three
+  seconds of continuous control-command write loss. A latched fault still repeats
+  the complete Stop sequence.
+- Added immutable first-cause RAM evidence for E09: read/write failure masks, valid
+  mask, `R20/R26`, last `0D/00/0C`, elapsed loss timers, recovery count, state and
+  cycle counters are exposed in compact UART and authenticated status diagnostics.
+- Extended executable and static gates for transient recovery, stable two-cycle exit,
+  service-only failures, critical-read timeout, command-write timeout, Stop recovery,
+  and incident immutability.
+
 ## 0.2.29-dev — 2026-08-30
 
 - Completed the production OLED language audit for English, Russian, and

@@ -71,6 +71,12 @@ static uint32_t s_lease_generation;
 static uint32_t s_applied_transition_generation;
 static cooker_profile_t s_active_profile;
 static bool s_profile_selected;
+static bool s_igbt_warning_episode;
+static uint8_t s_igbt_warning_samples;
+static int64_t s_igbt_warning_last_beep_us;
+static int64_t s_delayed_retry_not_before_us;
+static int64_t s_delayed_retry_deadline_us;
+static bool s_delayed_launch_attempt_active;
 
 typedef enum {
     STOP_TERMINAL_IDLE = 0,
@@ -207,6 +213,7 @@ const char *cooking_fault_name(cooker_fault_t fault)
     case FAULT_E04_LOW_VOLTAGE: return "E04 LOW VOLT";
     case FAULT_E05_BOTTOM_OVERHEAT: return "E05 BOTTOM HOT";
     case FAULT_E07_IGBT_OVERHEAT: return "E07 IGBT HOT";
+    case FAULT_E07_INTERFACE_IGBT_LIMIT: return "E07' INTERFACE IGBT HOT";
     case FAULT_E08_SENSOR: return "E08 SENSOR";
     case FAULT_E09_COMMUNICATION: return "E09 I2C LOST";
     case FAULT_E10_WIRE_OR_CHANNEL: return "E10 CHANNEL";
@@ -223,6 +230,12 @@ static bool state_active(cook_state_t state)
 {
     return state == COOK_STATE_STARTING || state == COOK_STATE_COOKING ||
            state == COOK_STATE_PAUSED || state == COOK_STATE_NO_PAN;
+}
+
+static bool state_igbt_warning_enabled(cook_state_t state)
+{
+    return state == COOK_STATE_STARTING || state == COOK_STATE_COOKING ||
+           state == COOK_STATE_PAUSED;
 }
 
 static bool state_schedulable(cook_state_t state)
@@ -271,6 +284,10 @@ static void set_fault_locked(cooker_fault_t fault, const char *detail)
     s_status.state = COOK_STATE_FAULT;
     s_status.fault = fault;
     s_status.delayed_start = false;
+    s_status.delayed_start_retry_pending = false;
+    s_delayed_launch_attempt_active = false;
+    s_delayed_retry_not_before_us = 0;
+    s_delayed_retry_deadline_us = 0;
     s_status.timer_enabled = false;
     s_status.paused_gear = 0;
     s_waiting_pan_before_start = false;
@@ -280,6 +297,10 @@ static void set_fault_locked(cooker_fault_t fault, const char *detail)
     s_status.active_zero = false;
     s_status.cookware_limited = false;
     s_status.r20_warning_active = false;
+    s_status.igbt_warning_active = false;
+    s_igbt_warning_episode = false;
+    s_igbt_warning_samples = 0;
+    s_igbt_warning_last_beep_us = 0;
     s_status.pause_remaining_s = 0;
     s_manual_pause_since_us = 0;
     strlcpy(s_status.detail, detail == NULL ? cooking_fault_name(fault) : detail,
@@ -298,6 +319,8 @@ static cooker_fault_t map_power_fault(const powerboard_status_t *pb)
     if (strstr(pb->fault, "E08") != NULL) return FAULT_E08_SENSOR;
     if (strstr(pb->fault, "E10") != NULL) return FAULT_E10_WIRE_OR_CHANNEL;
     if (strstr(pb->fault, "E12") != NULL) return FAULT_E12_POWER_STATUS;
+    if (strstr(pb->fault, "IGBT INTERFACE LIMIT") != NULL)
+        return FAULT_E07_INTERFACE_IGBT_LIMIT;
     if (strstr(pb->fault, "IGBT") != NULL) return FAULT_E07_IGBT_OVERHEAT;
     if (strstr(pb->fault, "BOTTOM") != NULL) return FAULT_E05_BOTTOM_OVERHEAT;
     if (strstr(pb->fault, "I2C") != NULL) return FAULT_E09_COMMUNICATION;
@@ -433,6 +456,10 @@ static void begin_normal_stop_locked(const char *reason, bool complete)
     s_status.paused_gear = 0;
     s_status.temp_phase = TEMP_PHASE_OFF;
     s_status.delayed_start = false;
+    s_status.delayed_start_retry_pending = false;
+    s_delayed_launch_attempt_active = false;
+    s_delayed_retry_not_before_us = 0;
+    s_delayed_retry_deadline_us = 0;
     s_status.hold_saturated = false;
     s_status.timer_enabled = false;
     s_status.transition_pending = false;
@@ -443,6 +470,11 @@ static void begin_normal_stop_locked(const char *reason, bool complete)
     s_status.active_zero = false;
     s_status.cookware_limited = false;
     s_status.r20_warning_active = false;
+    s_status.igbt_warning_active = false;
+    s_igbt_warning_episode = false;
+    s_igbt_warning_samples = 0;
+    s_igbt_warning_last_beep_us = 0;
+    sound_cancel(SOUND_IGBT_WARNING);
     s_status.pause_remaining_s = 0;
     s_manual_pause_since_us = 0;
     if (!complete) s_status.timer_remaining_s = s_status.timer_last_s;
@@ -867,6 +899,54 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
         emit_status("unknown_r20_warning");
     }
 
+    const bool igbt_valid = (pb->valid_mask & (1U << 3)) != 0;
+    const bool igbt_warning_enabled = state_igbt_warning_enabled(s_status.state);
+    if (igbt_warning_enabled && igbt_valid &&
+        pb->igbt_c > COOKER_IGBT_WARNING_C) {
+        if (!s_igbt_warning_episode &&
+            s_igbt_warning_samples < COOKER_IGBT_WARNING_SAMPLES)
+            ++s_igbt_warning_samples;
+        if (!s_igbt_warning_episode &&
+            s_igbt_warning_samples >= COOKER_IGBT_WARNING_SAMPLES) {
+            s_igbt_warning_episode = true;
+            s_status.igbt_warning_active = true;
+            ++s_status.igbt_warning_seq;
+            snprintf(s_status.detail, sizeof(s_status.detail),
+                     "IGBT WARNING %uC", pb->igbt_c);
+            s_igbt_warning_last_beep_us = 0;
+            emit_status("igbt_temperature_warning");
+        }
+        s_status.igbt_warning_temperature_c = pb->igbt_c;
+    } else if (!igbt_warning_enabled ||
+               (igbt_valid && pb->igbt_c < COOKER_IGBT_WARNING_CLEAR_C)) {
+        if (s_igbt_warning_episode)
+            emit_status(igbt_warning_enabled ? "igbt_temperature_normal" :
+                                              "igbt_temperature_warning_stopped");
+        s_igbt_warning_episode = false;
+        s_igbt_warning_samples = 0;
+        s_status.igbt_warning_active = false;
+        if (igbt_valid) s_status.igbt_warning_temperature_c = pb->igbt_c;
+        s_igbt_warning_last_beep_us = 0;
+        sound_cancel(SOUND_IGBT_WARNING);
+    } else if (igbt_valid && s_igbt_warning_episode) {
+        s_status.igbt_warning_temperature_c = pb->igbt_c;
+    } else if (igbt_valid) {
+        s_igbt_warning_samples = 0;
+    } else if (!s_igbt_warning_episode) {
+        /* The warning requires consecutive valid samples. A read gap breaks
+         * the candidate sequence, but an active hot episode is cleared only
+         * by a valid reading strictly below 92 C or by ending the session. */
+        s_igbt_warning_samples = 0;
+    }
+    if (igbt_warning_enabled && s_igbt_warning_episode &&
+        (s_igbt_warning_last_beep_us == 0 ||
+         now_us - s_igbt_warning_last_beep_us >=
+             (int64_t)COOKER_IGBT_WARNING_BEEP_MS * 1000LL)) {
+        sound_play(SOUND_IGBT_WARNING);
+        s_igbt_warning_last_beep_us = now_us;
+        emit_status("igbt_temperature_warning_beep");
+    }
+
     if (s_status.cookware_limited && !was_cookware_limited) {
         if (control_mode_locked() == COOK_MODE_POWER &&
             s_status.selected_gear > COOKER_HOLD_MAX_GEAR) {
@@ -883,7 +963,38 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
     }
 
     if (pb->state == PB_STATE_FAULT) {
-        set_fault_locked(map_power_fault(pb), pb->fault);
+        const cooker_fault_t mapped_fault = map_power_fault(pb);
+        const bool retryable_delayed_start =
+            s_delayed_launch_attempt_active &&
+            s_status.state == COOK_STATE_STARTING &&
+            mapped_fault == FAULT_START_TIMEOUT &&
+            s_status.delayed_start_attempts < COOKER_DELAYED_START_ATTEMPTS;
+        if (retryable_delayed_start) {
+            if (!pb->stop_verified) {
+                strlcpy(s_status.detail, "SCHEDULE RETRY STOP",
+                        sizeof(s_status.detail));
+                return;
+            }
+            if (powerboard_control_clear_fault() == ESP_OK) {
+                s_lease_generation = 0;
+                s_status.state = COOK_STATE_DELAYED;
+                s_status.delayed_start = true;
+                s_status.delayed_remaining_s = 0;
+                s_status.delayed_start_retry_pending = true;
+                s_status.transition_pending = false;
+                s_delayed_launch_attempt_active = false;
+                s_delayed_retry_not_before_us = now_us +
+                    (int64_t)COOKER_DELAYED_RETRY_WAIT_MS * 1000LL;
+                s_delayed_retry_deadline_us = now_us +
+                    (int64_t)COOKER_DELAYED_RETRY_DEADLINE_MS * 1000LL;
+                strlcpy(s_status.detail, "SCHEDULE START RETRY",
+                        sizeof(s_status.detail));
+                emit_status("scheduled_start_retry_after_timeout");
+                return;
+            }
+        }
+        s_delayed_launch_attempt_active = false;
+        set_fault_locked(mapped_fault, pb->fault);
         return;
     }
     if (pb->state == PB_STATE_STOPPING && state_active(s_status.state)) {
@@ -933,6 +1044,7 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
         return;
     }
     if (pb->state == PB_STATE_NO_PAN) {
+        s_delayed_launch_attempt_active = false;
         enter_no_pan_context_locked(now_us);
         no_pan_sound_locked();
         if (no_pan_melody_finished_locked(now_us))
@@ -940,6 +1052,10 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
         return;
     }
     if (pb->state == PB_STATE_HEATING && s_status.state == COOK_STATE_STARTING) {
+        s_delayed_launch_attempt_active = false;
+        s_status.delayed_start_retry_pending = false;
+        s_delayed_retry_not_before_us = 0;
+        s_delayed_retry_deadline_us = 0;
         s_status.state = COOK_STATE_COOKING;
         strlcpy(s_status.detail, "COOKING", sizeof(s_status.detail));
         emit_status("heating_confirmed");
@@ -1106,6 +1222,11 @@ static void handle_intent_locked(const intent_t *intent)
             s_status.delayed_start = true;
             s_status.delayed_absolute = false;
             s_status.delayed_remaining_s = (uint32_t)intent->value;
+            s_status.delayed_start_attempts = 0;
+            s_status.delayed_start_retry_pending = false;
+            s_delayed_launch_attempt_active = false;
+            s_delayed_retry_not_before_us = 0;
+            s_delayed_retry_deadline_us = 0;
             s_status.state = COOK_STATE_DELAYED;
         }
         break;
@@ -1115,6 +1236,11 @@ static void handle_intent_locked(const intent_t *intent)
             s_status.delayed_epoch_s = intent->value;
             s_status.delayed_absolute = true;
             s_status.delayed_start = true;
+            s_status.delayed_start_attempts = 0;
+            s_status.delayed_start_retry_pending = false;
+            s_delayed_launch_attempt_active = false;
+            s_delayed_retry_not_before_us = 0;
+            s_delayed_retry_deadline_us = 0;
             s_status.state = COOK_STATE_DELAYED;
         }
         break;
@@ -1125,6 +1251,11 @@ static void handle_intent_locked(const intent_t *intent)
         s_status.delayed_start = false;
         s_waiting_pan_before_start = false;
         s_delayed_due_mono_us = 0;
+        s_status.delayed_start_attempts = 0;
+        s_status.delayed_start_retry_pending = false;
+        s_delayed_launch_attempt_active = false;
+        s_delayed_retry_not_before_us = 0;
+        s_delayed_retry_deadline_us = 0;
         break;
     }
 }
@@ -1146,8 +1277,21 @@ static bool update_schedule_locked(int64_t now_us)
         due = remaining_us <= 0;
     }
     if (due) {
+        if (s_status.delayed_start_retry_pending) {
+            if (now_us < s_delayed_retry_not_before_us) return false;
+            powerboard_status_t retry_status;
+            powerboard_control_get_status(&retry_status);
+            const bool stopped_ready = retry_status.state == PB_STATE_STOPPED &&
+                                       retry_status.stop_verified;
+            if (!stopped_ready && now_us < s_delayed_retry_deadline_us)
+                return false;
+            s_status.delayed_start_retry_pending = false;
+        }
+        if (s_status.delayed_start_attempts < UINT8_MAX)
+            ++s_status.delayed_start_attempts;
         const esp_err_t err = begin_run_locked(); /* Already physically confirmed. */
         if (err != ESP_OK) {
+            s_delayed_launch_attempt_active = false;
             powerboard_status_t pb;
             powerboard_control_get_status(&pb);
             const bool no_pan = (pb.valid_mask & 1U) != 0 && pb.registers[0] == 0x02;
@@ -1160,9 +1304,24 @@ static bool update_schedule_locked(int64_t now_us)
                 s_no_pan_announced = false;
                 strlcpy(s_status.detail, "WAIT PAN", sizeof(s_status.detail));
                 no_pan_sound_locked();
+            } else if (s_status.delayed_start_attempts <
+                       COOKER_DELAYED_START_ATTEMPTS) {
+                s_status.delayed_start_retry_pending = true;
+                s_delayed_retry_not_before_us = now_us +
+                    (int64_t)COOKER_DELAYED_RETRY_WAIT_MS * 1000LL;
+                s_delayed_retry_deadline_us = now_us +
+                    (int64_t)COOKER_DELAYED_RETRY_DEADLINE_MS * 1000LL;
+                strlcpy(s_status.detail, "SCHEDULE START RETRY",
+                        sizeof(s_status.detail));
+                emit_status("scheduled_start_retry");
             } else {
                 set_fault_locked(FAULT_START_TIMEOUT, "SCHEDULE START BLOCKED");
             }
+        } else {
+            s_delayed_launch_attempt_active = true;
+            s_status.delayed_start_retry_pending = false;
+            s_delayed_retry_not_before_us = 0;
+            s_delayed_retry_deadline_us = 0;
         }
         return err == ESP_OK;
     }
@@ -1252,6 +1411,8 @@ size_t cooking_engine_status_json(char *output, size_t output_size)
         "\"pan\":%s,\"cookware_limited\":%s,\"cookware_notice_seq\":%" PRIu32 ","
         "\"r20_warning_active\":%s,\"r20_warning_value\":%u,"
         "\"r20_warning_seq\":%" PRIu32 ","
+        "\"igbt_warning_active\":%s,\"igbt_warning_temperature_c\":%u,"
+        "\"igbt_warning_seq\":%" PRIu32 ","
         "\"active_zero\":%s,\"pause_remaining_s\":%" PRIu32 ","
         "\"stop_elapsed_ms\":%" PRIu32 ",\"stop_generation\":%" PRIu32 ","
         "\"stop_timed_out\":%s,"
@@ -1271,6 +1432,7 @@ size_t cooking_engine_status_json(char *output, size_t output_size)
         "\"transition_rejection\":\"%s\","
         "\"timer_enabled\":%s,\"timer_s\":%" PRIu32 ","
         "\"timer_last_s\":%" PRIu32 ",\"delayed\":%s,\"delayed_s\":%" PRIu32 ","
+        "\"delayed_attempts\":%u,\"delayed_retry\":%s,"
         "\"clock_valid\":%s,\"hold_saturated\":%s,"
         "\"profile\":%u,\"profile_stage\":%u,\"profile_cells\":%u,"
         "\"profile_mode\":%u,"
@@ -1287,6 +1449,8 @@ size_t cooking_engine_status_json(char *output, size_t output_size)
         s.cookware_limited ? "true" : "false", s.cookware_notice_seq,
         s.r20_warning_active ? "true" : "false", s.r20_warning_value,
         s.r20_warning_seq,
+        s.igbt_warning_active ? "true" : "false", s.igbt_warning_temperature_c,
+        s.igbt_warning_seq,
         s.active_zero ? "true" : "false", s.pause_remaining_s,
         s.stop_elapsed_ms, s.stop_generation, s.stop_timed_out ? "true" : "false",
         s.lease_active ? "true" : "false", s.lease_expired ? "true" : "false",
@@ -1302,6 +1466,8 @@ size_t cooking_engine_status_json(char *output, size_t output_size)
         s.transition_rejection,
         s.timer_enabled ? "true" : "false", s.timer_remaining_s, s.timer_last_s,
         s.delayed_start ? "true" : "false", s.delayed_remaining_s,
+        s.delayed_start_attempts,
+        s.delayed_start_retry_pending ? "true" : "false",
         s.clock_valid ? "true" : "false", s.hold_saturated ? "true" : "false",
         s.profile_index, s.profile_stage_index, s.profile_stage_count,
         s.profile_stage_mode,

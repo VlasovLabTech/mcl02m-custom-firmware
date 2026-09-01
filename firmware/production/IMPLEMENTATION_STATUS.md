@@ -1,10 +1,10 @@
 # MCL02M custom firmware — implementation status
 
-Дата: 2026-08-30
-Версия исходников: `0.2.29-dev`
-Статус: the hash-verified `0.2.28-dev-private` app was written only to stock
-`ota_1` at `0x170000` on the development unit on 2026-08-30; supervised
-sound/localization confirmation remains pending. Supervised testing of `0.2.24-dev` confirmed retained-session active zero without unwanted relay switching,
+Дата: 2026-09-01
+Версия исходников: `0.2.33-dev`
+Статус: the hash-verified `0.2.33-dev-private` app was written only to stock
+`ota_1` at `0x170000` on the development unit on 2026-09-01. Supervised testing
+of `0.2.24-dev` confirmed retained-session active zero without unwanted relay switching,
 Sleep/Wake, the temporary I2C debug display, and temperature operation. At a 125 °C
 empty-pan setpoint, initial heating overshot by approximately
 5 °C and subsequent holding was accurate. The source includes adaptive initial
@@ -13,7 +13,9 @@ physical Settings menu exposes both the compile-time firmware version and live r
 power-board `R28` on a dedicated four-line, left-aligned OLED screen. The
 `0.2.15-dev` source excludes the temporary I2C-loss counter from the
 production menu and OLED while preserving that implementation behind a disabled
-compile-time flag. Internal E09 counting and compact diagnostics are unchanged. The
+compile-time flag. Version `0.2.30-dev` replaced the old coarse E09 count with
+critical/service classification, accelerated critical-only recovery, time-based
+read/write limits, and a first-cause RAM incident. The
 `0.2.16-dev` source also replaces the queued timer toggle with synchronous
 Set/Disable and uses a seconds, minutes, hours confirmation sequence. The
 `0.2.17-dev` source completes the Start/EST evidence package: Start cannot
@@ -76,17 +78,32 @@ NoPan warning with the complete
 128-second Nutcracker table. Confirmed melody completion enters E02; separate 30-second
 start and 132-second post-start watchdogs cover a failed sound task without truncating
 a legitimately queued melody. Cookware return and Stop cancel only the NoPan
-request, so a later removal starts from the first note. In current `0.2.29-dev`,
+request, so a later removal starts from the first note. In current `0.2.33-dev`,
 short center, long center, and Cancel all converge on the same idempotent Stop;
 NoPan is rejected as a Pause source in both control layers, eliminating the
 unconfirmed Pause transition that could surface as `EPB`. Protected
 Wake/Sleep/NoPan/critical requests discard ordinary queued clicks. The default public
 build and opt-in ignored private-sound build compile identical control and safety
 sources; the private flavor substitutes only Wake and Sleep tables and has a distinct
-project name and build directory. The unflashed `0.2.29-dev` source localizes the
+project name and build directory. The `0.2.29-dev` source localizes the
 remaining Chinese firmware/version,
 power-board and Stop labels, localizes the unknown-`R20` warning in all three OLED
 languages, adds its required CJK glyphs, and updates the trilingual user manual. The
+`0.2.30-dev` source added classified time-based E09 recovery and immutable
+communication incident evidence without changing the OLED menu. The
+`0.2.31-dev` source removed the accidental production 80 °C laboratory cutoff.
+The `0.2.32-dev` source keeps native two-sample E07 and turns the
+two-sample `IGBT / >92°C` advisory into a continuous active-session condition:
+three beeps every three seconds, seven-second display snooze after physical input,
+and reset only strictly below 92 °C or on Stop. It adds a separately marked
+interface E07 after two readings above 98 °C, blocks Start above 80 °C, requires
+two invalid samples for E08 and six samples strictly above 210 °C for the bottom
+emergency cutoff. Delayed Start retries one immediate rejection or confirmed Start
+timeout once. Stock captures and decompilation disprove a universal stock gear-10
+clamp/fixed `+10` ramp. Version `0.2.33-dev` retains a custom gradual cold Start but
+enters the final target topology immediately: 1…10 direct, 11…35 from 10, 36 direct,
+37…55 from 36, 56 direct, and 57…99 from 56. The ramp therefore cannot create
+unnecessary relay/IGBT transitions merely while climbing through lower ranges. The
 earlier one-time NVS refresh is complete and must not be repeated automatically.
 
 ## Реализованный пользовательский контур
@@ -99,6 +116,7 @@ earlier one-time NVS refresh is complete and must not be repeated automatically.
 | UNKNOWN R20 | `2B`, `29`, and `2A` remain silent nonfaults; another unrecognized nonzero value shows a persistent `WARNING / UNKNOWN / R20 XX`; the first physical input dismisses only the warning and the established session continues |
 | TEMPERATURE | `40…190 °C`; entering T°C immediately copies and clamps the setpoint into editor-owned state; PREHEAT uses `56/77/99`; braking reserve is `clamp(10 °C + positive four-second rise, 10…20 °C)`, with a 15 °C minimum from 170 °C and 5 °C phase hysteresis; APPROACH uses `8 + 2 × error`; PI uses `4 + 2 × error + 0.08 × integral`; APPROACH/HOLD remain capped at `35`; output is active zero at/above target and PI resumes one degree below |
 | HOLD SATURATED | gear `35` в течение 90 s при ошибке не менее 3 °C: orange, warning и сообщение; предел не повышается |
+| IGBT WARNING / E07 | two consecutive valid readings above 92 °C keep large `IGBT / >92°C` selected and repeat three beeps every 3 s; cooking power is unchanged; each physical action works and hides only the screen for 7 s; exact 92 °C remains active and below 92 °C or Stop clears it. Two valid samples above 98 °C produce marked interface E07; native `R20=17` E07 remains plain; Start is blocked above 80 °C |
 | Start | only a separate center press; power preflight and generation-tagged `STARTING` remain pending until fresh compatible `R20` plus `R26=01/02` arrive after the matching successful heartbeat and strictly before the sole 8-s deadline; EST latches repeated Stop plus immutable first-cause evidence |
 | Pause/Resume | short center requests a generation-tagged transition and repeated presses remain idempotent until confirmation; Pause is confirmed from fresh retained-session feedback before its timer/state change; temperature trend sampling continues while PI is frozen; Resume recomputes and stages current output before its matching 3-s confirmation window, without Stop/re-arm; 2 h continuous confirmed manual Pause performs full Stop |
 | Stop/Sleep | hold центра 1,5 s с немедленным срабатыванием и звуком — Stop/Back; transactional STOPPING retains the clean large live screen instead of technical text; следующий hold в Idle — Sleep unless a valid surface reading remains above 60 °C; Cancel всегда Stop/Back |
@@ -113,11 +131,11 @@ earlier one-time NVS refresh is complete and must not be repeated automatically.
 | Profiles | five NVS profiles with up to five timed POWER/TEMPERATURE cells; POWER gear 0 is an active-zero wait cell and is not subject to the manual-Pause timeout; zero duration skips a cell; total maximum 5 h; Load still requires a separate physical Start |
 | Readings | INFO: три строки `VOLT`, `NTC`, `IGBT`; сверху рабочего POWER — NTC, сверху TEMPERATURE — `S…°` и power; без timer опциональный IGBT заменяет context на 2 s после 5 s context; с timer IGBT скрыт, context остаётся; Pause скрывает timer/context |
 | Languages | English / Русский / `简体中文`; китайский использует встроенный 8×8 subset из фактически нужных глифов, UTF-8 decoder поддерживает трёхбайтовые code points, все текстовые строки статичны и проходят 64-px width/coverage gate; полноэкранные картинки не содержат языкового текста |
-| Sounds | Утверждённые PWM-таблицы: boot, wake, complete, NoPan, critical и sleep; normal duty 50%, sleep около 18%; Main, Timer и Cancel сохраняют UI click, encoder беззвучен, STAGE/WARNING остаются короткими; `SOUND OFF` не отключает NoPan и critical |
+| Sounds | Утверждённые PWM-таблицы: boot, wake, complete, NoPan, critical и sleep; normal duty 50%, sleep около 18%; Main, Timer и Cancel сохраняют UI click, encoder беззвучен, STAGE/WARNING остаются короткими; `SOUND OFF` не отключает IGBT advisory, NoPan и critical |
 | Critical | Stop + latched `error.png` с фактическим E-кодом; один мотив 2,5 s проигрывается дважды на burst, всего 3 bursts с паузами 4 s; ACK немедленно вызывает `sound_stop()`; Sleep запрещён до ACK |
 | NoPan | три последовательных отсчёта по 500 ms; отдельный `nopan.png`, orange blink, полная обязательная 128 s Nutcracker melody even with `SOUND OFF`, timer freeze, then E02 after confirmed playback completion; separate 30 s start and 132 s post-start watchdogs cover sound-task failure without consuming playback time while protected Wake/Sleep finishes; recognized return cancels the melody, first confirms active zero, then refreshes readings and recomputes POWER/TEMPERATURE/profile output under a new generation; another removal restarts the melody from its first note; unknown R20 cannot prove return; short/long center and Cancel immediately cancel the melody and converge on the same idempotent transactional Stop; NoPan cannot enter Pause |
-| Stock E-groups | известные устойчивые raw-группы сохраняют E03/E04/E05/E07/E08/E10/E12; communication — E09; неизвестные остаются generic |
-| I²C debug | The internal consecutive-bad-cycle counter, E09 threshold and diagnostic transport remain active. The temporary physical setting and OLED `0…6` overlay are compiled out of the production build with `COOKER_I2C_DEBUG_DISPLAY_ENABLED=0`; their source and two-second peak-hold implementation remain available for a future diagnostic build |
+| Stock E-groups | известные устойчивые raw-группы сохраняют E03/E04/E05/E07/E08/E10/E12 after two consecutive matching samples; native E07 is specifically `R20=17`; communication — E09; неизвестные остаются generic |
+| I²C recovery/debug | `R20/R22/R23/R24/R26` and `0D/00/0C` writes are critical; `R21/R25/R27` are service-only. Three critical-bad cycles enter a 320-ms critical-only poll, two complete good cycles restore the 500-ms poll, and E09 requires 5 s continuous critical loss or 3 s continuous command-write loss. The first-cause RAM incident and compact/authenticated diagnostics remain active. The temporary physical setting and OLED `0…6` overlay are compiled out with `COOKER_I2C_DEBUG_DISPLAY_ENABLED=0`; their source and two-second peak-hold implementation remain available for a future diagnostic build |
 | Active-zero debug | Compile-time removable compact UART frames retain full state, `R20…R27`, last `0D/00/0C`, temperatures, faults and counters, plus input and Pause/Resume decisions; authenticated Wi-Fi keeps the readable JSON snapshot |
 
 ## Next planned work
@@ -144,11 +162,15 @@ and 190 °C limit tests remain deferred rather than simulated.
 - Restricted-cookware feedback `R26=01` immediately caps the lower-layer target and
   every cooking-engine output at gear 35, forces `A1`, and cannot be bypassed by
   TEMPERATURE, profiles, retained-session Resume, or a direct POWER edit.
-- E09 is generated locally after six consecutive bad 500-ms I²C cycles. A
-  latched power-board fault retransmits the complete Stop sequence every 500 ms.
+- E09 is generated locally only from the critical runtime path. Three critical-bad
+  cycles enter a 320-ms critical-only recovery poll, and two complete good cycles
+  restore normal 500-ms polling. A continuous critical-read outage faults after 5 s;
+  a continuous control-write outage faults after 3 s. Service-only `R21/R25/R27`
+  errors stay diagnostic. A latched fault keeps retransmitting the complete Stop.
 - Start timeout, unknown power status, active `R26` after Stop, or a temperature
   guard also causes Stop/fault.
-- Hard run limit — 5 h. После reset нагрев не восстанавливается.
+- Hard retained-session wall limit — 8 h. Cooking timers and complete profiles are
+  separately limited to 5 h. После reset нагрев не восстанавливается.
 - High-priority power-control task зарегистрирован в 5-s Task Watchdog с panic/reset;
   после reset boot снова начинается с Stop.
 - Вентилятором интерфейсная ESP32 не управляет.
@@ -195,7 +217,12 @@ and 190 °C limit tests remain deferred rather than simulated.
   passed supervised checks. The adaptive braking, Pause recomputation, and topology
   crossing included in deployed `0.2.14-dev` still need complete supervised cookware
   characterization.
-- Production keeps the 80 °C interface IGBT guard and a separate 210 °C bottom
-  emergency cutoff. The power MCU's native E05 remains active.
+- Production uses the continuous IGBT advisory described above, a marked
+  interface E07 after two readings above 98 °C, and a Start gate above 80 °C.
+  Native debounced E07 remains independent; raw sensor faults require two samples
+  and the separate bottom emergency cutoff requires six samples strictly above
+  210 °C.
+- The canonical inventory of every production cutoff, timeout, watchdog and ramp is
+  `docs/PRODUCTION_LIMITS_AND_AUTOMATIC_STOPS.md`.
 - Полный перебор редких fault paths и длительный web/network soak могут быть
   выполнены позднее как необязательная характеризация.

@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 
-#define MCL02M_FIRMWARE_VERSION "0.2.29-dev"
+#define MCL02M_FIRMWARE_VERSION "0.2.33-dev"
 
 #define COOKER_MAX_GEAR                 99U
 #define COOKER_HOLD_MAX_GEAR            35U
@@ -44,8 +44,17 @@
 #define COOKER_HOT_BLINK_ON_MS           2000U
 #define COOKER_HOT_BLINK_OFF_MS          1000U
 
-/* Additional interface-side guard; the power MCU retains its own protections. */
-#define COOKER_IGBT_LIMIT_C              80U
+/* Active-session advisory; the separately marked interface E07 is configured
+ * in the power-board component and native R20=17 E07 remains independent. */
+#define COOKER_IGBT_WARNING_C            92U
+#define COOKER_IGBT_WARNING_CLEAR_C      92U
+#define COOKER_IGBT_WARNING_SAMPLES       2U
+#define COOKER_IGBT_WARNING_BEEP_MS     3000U
+#define COOKER_IGBT_WARNING_RESHOW_MS   7000U
+
+#define COOKER_DELAYED_START_ATTEMPTS      2U
+#define COOKER_DELAYED_RETRY_WAIT_MS     1000U
+#define COOKER_DELAYED_RETRY_DEADLINE_MS 5000U
 
 #define COOKER_SETTINGS_SCHEMA           5U
 /* Retain the temporary I2C-loss OLED implementation, but omit it from production. */
