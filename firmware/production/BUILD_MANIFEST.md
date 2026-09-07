@@ -1,9 +1,9 @@
 # Reference offline build manifest
 
-Build date: 2026-09-01
+Build date: 2026-09-07
 ESP-IDF: 6.0.2
 Target: ESP32, Unicore
-Firmware: `0.2.34-dev`
+Firmware: `0.2.35-dev` (offline audit build; not flashed)
 
 The app header embeds compile metadata, so a clean rebuild may have a different
 SHA-256 while retaining the same source, layout, size and validation gates.
@@ -12,32 +12,37 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 ## App image
 
 - File: `build/mcl02m_custom.bin`
-- Size: `909872` bytes (`0xDE230`)
-- SHA-256: `dd262e2ad127a8df47e826d361879d9b82f43f2e4866b90b8017a0d4c3796c57`
-- ESP image validation hash: `fd68f933ee043708202028b0c682b5ff20c23b60d03a50aaa0e880030f4a569b`
-- Stock OTA slot: `0x160000` bytes; image fits with `531920` bytes free.
+- Size: `910688` bytes (`0xDE560`)
+- SHA-256: `bd4f2308ee84f41aa31d780b05981f8dee61250d24d2a3432843cd951b2f5b31`
+- ESP image validation hash: `315c3313ef73c4e2f72d64ec39361a9d1dd5b3ca2476c09a1d571ef835b29f65`
+- Stock OTA slot: `0x160000` bytes; image fits with `531104` bytes free.
 
 ## Private sound flavor
 
 - File: ignored `build_private/mcl02m_custom_private.bin`
-- Size: `910112` bytes (`0xDE320`)
-- SHA-256: `f874c5e02e8dc12c36df6b6585ce1d7a99ca4ba9854a4bd9412fa6acd8ed5107`
-- ESP image validation hash: `0493afb5f5b1decaafd931682c6b14b3a6ed3c814eb370ba8d7f6afdc0c4ed4d`
-- Stock OTA slot: `0x160000` bytes; image fits with `531680` bytes free.
-- Project/app metadata: `mcl02m_custom_private`, `0.2.34-dev-private`.
+- Size: `910912` bytes (`0xDE640`)
+- SHA-256: `efd77c5a9f591a276d8791b6d9647b6b41414e1405d57e97121dcf5e2c04006c`
+- ESP image validation hash: `3c9eb33366a343ea5aa7840e1b9e478e821c57480a1ddfaaf67935a9da408322`
+- Stock OTA slot: `0x160000` bytes; image fits with `530880` bytes free.
+- Project/app metadata: `mcl02m_custom_private`, `0.2.35-dev-private`.
 
 ## Linked memory
 
-- Flash code: 648374 bytes
-- Flash data: 156828 bytes
+- Flash code: 649170 bytes
+- Flash data: 156844 bytes
 - IRAM: 89047 / 131072 bytes (67.94%)
-- DRAM static: 37388 / 180736 bytes (20.69%)
+- DRAM static: 37404 / 180736 bytes (20.70%)
 - RTC slow: 64 / 8192 bytes
 
 ## Offline gates
 
 - `idf.py build`: PASS.
 - `tests/policy_tests.py`: PASS.
+- `tests/host_scenarios.py`: PASS, 25 scenarios executing the actual engine,
+  driver and temperature-controller C with mock RTOS/time/hardware. Covers
+  zero Start/Pause/Resume, first heating ramp/deadline, pan-return overlaps,
+  delayed retries, stale confirmations, timer completion and real fault paths.
+  See `docs/STATE_MACHINE_FOLLOWUP_2026-09-07.md` for findings and limitations.
 - The policy model covers fresh/delayed/missing/late `R26=01/02`, transition and
   warning `R20`, NoPan, every known fault value, I2C gaps, the exact eight-second
   boundary, late-ack rejection, immutable EST evidence after Stop feedback, and
@@ -117,7 +122,7 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 - `tests/safety_check.py`: PASS.
 - The public ELF contains no private LCE/SNM table or adapter symbols. The private
   flavor was built separately from the ignored local source and exposes the distinct
-  `mcl02m_custom_private` project name and `0.2.34-dev-private` app version.
+  `mcl02m_custom_private` project name and `0.2.35-dev-private` app version.
 - Production ELF check: temporary `I2C ERRORS` menu/overlay code is absent while
   its guarded source remains available.
 - `tests/localization_check.py`: PASS; 112 used CJK glyphs, 76 Chinese strings,
@@ -132,6 +137,13 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
   `e7d3ef41f6b5802558698589d5f3a6467d89e6838e8efa3bb040ffe4048bcc8e`.
 
 ## Development-unit deployment
+
+Neither current `0.2.35-dev` artifact has been flashed. The immediately preceding
+hot-start fix (`0.2.34-dev-private`, 910288 bytes) was written only to `ota_1`
+at `0x170000` on 2026-09-07 and esptool verified the written data. Its full-file
+SHA-256 was not recorded before this audit rebuild replaced the local artifact.
+
+Earlier deployment record:
 
 The public `0.2.34-dev` artifact has not been flashed. The exact hash-verified
 `0.2.34-dev-private` artifact (910112 bytes; SHA-256

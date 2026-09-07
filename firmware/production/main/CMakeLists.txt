@@ -2,6 +2,7 @@ set(UI_SHARED "${CMAKE_CURRENT_LIST_DIR}/../../lab/ui-test/main")
 set(POWER_SHARED "${CMAKE_CURRENT_LIST_DIR}/../../lab/power-test/main")
 set(PRIVATE_SOUND_SRCS)
 set(PRIVATE_SOUND_INCLUDE_DIRS)
+set(EXPERIMENT_SRCS)
 
 if(MCL02M_PRIVATE_SOUND_BUILD)
     set(PRIVATE_SOUND_DIR
@@ -14,6 +15,10 @@ if(MCL02M_PRIVATE_SOUND_BUILD)
     endif()
     list(APPEND PRIVATE_SOUND_SRCS "private_sound_tables.c")
     list(APPEND PRIVATE_SOUND_INCLUDE_DIRS "${PRIVATE_SOUND_DIR}")
+endif()
+
+if(MCL02M_POWER_SWEEP_BUILD)
+    list(APPEND EXPERIMENT_SRCS "power_sweep_experiment.c")
 endif()
 
 idf_component_register(
@@ -30,6 +35,7 @@ idf_component_register(
         "ui_controller.c"
         "web_server_prod.c"
         ${PRIVATE_SOUND_SRCS}
+        ${EXPERIMENT_SRCS}
         "${POWER_SHARED}/powerboard_control.c"
         "${UI_SHARED}/telemetry.c"
         "${UI_SHARED}/ui_inputs.c"
@@ -59,6 +65,14 @@ if(MCL02M_PRIVATE_SOUND_BUILD)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE MCL02M_PRIVATE_SOUND_BUILD=1)
 else()
     target_compile_definitions(${COMPONENT_LIB} PRIVATE MCL02M_PRIVATE_SOUND_BUILD=0)
+endif()
+
+if(MCL02M_POWER_SWEEP_BUILD)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE
+        MCL02M_POWER_SWEEP_BUILD=1
+        MCL02M_FIRMWARE_VERSION="${MCL02M_BASE_VERSION}-sweep")
+else()
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE MCL02M_POWER_SWEEP_BUILD=0)
 endif()
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE

@@ -73,6 +73,7 @@ static cooker_profile_t s_active_profile;
 static bool s_profile_selected;
 static bool s_igbt_warning_episode;
 static uint8_t s_igbt_warning_samples;
+static uint32_t s_igbt_sample_sequence;
 static int64_t s_igbt_warning_last_beep_us;
 static int64_t s_delayed_retry_not_before_us;
 static int64_t s_delayed_retry_deadline_us;
@@ -279,7 +280,8 @@ static void announce_cookware_limit_locked(const char *event)
 
 static void set_fault_locked(cooker_fault_t fault, const char *detail)
 {
-    if (s_status.state == COOK_STATE_FAULT && s_status.fault == fault) return;
+    /* Keep the first cause while lower-level Stop/lease feedback settles. */
+    if (s_status.state == COOK_STATE_FAULT) return;
     powerboard_control_stop(detail == NULL ? "FAULT" : detail);
     s_status.state = COOK_STATE_FAULT;
     s_status.fault = fault;
@@ -617,6 +619,18 @@ static esp_err_t set_temperature_locked(uint16_t temperature_c)
     }
     const esp_err_t err = apply_output_locked(gear);
     if (err != ESP_OK) {
+        powerboard_status_t current;
+        powerboard_control_get_status(&current);
+        /* The power task can detect pan loss/return between the UI snapshot
+         * and this request. Its zero-output hold will recompute this setpoint.
+         * Let its real fault/Stop be classified on the next engine tick too. */
+        if (current.state == PB_STATE_NO_PAN ||
+            (current.transition_pending &&
+             (current.transition_kind == PB_TRANSITION_PAN_RETURN_HOLD ||
+              current.transition_kind == PB_TRANSITION_PAN_RETURN_RESUME)))
+            return ESP_OK;
+        if (current.state == PB_STATE_STOPPING || current.state == PB_STATE_FAULT)
+            return err;
         set_fault_locked(FAULT_POWER_STATUS, "TEMP UPDATE FAILED");
         return err;
     }
@@ -690,12 +704,36 @@ static void update_timer_locked(int64_t delta_us)
     }
     if (s_status.timer_remaining_s == 0) {
         if (s_status.mode == COOK_MODE_PROFILE) {
+            powerboard_status_t current_output;
+            powerboard_control_get_status(&current_output);
+            if (current_output.transition_pending ||
+                (current_output.state != PB_STATE_HEATING &&
+                 current_output.state != PB_STATE_ACTIVE_ZERO))
+                return;
             const unsigned next = s_status.profile_stage_index;
+            const cooker_snapshot_t previous_stage = s_status;
+            const temperature_ctrl_t previous_controller = s_temperature;
+            const int64_t previous_update_us = s_last_temp_update_us;
+            const int64_t previous_accumulator_us = s_timer_accumulator_us;
+            const bool previous_announced = s_saturation_announced;
             if (prepare_profile_stage_locked(next, true)) {
                 uint8_t gear = s_status.selected_gear;
                 if (control_mode_locked() == COOK_MODE_TEMPERATURE)
                     gear = initial_temperature_gear_locked();
                 if (apply_output_locked(gear) != ESP_OK) {
+                    powerboard_status_t current;
+                    powerboard_control_get_status(&current);
+                    if (current.state == PB_STATE_NO_PAN || current.transition_pending ||
+                        current.state == PB_STATE_STOPPING || current.state == PB_STATE_FAULT) {
+                        /* Retry this stage after pan-return/output confirmation;
+                         * do not skip a cell or replace the lower fault by EPB. */
+                        s_status = previous_stage;
+                        s_temperature = previous_controller;
+                        s_last_temp_update_us = previous_update_us;
+                        s_timer_accumulator_us = previous_accumulator_us;
+                        s_saturation_announced = previous_announced;
+                        return;
+                    }
                     set_fault_locked(FAULT_POWER_STATUS, "PROFILE STAGE FAILED");
                     return;
                 }
@@ -729,8 +767,8 @@ static void update_temperature_locked(int64_t now_us)
                                                   s_status.target_temperature_c,
                                                   s_status.bottom_c, elapsed);
     s_status.temp_phase = s_temperature.phase;
-    if (gear != s_status.applied_gear && apply_output_locked(gear) == ESP_OK)
-        s_status.applied_gear = gear;
+    if (gear != s_status.applied_gear)
+        (void)apply_output_locked(gear); /* Keep the lower confirmed/applied value. */
     s_status.hold_saturated = s_temperature.saturated;
     if (s_status.hold_saturated && !s_saturation_announced) {
         s_saturation_announced = true;
@@ -743,13 +781,20 @@ static void update_temperature_locked(int64_t now_us)
 static void apply_confirmed_transition_locked(const powerboard_status_t *pb,
                                                int64_t now_us)
 {
-    if (pb->transition_confirmed_generation == 0 ||
+    if (!state_active(s_status.state) || s_waiting_pan_before_start ||
+        pb->transition_pending || pb->state != pb->confirmed_state ||
+        pb->transition_confirmed_generation != pb->transition_generation ||
+        pb->transition_confirmed_generation == 0 ||
         pb->transition_confirmed_generation == s_applied_transition_generation)
         return;
 
     s_applied_transition_generation = pb->transition_confirmed_generation;
     switch (pb->transition_kind) {
     case PB_TRANSITION_START:
+        s_delayed_launch_attempt_active = false;
+        s_status.delayed_start_retry_pending = false;
+        s_delayed_retry_not_before_us = 0;
+        s_delayed_retry_deadline_us = 0;
         s_status.paused_gear = 0;
         s_active_zero = pb->confirmed_state == PB_STATE_ACTIVE_ZERO;
         s_status.active_zero = s_active_zero;
@@ -901,42 +946,46 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
 
     const bool igbt_valid = (pb->valid_mask & (1U << 3)) != 0;
     const bool igbt_warning_enabled = state_igbt_warning_enabled(s_status.state);
-    if (igbt_warning_enabled && igbt_valid &&
-        pb->igbt_c > COOKER_IGBT_WARNING_C) {
-        if (!s_igbt_warning_episode &&
-            s_igbt_warning_samples < COOKER_IGBT_WARNING_SAMPLES)
-            ++s_igbt_warning_samples;
-        if (!s_igbt_warning_episode &&
-            s_igbt_warning_samples >= COOKER_IGBT_WARNING_SAMPLES) {
-            s_igbt_warning_episode = true;
-            s_status.igbt_warning_active = true;
-            ++s_status.igbt_warning_seq;
-            snprintf(s_status.detail, sizeof(s_status.detail),
-                     "IGBT WARNING %uC", pb->igbt_c);
+    const bool fresh_igbt_sample = pb->igbt_sample_sequence != s_igbt_sample_sequence;
+    s_igbt_sample_sequence = pb->igbt_sample_sequence;
+    if (fresh_igbt_sample || !igbt_warning_enabled) {
+        if (igbt_warning_enabled && igbt_valid &&
+            pb->igbt_c > COOKER_IGBT_WARNING_C) {
+            if (!s_igbt_warning_episode &&
+                s_igbt_warning_samples < COOKER_IGBT_WARNING_SAMPLES)
+                ++s_igbt_warning_samples;
+            if (!s_igbt_warning_episode &&
+                s_igbt_warning_samples >= COOKER_IGBT_WARNING_SAMPLES) {
+                s_igbt_warning_episode = true;
+                s_status.igbt_warning_active = true;
+                ++s_status.igbt_warning_seq;
+                snprintf(s_status.detail, sizeof(s_status.detail),
+                         "IGBT WARNING %uC", pb->igbt_c);
+                s_igbt_warning_last_beep_us = 0;
+                emit_status("igbt_temperature_warning");
+            }
+            s_status.igbt_warning_temperature_c = pb->igbt_c;
+        } else if (!igbt_warning_enabled ||
+                   (igbt_valid && pb->igbt_c < COOKER_IGBT_WARNING_CLEAR_C)) {
+            if (s_igbt_warning_episode)
+                emit_status(igbt_warning_enabled ? "igbt_temperature_normal" :
+                                                  "igbt_temperature_warning_stopped");
+            s_igbt_warning_episode = false;
+            s_igbt_warning_samples = 0;
+            s_status.igbt_warning_active = false;
+            if (igbt_valid) s_status.igbt_warning_temperature_c = pb->igbt_c;
             s_igbt_warning_last_beep_us = 0;
-            emit_status("igbt_temperature_warning");
+            sound_cancel(SOUND_IGBT_WARNING);
+        } else if (igbt_valid && s_igbt_warning_episode) {
+            s_status.igbt_warning_temperature_c = pb->igbt_c;
+        } else if (igbt_valid) {
+            s_igbt_warning_samples = 0;
+        } else if (!s_igbt_warning_episode) {
+            /* The warning requires consecutive valid samples. A read gap breaks
+             * the candidate sequence, but an active hot episode is cleared only
+             * by a valid reading strictly below 92 C or by ending the session. */
+            s_igbt_warning_samples = 0;
         }
-        s_status.igbt_warning_temperature_c = pb->igbt_c;
-    } else if (!igbt_warning_enabled ||
-               (igbt_valid && pb->igbt_c < COOKER_IGBT_WARNING_CLEAR_C)) {
-        if (s_igbt_warning_episode)
-            emit_status(igbt_warning_enabled ? "igbt_temperature_normal" :
-                                              "igbt_temperature_warning_stopped");
-        s_igbt_warning_episode = false;
-        s_igbt_warning_samples = 0;
-        s_status.igbt_warning_active = false;
-        if (igbt_valid) s_status.igbt_warning_temperature_c = pb->igbt_c;
-        s_igbt_warning_last_beep_us = 0;
-        sound_cancel(SOUND_IGBT_WARNING);
-    } else if (igbt_valid && s_igbt_warning_episode) {
-        s_status.igbt_warning_temperature_c = pb->igbt_c;
-    } else if (igbt_valid) {
-        s_igbt_warning_samples = 0;
-    } else if (!s_igbt_warning_episode) {
-        /* The warning requires consecutive valid samples. A read gap breaks
-         * the candidate sequence, but an active hot episode is cleared only
-         * by a valid reading strictly below 92 C or by ending the session. */
-        s_igbt_warning_samples = 0;
     }
     if (igbt_warning_enabled && s_igbt_warning_episode &&
         (s_igbt_warning_last_beep_us == 0 ||
@@ -1080,7 +1129,11 @@ static void renew_cooking_lease_locked(void)
 
     powerboard_status_t pb;
     powerboard_control_get_status(&pb);
-    if (pb.lease_expired || strstr(pb.fault, "COOK LEASE") != NULL) {
+    if (pb.state == PB_STATE_FAULT) {
+        /* A Start timeout cancels its lease and starts Stop. Keep a scheduled
+         * retry waiting for that Stop instead of replacing EST with ECL. */
+        apply_power_status_locked(&pb, esp_timer_get_time());
+    } else if (pb.lease_expired || strstr(pb.fault, "COOK LEASE") != NULL) {
         set_fault_locked(FAULT_COOKING_LEASE, "COOK LEASE");
     } else if (pb.state == PB_STATE_STOPPING &&
                strstr(pb.fault, "RUN LIMIT") != NULL) {
@@ -1341,8 +1394,8 @@ static void engine_task(void *arg)
         }
         const int64_t now = esp_timer_get_time();
         powerboard_status_t pb;
-        powerboard_control_get_status(&pb);
         xSemaphoreTake(s_lock, portMAX_DELAY);
+        powerboard_control_get_status(&pb);
         const int64_t delta = now - s_last_tick_us;
         s_last_tick_us = now;
         if (update_schedule_locked(now)) {

@@ -13,7 +13,13 @@ from a request to edit or build software.
 - Xiaomi device model: `chunmi.ihcooker.v2`.
 - Interface controller: Espressif `ESP-WROOM-32D` (classic ESP32).
 - Display: monochrome 64×48 OLED, page-major 384-byte framebuffer.
-- Current custom source version: `0.2.34-dev`.
+- Current custom source version: `0.2.35-dev` (offline audit build; not yet flashed).
+- The 2026-09-07 hot-start EST fix and follow-up transition audit are documented in
+  `docs/STATE_MACHINE_FOLLOWUP_2026-09-07.md`. Zero-output Start/Pause/Resume/hold
+  accept fresh output-off feedback, the first subsequent heating request follows
+  cold-Start ramp/timing, and stale confirmations cannot undo Stop/Fault. Scheduled
+  retries survive the intentional lease cancellation caused by the first timeout.
+  `tests/host_scenarios.py` exercises the actual C engine/driver with mock hardware.
 - Native E07 remains `R20=17` after two consecutive matching samples. During an
   active session, two valid readings above 92 °C activate a continuous
   `IGBT / >92°C` advisory with three 4 kHz, 300 ms beeps separated by 100 ms every

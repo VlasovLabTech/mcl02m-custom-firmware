@@ -341,8 +341,8 @@ static void render(void)
             if (status.readings_valid) snprintf(right, sizeof(right), "I%u°", status.igbt_c);
             else strlcpy(right, "I--", sizeof(right));
         } else if (settings.show_context_value) {
-            if (status.readings_valid) snprintf(right, sizeof(right), "N%u°", status.bottom_c);
-            else strlcpy(right, "N--", sizeof(right));
+            if (status.readings_valid) snprintf(right, sizeof(right), "T%u°", status.bottom_c);
+            else strlcpy(right, "T--", sizeof(right));
         }
         snprintf(l1, sizeof(l1), "%u", status.selected_gear);
         display_prod_set_focus_overlay("", right, l1, false, "");

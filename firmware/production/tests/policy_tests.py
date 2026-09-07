@@ -167,14 +167,17 @@ class StartProtocol:
     recovery_entries: int = 0
     critical_bad_cycles: int = 0
     service_bad_cycles: int = 0
+    zero_start_off_samples: int = 0
 
     def start(self, gear: int = 99) -> None:
-        assert self.state == "ARMED" and 0 < gear <= 99
+        assert self.state == "ARMED" and 0 <= gear <= 99
         self.state = "STARTING"
         self.requested_gear = gear
-        self.transmitted_gear = min(gear, 10)
-        self.transmitted_topology = 0xA1
+        self.transmitted_gear = cold_start_first_gear(gear)
+        self.transmitted_topology = (0x81 if gear == 0 else
+                                     0xA1 if gear <= 35 else 0xC1 if gear <= 55 else 0xE1)
         self.deadline_ms = None
+        self.zero_start_off_samples = 0
         self.incident = None
         self.i2c_incident = None
 
@@ -250,15 +253,32 @@ class StartProtocol:
             self.command_bad_since_ms = None
 
         confirmation_open = self._confirmation_open(now_ms)
-        heating_feedback_open = self.state == "HEATING" or confirmation_open
+        cold_zero_start = confirmation_open and self.requested_gear == 0
+        heating_feedback_open = self.state == "HEATING" or (
+            confirmation_open and not cold_zero_start
+        )
+        no_pan_feedback_open = heating_feedback_open or cold_zero_start
 
-        if feedback_valid and r20 == 0x02 and heating_feedback_open:
+        if feedback_valid and r20 == 0x02 and no_pan_feedback_open:
             self.no_pan_samples += 1
             if self.no_pan_samples >= 3:
                 self.state = "NO_PAN"
                 self.deadline_ms = None
         elif feedback_valid and r20 != 0x02:
             self.no_pan_samples = 0
+
+        if feedback_valid and cold_zero_start and r20_policy(r20) not in {
+            "known_fault", "no_pan"
+        } and r26 == 0:
+            self.zero_start_off_samples += 1
+            if self.zero_start_off_samples >= 2:
+                self.state = "ACTIVE_ZERO"
+                self.deadline_ms = None
+        elif cold_zero_start:
+            self.zero_start_off_samples = 0
+            if feedback_valid and r20_policy(r20) not in {"known_fault", "no_pan"} and r26 in {1, 2}:
+                self.state = "ACTIVE_ZERO"
+                self.deadline_ms = None
 
         if feedback_valid and heating_feedback_open and r20_policy(r20) not in {
             "known_fault", "no_pan"
@@ -492,6 +512,7 @@ class ConfirmedTransition:
     result: str = "NONE"
     rejection_sequence: int = 0
     rejection: str = "NONE"
+    zero_off_samples: int = 0
 
     def request(self, kind: str, requested_state: str, gear: int) -> int | None:
         if self.pending:
@@ -510,6 +531,7 @@ class ConfirmedTransition:
         self.requested_gear = gear
         self.pending = True
         self.command_transmitted = False
+        self.zero_off_samples = 0
         self.inferred = False
         self.deadline_ms = None
         self.feedback_baseline = self.feedback_sequence
@@ -544,9 +566,10 @@ class ConfirmedTransition:
         if gear == self.requested_gear:
             return self.generation
         self.generation += 1
-        self.requested_gear = min(gear, 10)
+        self.requested_gear = cold_start_first_gear(gear)
         self.requested_state = "ACTIVE_ZERO" if gear == 0 else "HEATING"
         self.command_transmitted = False
+        self.zero_off_samples = 0
         self.feedback_baseline = self.feedback_sequence
         self.deadline_ms = None
         self.result = "PENDING"
@@ -555,6 +578,8 @@ class ConfirmedTransition:
     def feedback(self, now_ms: int, *, r20: int, r26: int, valid: bool = True) -> bool:
         if valid:
             self.feedback_sequence += 1
+        if not valid:
+            self.zero_off_samples = 0
         if not self.pending or not self.command_transmitted or not valid:
             return False
         if self.deadline_ms is None or now_ms >= self.deadline_ms:
@@ -572,8 +597,18 @@ class ConfirmedTransition:
             and r20 == 0x02
         ):
             r20_ok = True
-        if not r20_ok or r26 not in {1, 2}:
-            return False
+        zero = self.requested_gear == 0
+        if r26 == 0 and zero:
+            if not r20_ok or r20 == 0x02:
+                self.zero_off_samples = 0
+                return False
+            self.zero_off_samples += 1
+            if self.zero_off_samples < 2:
+                return False
+        else:
+            self.zero_off_samples = 0
+            if not r20_ok or r26 not in {1, 2}:
+                return False
         self.pending = False
         self.command_transmitted = False
         self.confirmed_generation = self.generation
@@ -861,8 +896,8 @@ def active_zero_command(state: str) -> tuple[int, int, int]:
     raise ValueError(state)
 
 
-def retained_resume_first_gear(target: int) -> int:
-    return target
+def retained_resume_first_gear(target: int, heating_established: bool = True) -> int:
+    return target if heating_established else cold_start_first_gear(target)
 
 
 def manual_pause_state(elapsed_s: int) -> str:
@@ -1134,6 +1169,37 @@ def run() -> None:
         delayed.heartbeat(100)
         delayed.sample(8_099, r20=0, r26=r26)
         assert delayed.state == "HEATING"
+
+    # A temperature run that is already at/above its target begins as a safe
+    # zero-output wait.  R26=00 is the expected acknowledgement for 81/00/00;
+    # two fresh samples confirm ACTIVE_ZERO and remove the Start deadline.
+    zero_wait = StartProtocol()
+    zero_wait.start(0)
+    zero_wait.heartbeat(100)
+    zero_wait.sample(500, r20=0, r26=0)
+    assert zero_wait.state == "STARTING" and zero_wait.zero_start_off_samples == 1
+    zero_wait.sample(1_000, r20=0x2B, r26=0)
+    assert zero_wait.state == "ACTIVE_ZERO" and zero_wait.deadline_ms is None
+    zero_wait.sample(30_000, r20=0, r26=0)
+    assert zero_wait.state == "ACTIVE_ZERO" and zero_wait.incident is None
+
+    zero_wait_glitch = StartProtocol()
+    zero_wait_glitch.start(0)
+    zero_wait_glitch.heartbeat(0)
+    zero_wait_glitch.sample(500, r20=0, r26=0)
+    zero_wait_glitch.sample(1_000, r20=0, r26=3)
+    assert zero_wait_glitch.state == "STARTING"
+    assert zero_wait_glitch.zero_start_off_samples == 0
+    zero_wait_glitch.sample(1_500, r20=0, r26=0)
+    zero_wait_glitch.sample(2_000, r20=0, r26=0)
+    assert zero_wait_glitch.state == "ACTIVE_ZERO"
+
+    zero_wait_no_pan = StartProtocol()
+    zero_wait_no_pan.start(0)
+    zero_wait_no_pan.heartbeat(0)
+    for timestamp in (500, 1_000, 1_500):
+        zero_wait_no_pan.sample(timestamp, r20=0x02, r26=0)
+    assert zero_wait_no_pan.state == "NO_PAN"
 
     stale = StartProtocol()
     stale.start()

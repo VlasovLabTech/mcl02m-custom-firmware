@@ -13,7 +13,7 @@
 - `R26=01` restricted-cookware feedback is accepted as normal heating and caps every
   control path at real gear `35`/`A1`; POWER reports the permitted value, blocks only
   upward edits above 35, and displays a temporary explanatory message;
-- physical Settings shows both `0.2.34-dev` firmware and live raw `R28` power-board
+- physical Settings shows both `0.2.35-dev` firmware and live raw `R28` power-board
   revision/type with four left-aligned rows;
 - `R20=2B/29/2A` are silent nonfaults; another unknown nonzero `R20` shows its exact
   hex value as a persistent warning, and the first physical input dismisses only the
@@ -176,11 +176,11 @@ python tests/safety_check.py
 python tests/localization_check.py
 ```
 
-## Public and private sound builds
+## Build flavors
 
-Both flavors compile the same control, safety, UI, and networking sources. The
-public flavor is the default and has no include path to the ignored private MIDI
-pack:
+The public and private-sound flavors compile the same control, safety, UI, and
+networking sources. The public flavor is the default and has no include path to
+the ignored private MIDI pack:
 
 ```powershell
 idf.py -B build -D MCL02M_PRIVATE_SOUND_BUILD=OFF build
@@ -198,13 +198,20 @@ Its input is
 local generator workspace, `build_private/`, and all firmware binaries are ignored
 by Git. The artifacts have distinct project names:
 
-- public: `build/mcl02m_custom.bin`, app version `0.2.34-dev`;
+- public: `build/mcl02m_custom.bin`, app version `0.2.35-dev`;
 - private: `build_private/mcl02m_custom_private.bin`, app version
-  `0.2.34-dev-private`.
+  `0.2.35-dev-private`.
 
 The physical version screen intentionally shows the shared source version
-`0.2.34-dev`; `esptool image-info` exposes the private suffix. Never reuse one build
+`0.2.35-dev`; `esptool image-info` exposes the private suffix. Never reuse one build
 directory for both flavors.
+
+An experiment-only `MCL02M_POWER_SWEEP_BUILD` flavor automates the supervised
+25-point, 15-second-per-point cookware study and records compact `R20...R2F`
+telemetry. It is mutually exclusive with private sounds and must not be distributed
+or left installed as production firmware. See
+[POWER_SWEEP_EXPERIMENT.md](POWER_SWEEP_EXPERIMENT.md) for its safety contract,
+build command, host runner, and output format.
 
 Допустимый артефакт для будущего отдельного согласования — только app image
 `build/mcl02m_custom.bin` для stock `ota_1` (`0x170000`). Нельзя автоматически

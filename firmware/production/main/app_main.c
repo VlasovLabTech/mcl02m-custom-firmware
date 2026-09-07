@@ -14,6 +14,10 @@
 #include "ui_outputs.h"
 #include "web_server_prod.h"
 
+#if MCL02M_POWER_SWEEP_BUILD
+#include "power_sweep_experiment.h"
+#endif
+
 static const char *TAG = "mcl02m_custom";
 
 void app_main(void)
@@ -34,6 +38,10 @@ void app_main(void)
     ESP_ERROR_CHECK(display_prod_init());
     sound_play(SOUND_BOOT);
     ESP_ERROR_CHECK(ui_controller_init());
+
+#if MCL02M_POWER_SWEEP_BUILD
+    ESP_ERROR_CHECK(power_sweep_experiment_init());
+#endif
 
     const esp_err_t network_err = network_prod_init();
     if (network_err != ESP_OK) {

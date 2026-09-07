@@ -5,7 +5,12 @@ real cooker behavior. It covers the production build, not the deliberately stric
 laboratory power-test firmware. Update it whenever a production limit, timeout,
 debounce rule, or automatic Stop/Fault path changes.
 
-Status: source version `0.2.34-dev`, 1 September 2026.
+Status: source version `0.2.35-dev`, 7 September 2026 (offline build).
+
+The [2026-09-07 follow-up audit](STATE_MACHINE_FOLLOWUP_2026-09-07.md) corrects
+false transition faults around cooling waits, Pause/Resume and scheduled retries.
+A confirmed zero-output wait has no Start timeout; the eight-hour session limit
+and any enabled cooking countdown continue to apply.
 
 ## Corrected IGBT behavior
 
@@ -41,8 +46,8 @@ Status: source version `0.2.34-dev`, 1 September 2026.
 | Critical I²C read path lost | 3 bad cycles enter 320 ms recovery; 5 s continuous loss faults | `E09`, repeated Stop | Current agreed recovery policy |
 | Power-board command writes lost | 3 s continuous loss | `E09`, repeated Stop | Current agreed recovery policy |
 | Cooking task stops renewing its lease | 3 s | `ECL`, lower task independently Stops | Custom safety watchdog; can terminate cooking if the cooking task stalls |
-| Start acknowledgement missing | 8 s after first successful nonzero command heartbeat | `EST`, repeated Stop | Custom transactional safety timeout |
-| Active-zero/Pause/Resume/pan-return acknowledgement missing | 3 s after command transmission | Latched transition fault, normally shown as `EPB` | Custom transactional safety timeout; field-review candidate |
+| Start acknowledgement missing | 8 s after the transmitted Start command; nonzero output needs `R26=01/02`, zero output also accepts two fresh compatible `R26=00` samples | `EST`, repeated Stop if unconfirmed; no timeout after a zero wait is confirmed | Custom transactional safety timeout |
+| Active-zero/Pause/Resume/pan-return acknowledgement missing | Normally 3 s; first actual heat after a cold zero wait gets 8 s. Zero transitions also accept two fresh compatible `R26=00` samples | Latched transition fault, normally shown as `EPB`, only if the requested transition remains unconfirmed | Custom transactional safety timeout; physical follow-up remains useful |
 | Temperature sensor communication becomes invalid while regulating | The temperature loop freezes immediately; critical I²C loss must remain continuous for 5 s to become `E09` | The last lower-board output command can remain in effect during the recovery interval | Custom continuity policy; important owner-review item |
 | Retained cooking session reaches wall limit | 8 h including heating, active zero, Pause and NoPan | Transactional Stop, shown as `ETM` | Custom hard ceiling; review before sessions longer than 8 h |
 | Manual Pause reaches 2 h | Continuous manual Pause only | Normal transactional Stop | Explicitly requested; POWER 0/profile wait is not Pause |
@@ -52,7 +57,7 @@ Status: source version `0.2.34-dev`, 1 September 2026.
 | Power board reports output active while interface is stopped | 4 consecutive samples | `STOP VERIFY` fault, repeated Stop | Custom fail-safe against unintended heating |
 | Lower power task reports an unexpected Stop during an active session | Immediate classified observation | `ECL` if lease expired, otherwise `ETM` | Custom state-consistency guard |
 | Delayed Start cannot establish a valid Start | 2 attempts; one retry after an immediate rejection or confirmed Start timeout | `EST` after the second failure | Custom scheduled-start safety policy; NoPan remains a separate path |
-| Temperature-control output command fails | One failed application request | `EPB`-class fault | Custom state-consistency policy |
+| Temperature-control output command fails | Unexpected application rejection; pan-return overlap is deferred and lower faults preserve their own code | `EPB`-class fault for an actual unexpected rejection | Custom state-consistency policy |
 | Power-control task fails to service task watchdog | 5 s | ESP32 panic/reset; boot begins with Stop | ESP-IDF watchdog policy |
 | Boot cannot read required power-board capabilities | Required `R25/R28/R29/R24/R2A/R2B` probe fails | Boot power-board fault; heating unavailable | Hardware-compatibility gate; important for another board revision |
 | Start preflight is not exactly idle and healthy | One attempted Start; requires valid `R20/R22/R23/R24/R26`, `R20=00`, `R26=00`, both raw sensors in range, IGBT `<=80 °C`, and bottom `<=210 °C` | Start is rejected; manual Start warns, a due delayed Start retries once before `EST` | Custom conservative Start gate |

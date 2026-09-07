@@ -4,7 +4,9 @@ Status: **in progress; the first bounded fix batch is implemented, while the rem
 
 Audit baseline: `0.2.10-dev`, commit `2b5784e` (`2026-08-28`)
 
-Current source: `0.2.34-dev`. The `0.2.34-dev-private` app image was flashed to the
+Current source: `0.2.35-dev` (offline). The follow-up audit and reproducible C scenarios
+are in [STATE_MACHINE_FOLLOWUP_2026-09-07.md](STATE_MACHINE_FOLLOWUP_2026-09-07.md).
+The `0.2.34-dev-private` app image was flashed to the
 development cooker on 2026-09-01 after explicit authorization and hash verification.
 Supervised `0.2.24-dev` testing
 showed retained-session active zero without

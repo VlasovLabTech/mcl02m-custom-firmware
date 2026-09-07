@@ -149,18 +149,22 @@ def main() -> int:
             "gear == 0 ? PB_STATE_ACTIVE_ZERO : PB_STATE_HEATING" in start_body and
             "transition_confirmation_open" in feedback and
             "r26 == 0x01 || r26 == 0x02" in feedback and
+            "cold_zero_start" in feedback and
+            "safe_off_feedback" in feedback and
+            "MCL02M_ZERO_OUTPUT_CONFIRM_SAMPLES" in feedback and
+            "r26 == 0" in feedback and
             "finish_transition_locked();" in feedback and
             "s_status.state = requested_state" in transition_finish and
             "s_status.transition_confirmed_generation" in transition_finish and
             "s_status.state = PB_STATE_HEATING" not in control,
-            "START reaches HEATING only through fresh valid R26=01/02 transition confirmation")
+            "START reaches HEATING through R26=01/02 or zero-output ACTIVE_ZERO through two fresh R26=00 samples")
     require("r20_silent_nonfault" in control and
             "value == 0x2b" in control and "value == 0x29" in control and
             "value == 0x2a" in control and
             "s_status.unknown_r20_seq" in feedback and
             "fault_locked(\"POWER TRANSITION\")" not in feedback,
             "R20=2B/29/2A are silent nonfaults and other unknown values become warnings")
-    require("MCL02M_START_CONFIRM_TIMEOUT_MS" in control_task and
+    require("transition_timeout_ms_locked()" in control_task and
             'case PB_TRANSITION_START: reason = "START TIMEOUT"' in control and
             "fault_locked(reason);" in control and
             control_task.find("write_register(0x0c") <

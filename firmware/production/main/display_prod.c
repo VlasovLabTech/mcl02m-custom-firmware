@@ -526,8 +526,8 @@ static void display_task(void *arg)
                         if (cooker.readings_valid) snprintf(top_right, sizeof(top_right), "I%u°", cooker.igbt_c);
                         else strlcpy(top_right, "I--", sizeof(top_right));
                     } else if (!paused && settings.show_context_value) {
-                        if (cooker.readings_valid) snprintf(top_right, sizeof(top_right), "N%u°", cooker.bottom_c);
-                        else strlcpy(top_right, "N--", sizeof(top_right));
+                        if (cooker.readings_valid) snprintf(top_right, sizeof(top_right), "T%u°", cooker.bottom_c);
+                        else strlcpy(top_right, "T--", sizeof(top_right));
                     }
                 }
                 if (paused) strlcpy(bottom,

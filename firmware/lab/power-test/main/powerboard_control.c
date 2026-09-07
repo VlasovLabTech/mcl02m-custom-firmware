@@ -53,6 +53,10 @@ _Static_assert(PB_RECOVERY_COMMAND_0C_MS < MCL02M_I2C_RECOVERY_HEARTBEAT_MS,
 #define MCL02M_COMPACT_UART_TELEMETRY 0
 #endif
 
+#ifndef MCL02M_POWER_SWEEP_BUILD
+#define MCL02M_POWER_SWEEP_BUILD 0
+#endif
+
 #define PB_ACTIVE_ZERO_0D 0x81U
 
 #if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
@@ -82,6 +86,8 @@ static bool s_unknown_r20_present;
 static uint8_t s_unknown_r20_present_value;
 static unsigned s_stop_active_samples;
 static unsigned s_stop_zero_samples;
+static unsigned s_zero_output_off_samples;
+static bool s_heating_session_established;
 static unsigned s_igbt_raw_fault_samples;
 static unsigned s_bottom_raw_fault_samples;
 static unsigned s_igbt_limit_samples;
@@ -373,6 +379,7 @@ static void store_register(uint8_t reg, uint8_t value, esp_err_t err)
 {
     const unsigned bit = reg - 0x20U;
     xSemaphoreTake(s_status_lock, portMAX_DELAY);
+    if (reg == 0x23) ++s_status.igbt_sample_sequence;
     if (err == ESP_OK) {
         s_status.registers[bit] = value;
         s_status.valid_mask |= (uint16_t)(1U << bit);
@@ -551,6 +558,7 @@ static void cancel_transition_locked(const char *reason)
     if (!s_status.transition_pending) return;
     s_status.transition_pending = false;
     s_status.transition_command_transmitted = false;
+    s_zero_output_off_samples = 0;
     s_transition_deadline_us = 0;
     s_start_confirm_deadline_us = 0;
     strlcpy(s_status.transition_result, reason == NULL ? "CANCELLED" : reason,
@@ -584,6 +592,7 @@ static void begin_transition_locked(powerboard_transition_t kind,
     s_status.transition_pending = true;
     s_status.transition_command_transmitted = false;
     s_status.confirmation_inferred = false;
+    s_zero_output_off_samples = 0;
     s_transition_feedback_baseline = s_status.feedback_sequence;
     s_transition_deadline_us = 0;
     s_start_confirm_deadline_us = 0;
@@ -595,6 +604,15 @@ static void begin_transition_locked(powerboard_transition_t kind,
              powerboard_transition_name(kind),
              powerboard_state_name(requested_state), requested_gear);
 #endif
+}
+
+static uint32_t transition_timeout_ms_locked(void)
+{
+    /* The first actual heat request after a zero-output wait is still a Start
+     * at the hardware boundary, even when the UI calls it Resume. */
+    return (s_status.transition_kind == PB_TRANSITION_START ||
+            (!s_heating_session_established && s_status.transition_requested_gear != 0)) ?
+           MCL02M_START_CONFIRM_TIMEOUT_MS : MCL02M_TRANSITION_CONFIRM_TIMEOUT_MS;
 }
 
 static void finish_transition_locked(void)
@@ -609,6 +627,9 @@ static void finish_transition_locked(void)
     if (confirmed_gear != 0) s_status.topology = topology_for_gear(confirmed_gear);
     s_status.transition_pending = false;
     s_status.transition_command_transmitted = false;
+    s_zero_output_off_samples = 0;
+    if (confirmed_gear != 0) s_heating_session_established = true;
+    else s_no_pan_samples = 0; /* A zero-output interruption ends the old candidate. */
     s_status.transition_confirmed_generation = s_status.transition_generation;
     s_status.confirmed_state = requested_state;
     s_status.confirmed_gear = confirmed_gear;
@@ -791,6 +812,7 @@ static void begin_stop_locked(const char *reason)
     s_status.topology = 0;
     s_status.cookware_limited = false;
     s_arm_deadline_us = 0;
+    s_heating_session_established = false;
     s_run_started_us = 0;
     s_run_deadline_us = 0;
     s_start_confirm_deadline_us = 0;
@@ -874,7 +896,16 @@ static const char *retained_session_issue_locked(void)
                             (1U << 4) | (1U << 6);
     if ((s_status.valid_mask & needed) != needed) return "READINGS INVALID";
     if (!r20_session_compatible(s_status.registers[0])) return "R20 INCOMPATIBLE";
-    if (s_status.registers[6] == 0) return "R26 OUTPUT OFF";
+    /* Zero output can be a confirmed cooling wait without an energized session.
+     * It is eligible for Pause/Resume, but is not heating acknowledgement. */
+    const bool confirmed_zero =
+        (s_status.state == PB_STATE_ACTIVE_ZERO || s_status.state == PB_STATE_PAUSED) &&
+        s_status.confirmed_state == s_status.state && s_status.confirmed_gear == 0 &&
+        s_status.transmitted_topology == PB_ACTIVE_ZERO_0D &&
+        s_status.transmitted_gear == 0;
+    const uint8_t r26 = s_status.registers[6];
+    if (r26 == 0 && !confirmed_zero) return "R26 OUTPUT OFF";
+    if (r26 != 0 && r26 != 0x01 && r26 != 0x02) return "R26 UNKNOWN";
     if (s_status.registers[3] < 0x41 || s_status.registers[3] >= 0xf8)
         return "IGBT SENSOR";
     if (s_status.registers[4] < 0x0b || s_status.registers[4] >= 0xfc)
@@ -1104,6 +1135,14 @@ static void update_status_feedback(void)
         s_status.state == PB_STATE_HEATING ||
         (start_confirmation_open && s_status.transition_requested_gear != 0) ||
         resume_heating_confirmation_open;
+    const bool cold_zero_start_feedback_open =
+        start_confirmation_open &&
+        s_status.transition_requested_state == PB_STATE_ACTIVE_ZERO &&
+        s_status.transition_requested_gear == 0;
+    const bool no_pan_feedback_open =
+        heating_feedback_open || cold_zero_start_feedback_open ||
+        (s_status.state == PB_STATE_ACTIVE_ZERO && !s_status.transition_pending &&
+         s_status.transition_kind == PB_TRANSITION_PAN_RETURN_HOLD);
 
     if ((s_status.state == PB_STATE_STOPPING || s_status.state == PB_STATE_FAULT) &&
         r26_valid) {
@@ -1127,6 +1166,10 @@ static void update_status_feedback(void)
             s_status.stop_confirm_samples = 0;
             s_status.stop_verified = false;
         }
+    } else if ((s_status.state == PB_STATE_STOPPING || s_status.state == PB_STATE_FAULT) &&
+               !r26_valid) {
+        s_stop_zero_samples = 0;
+        s_status.stop_confirm_samples = 0;
     }
 
 #if MCL02M_ACTIVE_ZERO_DIAGNOSTICS
@@ -1142,7 +1185,7 @@ static void update_status_feedback(void)
     }
 #endif
 
-    if (r20_valid && r20 == 0x02 && heating_feedback_open) {
+    if (r20_valid && r20 == 0x02 && no_pan_feedback_open) {
         if (++s_no_pan_samples >= MCL02M_NO_PAN_SAMPLES) {
             enter_no_pan_locked("NO PAN");
         }
@@ -1160,7 +1203,7 @@ static void update_status_feedback(void)
         s_status.cookware_limited = r26 == 0x01;
         begin_transition_locked(PB_TRANSITION_PAN_RETURN_HOLD,
                                 PB_STATE_ACTIVE_ZERO, 0);
-    } else if (r20_valid && r20 != 0x02) {
+    } else if (!r20_valid || r20 != 0x02) {
         s_no_pan_samples = 0;
     }
 
@@ -1203,9 +1246,29 @@ static void update_status_feedback(void)
         r20_proves_pan_present(r20) :
         (r20_session_compatible(r20) ||
          (r20 == 0x02 && zero_session_transition));
-    if (transition_confirmation_open && r20_valid && transition_r20_compatible &&
-        r26_valid && (r26 == 0x01 || r26 == 0x02)) {
-        finish_transition_locked();
+    if (zero_session_transition && transition_confirmation_open && r26 == 0) {
+        /* Zero commands may retain an active session (R26=01/02) or leave the
+         * output off (R26=00). The latter needs two fresh consecutive samples.
+         * Apply this to Start, Pause, zero Resume and pan-return hold alike. */
+        const bool safe_off_feedback =
+            r20_valid && (pan_return_transition ? r20_proves_pan_present(r20) :
+                                                   r20_session_compatible(r20)) &&
+            r26_valid && r26 == 0;
+        if (safe_off_feedback) {
+            if (s_zero_output_off_samples < MCL02M_ZERO_OUTPUT_CONFIRM_SAMPLES)
+                ++s_zero_output_off_samples;
+            if (s_zero_output_off_samples >= MCL02M_ZERO_OUTPUT_CONFIRM_SAMPLES)
+                finish_transition_locked();
+        } else {
+            s_zero_output_off_samples = 0;
+        }
+    } else {
+        s_zero_output_off_samples = 0;
+        if (transition_confirmation_open && r20_valid &&
+            transition_r20_compatible && r26_valid &&
+            (r26 == 0x01 || r26 == 0x02)) {
+            finish_transition_locked();
+        }
     }
 
     if (r20_valid && r20_known_fault(r20)) {
@@ -1311,7 +1374,7 @@ static uint8_t retained_resume_first_gear(uint8_t target)
      * instead of injecting a cold-start gear-10 ramp that could add topology
      * switching. Temperature mode computes this target immediately beforehand.
      */
-    return target;
+    return s_heating_session_established ? target : cold_start_first_gear(target);
 }
 
 static void advance_ramp(void)
@@ -1387,6 +1450,34 @@ static void emit_status(void)
 #endif
 }
 
+#if MCL02M_POWER_SWEEP_BUILD
+static void emit_sweep_status(uint16_t read_attempt_mask,
+                              uint16_t read_error_mask,
+                              uint8_t write_attempt_mask,
+                              uint8_t write_error_mask)
+{
+    powerboard_status_t s;
+    powerboard_control_get_status(&s);
+    ESP_LOGI("pbsweep",
+             "X,D,%lld,%" PRIu32 ",%s,%u,%u,%02X,%02X,%02X,%02X,"
+             "%04X,%04X,%02X,%02X,%04X,"
+             "%02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X,"
+             "%02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X,"
+             "%u,%u,%" PRIu32 ",%" PRIu32 ",%u,%s",
+             esp_timer_get_time() / 1000, s.completed_cycles,
+             powerboard_state_name(s.state), s.target_gear, s.applied_gear,
+             s.topology, s.last_command_0d, s.last_command_00,
+             s.last_command_0c, read_attempt_mask, read_error_mask,
+             write_attempt_mask, write_error_mask, s.valid_mask,
+             s.registers[0], s.registers[1], s.registers[2], s.registers[3],
+             s.registers[4], s.registers[5], s.registers[6], s.registers[7],
+             s.registers[8], s.registers[9], s.registers[10], s.registers[11],
+             s.registers[12], s.registers[13], s.registers[14], s.registers[15],
+             s.igbt_c, s.bottom_c, s.bad_cycles, s.consecutive_bad_cycles,
+             s.cookware_limited ? 1U : 0U, s.fault);
+}
+#endif
+
 static void control_task(void *arg)
 {
     (void)arg;
@@ -1404,9 +1495,23 @@ static void control_task(void *arg)
     xSemaphoreGive(s_status_lock);
     if (watchdog == ESP_OK) esp_task_wdt_reset();
 
+#if !MCL02M_POWER_SWEEP_BUILD
     static const uint8_t normal_read_order[] = {
         0x26,0x27,0x20,0x21,0x22,0x23,0x24,0x25
     };
+#endif
+#if MCL02M_POWER_SWEEP_BUILD
+    /* Preserve the 500 ms heartbeat and its seven important live reads.  The
+     * final service slot rotates through R25 and R28..R2F, so the experiment
+     * observes every selector without delaying the stock command cadence. */
+    static const uint8_t sweep_live_read_order[] = {
+        0x26,0x27,0x20,0x21,0x22,0x23,0x24
+    };
+    static const uint8_t sweep_service_read_order[] = {
+        0x25,0x28,0x29,0x2a,0x2b,0x2c,0x2d,0x2e,0x2f
+    };
+    size_t sweep_service_index = 0;
+#endif
     static const uint8_t recovery_read_order[] = {
         0x26,0x20,0x22,0x23,0x24
     };
@@ -1422,10 +1527,27 @@ static void control_task(void *arg)
         xSemaphoreTake(s_status_lock, portMAX_DELAY);
         const bool recovery_cycle = s_status.i2c_recovery_active;
         xSemaphoreGive(s_status_lock);
-        const uint8_t *read_order = recovery_cycle ?
-            recovery_read_order : normal_read_order;
-        const size_t read_count = recovery_cycle ?
+        const uint8_t *read_order;
+        size_t read_count;
+#if MCL02M_POWER_SWEEP_BUILD
+        uint8_t sweep_read_order[8];
+        if (!recovery_cycle) {
+            memcpy(sweep_read_order, sweep_live_read_order,
+                   sizeof(sweep_live_read_order));
+            sweep_read_order[7] = sweep_service_read_order[sweep_service_index];
+            sweep_service_index = (sweep_service_index + 1U) %
+                                  sizeof(sweep_service_read_order);
+            read_order = sweep_read_order;
+            read_count = sizeof(sweep_read_order);
+        } else {
+            read_order = recovery_read_order;
+            read_count = sizeof(recovery_read_order);
+        }
+#else
+        read_order = recovery_cycle ? recovery_read_order : normal_read_order;
+        read_count = recovery_cycle ?
             sizeof(recovery_read_order) : sizeof(normal_read_order);
+#endif
         const unsigned read_slot_ms = recovery_cycle ?
             PB_RECOVERY_READ_SLOT_MS : 50U;
         const unsigned command_0d_ms = recovery_cycle ?
@@ -1577,10 +1699,7 @@ static void control_task(void *arg)
                             s_status.transition_command_transmitted = true;
                             s_transition_feedback_baseline = s_status.feedback_sequence;
                             if (s_transition_deadline_us == 0) {
-                                const uint32_t timeout_ms =
-                                    transition_kind == PB_TRANSITION_START ?
-                                    MCL02M_START_CONFIRM_TIMEOUT_MS :
-                                    MCL02M_TRANSITION_CONFIRM_TIMEOUT_MS;
+                                const uint32_t timeout_ms = transition_timeout_ms_locked();
                                 s_transition_deadline_us = esp_timer_get_time() +
                                     (int64_t)timeout_ms * 1000;
                                 if (transition_kind == PB_TRANSITION_START)
@@ -1625,6 +1744,10 @@ static void control_task(void *arg)
 
         advance_ramp();
         emit_status();
+#if MCL02M_POWER_SWEEP_BUILD
+        emit_sweep_status(read_attempt_mask, read_error_mask,
+                          write_attempt_mask, write_error_mask);
+#endif
         if (watchdog == ESP_OK) esp_task_wdt_reset();
 
         TickType_t next = cycle_start;
@@ -1878,6 +2001,7 @@ esp_err_t powerboard_control_start(unsigned gear, unsigned duration_ms)
     s_status.topology = 0;
     s_status.cookware_limited = false;
     s_status.state = PB_STATE_STARTING;
+    s_heating_session_established = false;
     begin_transition_locked(PB_TRANSITION_START,
                             gear == 0 ? PB_STATE_ACTIVE_ZERO : PB_STATE_HEATING,
                             first_gear);
@@ -1916,8 +2040,7 @@ esp_err_t powerboard_control_set_gear(unsigned gear)
             const uint8_t new_target = (uint8_t)gear;
             const uint8_t effective_target = cookware_limited_gear(
                 new_target, s_status.cookware_limited);
-            const uint8_t first_gear =
-                (uint8_t)(effective_target > 10 ? 10 : effective_target);
+            const uint8_t first_gear = cold_start_first_gear(effective_target);
             s_status.target_gear = new_target;
             begin_transition_locked(PB_TRANSITION_START,
                                     first_gear == 0 ? PB_STATE_ACTIVE_ZERO :

@@ -22,6 +22,10 @@ Primary evidence:
 - `_local_private/reverse-engineering/work/ghidra_decompile/all_functions.c`
 - `_local_private/diagnostics/raw-captures/i2c_2026-08-23_stock_startup_sequence/`
 
+The focused quantitative audit of `R21`, all preserved stock captures, and the
+controlled cookware experiment is in
+[STOCK_R21_ANALYSIS.md](STOCK_R21_ANALYSIS.md).
+
 ## Main conclusion
 
 `R26=01` is a valid heating acknowledgement with a restricted cookware capability.

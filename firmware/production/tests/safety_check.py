@@ -117,7 +117,17 @@ def main() -> int:
             "fault_locked(reason);" in power and
             "MCL02M_START_CONFIRM_TIMEOUT_MS :" in power and
             "(int64_t)timeout_ms * 1000" in power,
-            "Start confirmation opens only after a successful nonzero heartbeat and closes strictly at one eight-second deadline")
+            "Start confirmation opens only after a successful command heartbeat and closes strictly at one eight-second deadline")
+    require("MCL02M_ZERO_OUTPUT_CONFIRM_SAMPLES 2U" in power_safety and
+            "zero_session_transition && transition_confirmation_open" in power and
+            "const bool safe_off_feedback" in power and
+            "r20_session_compatible(r20)" in power and
+            "r26_valid && r26 == 0" in power and
+            "s_zero_output_off_samples < MCL02M_ZERO_OUTPUT_CONFIRM_SAMPLES" in power and
+            "finish_transition_locked();" in power and
+            "PB_STATE_ACTIVE_ZERO" in engine and
+            "s_status.state = COOK_STATE_COOKING" in engine,
+            "zero-output transitions accept two fresh R26=00 samples without requiring a heating session")
     require("powerboard_start_incident_t" in power_header and
             "capture_start_incident_locked" in power and
             'strcmp(reason, "START TIMEOUT")' in power and
@@ -346,7 +356,7 @@ def main() -> int:
             'snprintf(reason, sizeof(reason), "START %s"' in power and
             'snprintf(reason, sizeof(reason), "RESUME %s"' in power and
             "retained_resume_first_gear" in power and
-            "return target;" in
+            "s_heating_session_established ? target : cold_start_first_gear(target)" in
             power[power.find("static uint8_t retained_resume_first_gear"):
                   power.find("static void advance_ramp")] and
             "copy_transition_status_locked" in engine and

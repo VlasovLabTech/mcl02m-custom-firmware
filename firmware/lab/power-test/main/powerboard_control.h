@@ -114,6 +114,7 @@ typedef struct {
     uint32_t transition_confirmed_generation;
     uint32_t transition_rejection_sequence;
     uint32_t feedback_sequence;
+    uint32_t igbt_sample_sequence;
     powerboard_transition_t transition_kind;
     powerboard_state_t transition_requested_state;
     powerboard_state_t transmitted_state;
