@@ -37,7 +37,7 @@ The resulting application is:
 build_sweep/mcl02m_power_sweep.bin
 ```
 
-Its project/version identity is `mcl02m_power_sweep / 0.2.35-dev-sweep`. The flavor
+Its project/version identity is `mcl02m_power_sweep / 0.2.38-dev-sweep`. The flavor
 is mutually exclusive with `MCL02M_PRIVATE_SOUND_BUILD`.
 
 Do not flash or erase bootloader, partition table, NVS, PHY, or factory data for this

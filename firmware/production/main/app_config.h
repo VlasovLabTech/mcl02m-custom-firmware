@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 #ifndef MCL02M_FIRMWARE_VERSION
-#define MCL02M_FIRMWARE_VERSION "0.2.35-dev"
+#define MCL02M_FIRMWARE_VERSION "0.2.38-dev"
 #endif
 
 #define COOKER_MAX_GEAR                 99U
@@ -58,7 +58,10 @@
 #define COOKER_DELAYED_RETRY_WAIT_MS     1000U
 #define COOKER_DELAYED_RETRY_DEADLINE_MS 5000U
 
-#define COOKER_SETTINGS_SCHEMA           5U
+#define COOKER_SETTINGS_SCHEMA           8U
+#define COOKER_CORNER_CONTEXT_MS       5000U
+#define COOKER_CORNER_DEBUG_MS         2000U
+#define COOKER_SESSION_I2C_BAD_MAX       999U
 /* Retain the temporary I2C-loss OLED implementation, but omit it from production. */
 #define COOKER_I2C_DEBUG_DISPLAY_ENABLED  0U
 #define COOKER_I2C_DEBUG_MAX             6U

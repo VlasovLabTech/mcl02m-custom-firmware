@@ -109,6 +109,9 @@ static void load_defaults(void)
     s_settings.show_sleep_clock = 1;
     s_settings.wifi_enabled = 0;
     s_settings.show_i2c_debug = 0;
+    s_settings.keep_oled_on_while_cooking = 0;
+    s_settings.show_r21 = 0;
+    s_settings.show_bad_i2c_count = 0;
     s_settings.crc32 = settings_crc(&s_settings);
 
     memset(s_profiles, 0, sizeof(s_profiles));
@@ -152,7 +155,8 @@ esp_err_t settings_init(void)
     if (nvs_get_blob(handle, "settings", &stored, &size) == ESP_OK &&
         size == sizeof(stored) &&
         (stored.schema == 1U || stored.schema == 2U || stored.schema == 3U ||
-         stored.schema == 4U ||
+         stored.schema == 4U || stored.schema == 5U || stored.schema == 6U ||
+         stored.schema == 7U ||
          stored.schema == COOKER_SETTINGS_SCHEMA) &&
         stored.crc32 == settings_crc(&stored)) {
         s_settings = stored;
@@ -166,6 +170,9 @@ esp_err_t settings_init(void)
             }
             if (stored.schema <= 2U) s_settings.show_sleep_clock = 1;
             if (stored.schema <= 4U) s_settings.show_i2c_debug = 0;
+            if (stored.schema <= 5U) s_settings.keep_oled_on_while_cooking = 0;
+            if (stored.schema <= 6U) s_settings.show_r21 = 0;
+            if (stored.schema <= 7U) s_settings.show_bad_i2c_count = 0;
             /* Wi-Fi is intentionally opt-in after this upgrade. */
             s_settings.wifi_enabled = 0;
             s_settings.crc32 = settings_crc(&s_settings);
@@ -220,6 +227,9 @@ esp_err_t settings_update(const app_settings_t *settings)
     if (settings == NULL || settings->language > LANG_ZH ||
         settings->timer_screen_mode > TIMER_SCREEN_ALWAYS ||
         settings->show_i2c_debug > 1 ||
+        settings->keep_oled_on_while_cooking > 1 ||
+        settings->show_r21 > 1 ||
+        settings->show_bad_i2c_count > 1 ||
         settings->sleep_minutes < 1 || settings->sleep_minutes > 60 ||
         !oled_timeout_valid(settings->oled_timeout_s) ||
         settings->timezone_minutes < -720 || settings->timezone_minutes > 840)

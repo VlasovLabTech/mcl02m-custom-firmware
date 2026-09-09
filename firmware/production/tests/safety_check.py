@@ -518,13 +518,24 @@ def main() -> int:
             "fault/live screens cannot be hidden behind a menu overlay")
     require("TIMER_SCREEN_ALWAYS" in display and "ui_oled_show_timer" in display,
             "TIMER SCREEN setting supports movable countdown or full OLED off")
-    require("#define SETTING_ITEMS 12" in ui and
+    require("keep_oled_on_while_cooking" in settings and
+            "keep_oled_on_while_cooking > 1" in settings and
+            "cooking_screen_always" in display and
+            all(state in display for state in ("COOK_STATE_STARTING", "COOK_STATE_COOKING",
+                                               "COOK_STATE_PAUSED", "COOK_STATE_NO_PAN",
+                                               "COOK_STATE_STOPPING")),
+            "saved COOK SCREEN setting holds OLED power only through active cooking states")
+    require("#define SETTING_ITEMS 15" in ui and
             ui.count('"SHOW"') >= 4 and ui.count('"ПОКАЗАТЬ"') >= 4 and
             all(label in ui for label in ('"LIVE DATA"', '"IGBT T°C"',
-                                          '"TIMER SCREEN"', '"SLEEP CLOCK"')),
-            "Settings 3-6 use SHOW plus a descriptive second line")
-    require("#define SETTING_FIRMWARE_VERSION_INDEX 10U" in ui and
-            "#define SETTING_FACTORY_INDEX 11U" in ui and
+                                          '"TIMER SCREEN"', '"SCREEN ON"', '"COOK MODE"',
+                                          '"ЭКРАН ПРИ"', '"ГОТОВКЕ ВКЛ"',
+                                          '"SLEEP CLOCK"', '"屏幕常开"', '"启动后"',
+                                          '"DEBUG SHOW"', '"R21"', '"SHOW DEBUG"',
+                                          '"BAD I2C CNT"')),
+            "Settings use short two-line labels and keep both diagnostic labels in English")
+    require("#define SETTING_FIRMWARE_VERSION_INDEX 13U" in ui and
+            "#define SETTING_FACTORY_INDEX 14U" in ui and
             "VIEW_FIRMWARE_VERSION" in ui and
             "display_prod_set_version_overlay" in ui and
             "MCL02M_FIRMWARE_VERSION" in ui and
@@ -690,13 +701,20 @@ def main() -> int:
             (ROOT / "tests" / "policy_tests.py").read_text(encoding="utf-8"),
             "delay expiry synchronizes the real mode view, profile browsing cannot mutate a delayed run, and long-center Stop/Cancel outranks timer editors")
     require("ui_oled_show_cooking" in display and "settings.show_context_value" in display and
-            "settings.show_igbt" in display and "cooker.timer_enabled" in display,
-            "active screens expose timer and optional contextual/IGBT readings")
+            "settings.show_igbt" in display and "settings.show_r21" in display and
+            "settings.show_bad_i2c_count" in display and
+            "cooker.r21_valid" in display and '"R%u"' in display and
+            "cooker.i2c_bad_session_count" in display and '"B%03u"' in display and
+            "cooker.timer_enabled" in display,
+            "active screens expose timer and optional contextual/IGBT/R21/session-I2C readings")
     encoder_body = ui[ui.find("static void encoder_event"):ui.find("static void central_short")]
     require("sound_play" not in encoder_body and
-            "((now / 1000000LL) % 7LL) >= 5LL" in display and
-            "settings.show_igbt && !timer_active" in display,
-            "encoder stays silent and IGBT replaces context only for the agreed 5s/2s no-timer cycle")
+            "COOKER_CORNER_CONTEXT_MS" in display and
+            "COOKER_CORNER_DEBUG_MS" in display and
+            "settings.show_igbt" in display and "settings.show_r21" in display and
+            "settings.show_bad_i2c_count" in display and
+            "!timer_active && !paused" in display,
+            "encoder stays silent and IGBT/R21/BAD-I2C rotate after the agreed no-timer context phase")
     require("Keep OLED blank until ui_controller" in display and
             "s_overlay_kind = OVERLAY_TEXT" in display and "s_overlay = true" in display,
             "boot cannot expose the transient technical status screen")
@@ -753,10 +771,18 @@ def main() -> int:
             "elapsed % 42U" in display and "(elapsed / 42U) % 3U" in display and
             "ui_oled_show_sleep_clock" in outputs,
             "sleep Clock is persisted and moves down one pixel per minute across center/left/right passes")
-    require("#define COOKER_SETTINGS_SCHEMA           5U" in config and
+    require("#define COOKER_SETTINGS_SCHEMA           8U" in config and
             "sizeof(app_settings_t) == 32" in settings and
-            "stored.schema == 4U" in settings,
-            "settings schema 5 preserves and migrates the 32-byte settings blob")
+            "stored.schema == 7U" in settings and
+            "if (stored.schema <= 6U) s_settings.show_r21 = 0;" in settings and
+            "if (stored.schema <= 7U) s_settings.show_bad_i2c_count = 0;" in settings,
+            "settings schema 8 preserves and migrates the 32-byte settings blob")
+    require("pb->critical_bad_cycles - s_i2c_bad_session_baseline" in engine and
+            "COOKER_SESSION_I2C_BAD_MAX" in engine and
+            "s_i2c_bad_session_active = true;" in engine and
+            engine.count("s_status.i2c_bad_session_count = 0;") >= 2 and
+            '\\"i2c_bad_session_count\\":%u' in engine,
+            "Bxxx counts every session-critical bad I2C cycle, saturates at 999, and resets at terminal states")
     require("input_status.state == COOK_STATE_SLEEP && event->type == UI_INPUT_MAIN_PRESSED" in ui and
             "input_status.state == COOK_STATE_SLEEP && event->type == UI_INPUT_ENCODER" in ui and
             "s_swallow_main = true" in ui and "s_encoder_guard_until_us" in ui,
@@ -897,6 +923,15 @@ def main() -> int:
             web.count("min=40 max=190") == 5 and
             all(f"id=ptime{i}" in web for i in range(1, 6)),
             "web settings are one-per-line and Profiles expose five timed 40..190 C cells")
+    require("id=cookscreen" in web and "cook_screen:+cookscreen.checked" in web and
+            '\\"cook_screen\\":%s' in web and "settings.keep_oled_on_while_cooking" in web,
+            "web settings persist and report the cooking-screen OLED preference")
+    require("id=r21" in web and "r21:+r21.checked" in web and
+            '\\"r21\\":%s' in web and "settings.show_r21" in web,
+            "web settings persist and report the DEBUG SHOW R21 preference")
+    require("id=badi2c" in web and "bad_i2c:+badi2c.checked" in web and
+            '\\"bad_i2c\\":%s' in web and "settings.show_bad_i2c_count" in web,
+            "web settings persist and report the SHOW DEBUG BAD I2C CNT preference")
     require("network_prod_apply_timezone" in network and "tzset()" in network,
             "timezone changes are applied without requiring a reboot")
 
@@ -961,8 +996,8 @@ def main() -> int:
     require("#define MCL02M_I2C_RECOVERY_TRIGGER_CYCLES 3U" in power_safety and
             "#define MCL02M_I2C_RECOVERY_GOOD_CYCLES 2U" in power_safety and
             "#define MCL02M_I2C_RECOVERY_HEARTBEAT_MS 320U" in power_safety and
-            "#define MCL02M_I2C_CRITICAL_LOSS_TIMEOUT_MS 5000U" in power_safety and
-            "#define MCL02M_I2C_COMMAND_LOSS_TIMEOUT_MS 3000U" in power_safety and
+            "#define MCL02M_I2C_CRITICAL_LOSS_TIMEOUT_MS 15000U" in power_safety and
+            "#define MCL02M_I2C_COMMAND_LOSS_TIMEOUT_MS 10000U" in power_safety and
             "PB_CRITICAL_READ_MASK" in power and "PB_SERVICE_READ_MASK" in power and
             "recovery_read_order" in power and "service_read_bad" in power and
             "complete_good_cycle" in power and

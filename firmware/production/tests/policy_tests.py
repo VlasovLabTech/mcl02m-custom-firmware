@@ -320,7 +320,7 @@ class StartProtocol:
             now_ms - self.command_bad_since_ms
         )
         if (
-            (critical_loss_ms >= 5_000 or command_loss_ms >= 3_000)
+            (critical_loss_ms >= 15_000 or command_loss_ms >= 10_000)
             and self.state not in {"STOPPED", "FAULT"}
         ):
             if self.i2c_incident is None:
@@ -331,7 +331,7 @@ class StartProtocol:
                     write_error_mask=0 if command_ok else 0x07,
                     critical_loss_ms=critical_loss_ms,
                     command_loss_ms=command_loss_ms,
-                    reason="COMMAND LOSS" if command_loss_ms >= 3_000
+                    reason="COMMAND LOSS" if command_loss_ms >= 10_000
                     else "CRITICAL LOSS",
                 )
             self._fault("I2C LOST")
@@ -402,7 +402,7 @@ class StopTransaction:
         command_loss_ms = 0 if self.command_bad_since_ms is None else (
             now_ms - self.command_bad_since_ms
         )
-        if (critical_loss_ms >= 5_000 or command_loss_ms >= 3_000) and self.issue == "NONE":
+        if (critical_loss_ms >= 15_000 or command_loss_ms >= 10_000) and self.issue == "NONE":
             self.issue = "I2C LOST"
 
         if r20 in KNOWN_R20_FAULTS and self.issue == "NONE":
@@ -1019,6 +1019,32 @@ def live_screen_kind(state: str) -> str:
     return "FOCUS" if state in {"STARTING", "COOKING", "PAUSED", "STOPPING"} else "TEXT"
 
 
+def corner_reading(elapsed_ms: int, *, show_igbt: bool, show_r21: bool,
+                   show_bad_i2c: bool = False, timer: bool = False,
+                   paused: bool = False) -> str:
+    if timer or paused:
+        return "CONTEXT"
+    phases = [("CONTEXT", 5_000)]
+    if show_igbt:
+        phases.append(("IGBT", 2_000))
+    if show_r21:
+        phases.append(("R21", 2_000))
+    if show_bad_i2c:
+        phases.append(("BAD_I2C", 2_000))
+    position = elapsed_ms % sum(duration for _, duration in phases)
+    for name, duration in phases:
+        if position < duration:
+            return name
+        position -= duration
+    raise AssertionError("unreachable corner phase")
+
+
+def session_i2c_bad_count(baseline: int, current: int, *, active: bool) -> int:
+    if not active:
+        return 0
+    return min((current - baseline) & 0xFFFFFFFF, 999)
+
+
 def run() -> None:
     timer = Timer(270)
     timer.tick("COOKING", 10)
@@ -1253,10 +1279,13 @@ def run() -> None:
     lost_i2c = StartProtocol()
     lost_i2c.start()
     lost_i2c.heartbeat(0)
-    for timestamp in (500, 1_000, 1_500, *range(1_820, 5_500, 320)):
+    lost_i2c.sample(100, r20=0, r26=2)
+    for timestamp in (500, 1_000, 1_500, *range(1_820, 15_500, 320)):
         lost_i2c.sample(timestamp, i2c_ok=False)
-    assert lost_i2c.state == "STARTING" and lost_i2c.recovery_active
-    lost_i2c.sample(5_500, i2c_ok=False)
+    assert lost_i2c.state == "HEATING" and lost_i2c.recovery_active
+    lost_i2c.sample(15_499, i2c_ok=False)
+    assert lost_i2c.state == "HEATING"
+    lost_i2c.sample(15_500, i2c_ok=False)
     assert lost_i2c.state == "FAULT" and lost_i2c.incident is None
     assert lost_i2c.i2c_incident is not None
     assert lost_i2c.i2c_incident.reason == "CRITICAL LOSS"
@@ -1275,10 +1304,13 @@ def run() -> None:
     command_loss = StartProtocol()
     command_loss.start()
     command_loss.heartbeat(0)
-    for timestamp in (500, 1_000, 1_500, 1_820, 2_140, 2_460, 2_780, 3_100):
+    command_loss.sample(100, r20=0, r26=2)
+    for timestamp in (500, 1_000, 1_500, *range(1_820, 10_500, 320)):
         command_loss.sample(timestamp, r20=0, r26=2, command_ok=False)
     assert command_loss.state == "HEATING" and command_loss.recovery_active
-    command_loss.sample(3_500, r20=0, r26=2, command_ok=False)
+    command_loss.sample(10_499, r20=0, r26=2, command_ok=False)
+    assert command_loss.state == "HEATING"
+    command_loss.sample(10_500, r20=0, r26=2, command_ok=False)
     assert command_loss.state == "FAULT"
     assert command_loss.i2c_incident is not None
     assert command_loss.i2c_incident.reason == "COMMAND LOSS"
@@ -1290,10 +1322,11 @@ def run() -> None:
     transient_command = StartProtocol()
     transient_command.start()
     transient_command.heartbeat(0)
-    for timestamp in (500, 1_000, 1_500, 1_820, 2_140, 2_460, 2_780, 3_100):
+    transient_command.sample(100, r20=0, r26=2)
+    for timestamp in (500, 1_000, 1_500, *range(1_820, 10_180, 320)):
         transient_command.sample(timestamp, r20=0, r26=2, command_ok=False)
-    transient_command.sample(3_180, r20=0, r26=2)
-    transient_command.sample(3_500, r20=0, r26=2)
+    transient_command.sample(10_180, r20=0, r26=2)
+    transient_command.sample(10_500, r20=0, r26=2)
     assert transient_command.state == "HEATING"
     assert not transient_command.recovery_active
     assert transient_command.i2c_incident is None
@@ -1371,13 +1404,14 @@ def run() -> None:
 
     lost_stop = StopTransaction()
     lost_stop.begin("TIMER COMPLETE", "COMPLETE")
-    for timestamp in (500, 1_000, 1_500, 2_000, 2_500, 3_000, 3_500):
+    for timestamp in range(500, 10_501, 500):
         lost_stop.write_heartbeat((False, False, False))
         lost_stop.feedback(timestamp, valid=False, i2c_bad=True)
     assert lost_stop.state == "STOPPING"
-    assert lost_stop.reason == "TIMER COMPLETE" and lost_stop.issue == "I2C LOST"
-    lost_stop.feedback(4_000, r26=0)
-    lost_stop.feedback(4_500, r26=0)
+    assert lost_stop.reason == "TIMER COMPLETE" and lost_stop.issue == "STOP TIMEOUT"
+    lost_stop.write_heartbeat((True, True, True))
+    lost_stop.feedback(11_000, r26=0)
+    lost_stop.feedback(11_500, r26=0)
     assert lost_stop.state == "COMPLETE"
 
     orthogonal_stop = StopTransaction()
@@ -1695,6 +1729,29 @@ def run() -> None:
     delayed = DelayedStartAttempts()
     delayed.attempt("no_pan")
     assert delayed.attempts == 1 and not delayed.retry_pending and delayed.fault is None
+    assert corner_reading(0, show_igbt=False, show_r21=False) == "CONTEXT"
+    assert corner_reading(4_999, show_igbt=True, show_r21=True) == "CONTEXT"
+    assert corner_reading(5_000, show_igbt=True, show_r21=True) == "IGBT"
+    assert corner_reading(6_999, show_igbt=True, show_r21=True) == "IGBT"
+    assert corner_reading(7_000, show_igbt=True, show_r21=True) == "R21"
+    assert corner_reading(8_999, show_igbt=True, show_r21=True) == "R21"
+    assert corner_reading(9_000, show_igbt=True, show_r21=True) == "CONTEXT"
+    assert corner_reading(9_000, show_igbt=True, show_r21=True,
+                          show_bad_i2c=True) == "BAD_I2C"
+    assert corner_reading(10_999, show_igbt=True, show_r21=True,
+                          show_bad_i2c=True) == "BAD_I2C"
+    assert corner_reading(11_000, show_igbt=True, show_r21=True,
+                          show_bad_i2c=True) == "CONTEXT"
+    assert corner_reading(5_000, show_igbt=False, show_r21=True) == "R21"
+    assert corner_reading(5_000, show_igbt=True, show_r21=False) == "IGBT"
+    assert corner_reading(5_000, show_igbt=False, show_r21=False,
+                          show_bad_i2c=True) == "BAD_I2C"
+    assert corner_reading(7_000, show_igbt=True, show_r21=True, timer=True) == "CONTEXT"
+    assert corner_reading(7_000, show_igbt=True, show_r21=True, paused=True) == "CONTEXT"
+    assert session_i2c_bad_count(100, 100, active=True) == 0
+    assert session_i2c_bad_count(100, 101, active=True) == 1
+    assert session_i2c_bad_count(100, 1_500, active=True) == 999
+    assert session_i2c_bad_count(100, 500, active=False) == 0
     print("POLICY TESTS: PASS")
 
 

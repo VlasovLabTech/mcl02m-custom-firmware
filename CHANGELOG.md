@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.2.38-dev — 2026-09-09
+
+- Added the persisted, default-off `SHOW DEBUG BAD I2C CNT` setting with the same
+  English label in every OLED language. During a cooking session it displays
+  `B000…B999` for the accumulated number of critical bad I²C cycles, including
+  isolated failures; successful cycles do not reduce or reset the value.
+- The session counter takes its baseline before `Arm/Start`, saturates at 999, and
+  resets after a confirmed cooking Stop/fault and again before a new successful
+  session. Service-register failures that cannot independently cause E09 are excluded.
+- Added `Bxxx` to the existing no-timer corner rotation alongside normal context,
+  IGBT temperature and raw R21, and exposed the setting/value through the local web
+  diagnostics without changing E09 thresholds or any cooking behavior.
+
+## 0.2.37-dev — 2026-09-09
+
+- Added the persisted, default-off `DEBUG SHOW R21` setting with the same English
+  label in every OLED language. It shows the checksum-valid raw decimal load-feedback
+  byte as `Rxxx`; no control or safety decision consumes it.
+- Extended the no-timer corner cycle to 5 seconds of normal context, 2 seconds of
+  IGBT temperature when enabled, and 2 seconds of R21 when enabled. Timer and Pause
+  retain their existing uncluttered behavior.
+- Added the same read-only setting to the local web page, exposed R21 validity in the
+  cooker snapshot, migrated the fixed 32-byte settings blob to schema 7, and updated
+  the trilingual offline manual.
+
 ## 0.2.34-dev — 2026-09-01
 
 - Moved the mandatory active-session IGBT advisory to the buzzer's louder

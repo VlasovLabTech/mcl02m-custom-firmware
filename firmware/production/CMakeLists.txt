@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 
 option(MCL02M_PRIVATE_SOUND_BUILD "Use local non-public Wake/Sleep melodies" OFF)
 option(MCL02M_POWER_SWEEP_BUILD "Build the supervised cookware power-sweep image" OFF)
-set(MCL02M_BASE_VERSION "0.2.35-dev")
+set(MCL02M_BASE_VERSION "0.2.38-dev")
 if(MCL02M_PRIVATE_SOUND_BUILD AND MCL02M_POWER_SWEEP_BUILD)
     message(FATAL_ERROR "Private sounds and the power-sweep experiment are separate build flavors")
 elseif(MCL02M_POWER_SWEEP_BUILD)

@@ -22,16 +22,20 @@
 #define LINE_BYTES 32
 #define HOME_ITEMS 7
 #if COOKER_I2C_DEBUG_DISPLAY_ENABLED
-#define SETTING_ITEMS 13
-#define SETTING_I2C_DEBUG_INDEX 9U
-#define SETTING_WIFI_INDEX 10U
-#define SETTING_FIRMWARE_VERSION_INDEX 11U
-#define SETTING_FACTORY_INDEX 12U
+#define SETTING_ITEMS 16
+#define SETTING_R21_DEBUG_INDEX 10U
+#define SETTING_BAD_I2C_COUNT_INDEX 11U
+#define SETTING_I2C_DEBUG_INDEX 12U
+#define SETTING_WIFI_INDEX 13U
+#define SETTING_FIRMWARE_VERSION_INDEX 14U
+#define SETTING_FACTORY_INDEX 15U
 #else
-#define SETTING_ITEMS 12
-#define SETTING_WIFI_INDEX 9U
-#define SETTING_FIRMWARE_VERSION_INDEX 10U
-#define SETTING_FACTORY_INDEX 11U
+#define SETTING_ITEMS 15
+#define SETTING_R21_DEBUG_INDEX 10U
+#define SETTING_BAD_I2C_COUNT_INDEX 11U
+#define SETTING_WIFI_INDEX 12U
+#define SETTING_FIRMWARE_VERSION_INDEX 13U
+#define SETTING_FACTORY_INDEX 14U
 #endif
 #define WIFI_ITEMS 4
 #define EDITOR_TIMEOUT_US (10LL * 1000000LL)
@@ -189,8 +193,8 @@ static const char *home_subtitle(unsigned item, app_language_t language)
 static const char *setting_name(unsigned item, app_language_t language)
 {
     static const char *en[SETTING_ITEMS] = {
-        "LANGUAGE", "SOUND", "SHOW", "SHOW", "SHOW", "SHOW",
-        "SLEEP MIN", "OLED TIME", "TIMEZONE",
+        "LANGUAGE", "SOUND", "SHOW", "SHOW", "SHOW", "SCREEN ON", "SHOW",
+        "SLEEP MIN", "OLED TIME", "TIMEZONE", "DEBUG SHOW", "SHOW DEBUG",
 #if COOKER_I2C_DEBUG_DISPLAY_ENABLED
         "SHOW",
 #endif
@@ -198,8 +202,8 @@ static const char *setting_name(unsigned item, app_language_t language)
         "FACTORY"
     };
     static const char *ru[SETTING_ITEMS] = {
-        "ЯЗЫК", "ЗВУК", "ПОКАЗАТЬ", "ПОКАЗАТЬ", "ПОКАЗАТЬ", "ПОКАЗАТЬ",
-        "СОН МИН", "ЭКРАН ВР", "ЧАС ПОЯС",
+        "ЯЗЫК", "ЗВУК", "ПОКАЗАТЬ", "ПОКАЗАТЬ", "ПОКАЗАТЬ", "ЭКРАН ПРИ", "ПОКАЗАТЬ",
+        "СОН МИН", "ЭКРАН ВР", "ЧАС ПОЯС", "DEBUG SHOW", "SHOW DEBUG",
 #if COOKER_I2C_DEBUG_DISPLAY_ENABLED
         "ПОКАЗАТЬ",
 #endif
@@ -207,8 +211,8 @@ static const char *setting_name(unsigned item, app_language_t language)
         "ЗАВОДСКИЕ"
     };
     static const char *zh[SETTING_ITEMS] = {
-        "语言", "声音", "显示", "显示", "显示", "显示",
-        "休眠分钟", "屏幕时间", "时区",
+        "语言", "声音", "显示", "显示", "显示", "屏幕常开", "显示",
+        "休眠分钟", "屏幕时间", "时区", "DEBUG SHOW", "SHOW DEBUG",
 #if COOKER_I2C_DEBUG_DISPLAY_ENABLED
         "显示",
 #endif
@@ -227,7 +231,10 @@ static const char *setting_name_second(unsigned item, app_language_t language)
     case 2: return tr(language, "LIVE DATA", "РАБ ДАНН", "实时数据");
     case 3: return "IGBT T°C";
     case 4: return tr(language, "TIMER SCREEN", "ТАЙМЕР", "定时屏幕");
-    case 5: return tr(language, "SLEEP CLOCK", "ЧАСЫ В СНЕ", "休眠时钟");
+    case 5: return tr(language, "COOK MODE", "ГОТОВКЕ ВКЛ", "启动后");
+    case 6: return tr(language, "SLEEP CLOCK", "ЧАСЫ В СНЕ", "休眠时钟");
+    case SETTING_R21_DEBUG_INDEX: return "R21";
+    case SETTING_BAD_I2C_COUNT_INDEX: return "BAD I2C CNT";
 #if COOKER_I2C_DEBUG_DISPLAY_ENABLED
     case SETTING_I2C_DEBUG_INDEX: return "I2C ERRORS";
 #endif
@@ -239,7 +246,9 @@ static const char *setting_name_second(unsigned item, app_language_t language)
 
 static bool setting_is_toggle(unsigned item)
 {
-    if (item >= 1U && item <= 5U) return true;
+    if (item >= 1U && item <= 6U) return true;
+    if (item == SETTING_R21_DEBUG_INDEX) return true;
+    if (item == SETTING_BAD_I2C_COUNT_INDEX) return true;
 #if COOKER_I2C_DEBUG_DISPLAY_ENABLED
     if (item == SETTING_I2C_DEBUG_INDEX) return true;
 #endif
@@ -314,8 +323,32 @@ static void render(void)
     const bool blink_on = ((xTaskGetTickCount() * portTICK_PERIOD_MS) % BLINK_PERIOD_MS) <
                           BLINK_VISIBLE_MS;
     const bool timer_active = status.timer_enabled;
-    const bool show_igbt_phase = settings.show_igbt && !timer_active &&
-                                 ((xTaskGetTickCount() * portTICK_PERIOD_MS) % 7000U) >= 5000U;
+    const uint32_t corner_cycle_ms = COOKER_CORNER_CONTEXT_MS +
+        (settings.show_igbt ? COOKER_CORNER_DEBUG_MS : 0U) +
+        (settings.show_r21 ? COOKER_CORNER_DEBUG_MS : 0U) +
+        (settings.show_bad_i2c_count ? COOKER_CORNER_DEBUG_MS : 0U);
+    uint32_t corner_phase_ms =
+        (xTaskGetTickCount() * portTICK_PERIOD_MS) % corner_cycle_ms;
+    bool show_igbt_phase = false;
+    bool show_r21_phase = false;
+    bool show_bad_i2c_phase = false;
+    if (!timer_active && corner_phase_ms >= COOKER_CORNER_CONTEXT_MS) {
+        corner_phase_ms -= COOKER_CORNER_CONTEXT_MS;
+        if (settings.show_igbt) {
+            if (corner_phase_ms < COOKER_CORNER_DEBUG_MS)
+                show_igbt_phase = true;
+            else
+                corner_phase_ms -= COOKER_CORNER_DEBUG_MS;
+        }
+        if (!show_igbt_phase && settings.show_r21) {
+            if (corner_phase_ms < COOKER_CORNER_DEBUG_MS)
+                show_r21_phase = true;
+            else
+                corner_phase_ms -= COOKER_CORNER_DEBUG_MS;
+        }
+        if (!show_igbt_phase && !show_r21_phase && settings.show_bad_i2c_count)
+            show_bad_i2c_phase = true;
+    }
 
     switch (s_view) {
     case VIEW_HOME: {
@@ -340,6 +373,11 @@ static void render(void)
         if (show_igbt_phase) {
             if (status.readings_valid) snprintf(right, sizeof(right), "I%u°", status.igbt_c);
             else strlcpy(right, "I--", sizeof(right));
+        } else if (show_r21_phase) {
+            if (status.r21_valid) snprintf(right, sizeof(right), "R%u", status.r21_value);
+            else strlcpy(right, "R--", sizeof(right));
+        } else if (show_bad_i2c_phase) {
+            snprintf(right, sizeof(right), "B%03u", status.i2c_bad_session_count);
         } else if (settings.show_context_value) {
             if (status.readings_valid) snprintf(right, sizeof(right), "T%u°", status.bottom_c);
             else strlcpy(right, "T--", sizeof(right));
@@ -374,12 +412,12 @@ static void render(void)
         else if (setting_is_toggle(s_setting))
             snprintf(l2, sizeof(l2), "%s", s_setting_value ?
                      tr(lang, "ON", "ВКЛ", "开") : tr(lang, "OFF", "ВЫКЛ", "关"));
-        else if (s_setting == 8) {
+        else if (s_setting == 9) {
             const int absolute = abs(s_setting_value);
             snprintf(l2, sizeof(l2), "UTC%c%d:%02d", s_setting_value >= 0 ? '+' : '-',
                      absolute / 60, absolute % 60);
         }
-        else if (s_setting == 7) {
+        else if (s_setting == 8) {
             if (s_setting_value < 3600)
                 snprintf(l2, sizeof(l2), "%d %s", s_setting_value / 60,
                          tr(lang, "MIN", "МИН", "分钟"));
@@ -666,10 +704,13 @@ static void open_setting_value(void)
     case 2: s_setting_value = settings.show_context_value; break;
     case 3: s_setting_value = settings.show_igbt; break;
     case 4: s_setting_value = settings.timer_screen_mode == TIMER_SCREEN_ALWAYS; break;
-    case 5: s_setting_value = settings.show_sleep_clock; break;
-    case 6: s_setting_value = settings.sleep_minutes; break;
-    case 7: s_setting_value = settings.oled_timeout_s; break;
-    case 8: s_setting_value = settings.timezone_minutes; break;
+    case 5: s_setting_value = settings.keep_oled_on_while_cooking; break;
+    case 6: s_setting_value = settings.show_sleep_clock; break;
+    case 7: s_setting_value = settings.sleep_minutes; break;
+    case 8: s_setting_value = settings.oled_timeout_s; break;
+    case 9: s_setting_value = settings.timezone_minutes; break;
+    case SETTING_R21_DEBUG_INDEX: s_setting_value = settings.show_r21; break;
+    case SETTING_BAD_I2C_COUNT_INDEX: s_setting_value = settings.show_bad_i2c_count; break;
 #if COOKER_I2C_DEBUG_DISPLAY_ENABLED
     case SETTING_I2C_DEBUG_INDEX: s_setting_value = settings.show_i2c_debug; break;
 #endif
@@ -687,10 +728,13 @@ static void save_setting(void)
     case 2: settings.show_context_value = s_setting_value; break;
     case 3: settings.show_igbt = s_setting_value; break;
     case 4: settings.timer_screen_mode = s_setting_value ? TIMER_SCREEN_ALWAYS : TIMER_SCREEN_AUTO; break;
-    case 5: settings.show_sleep_clock = s_setting_value; break;
-    case 6: settings.sleep_minutes = s_setting_value; break;
-    case 7: settings.oled_timeout_s = s_setting_value; break;
-    case 8: settings.timezone_minutes = s_setting_value; break;
+    case 5: settings.keep_oled_on_while_cooking = s_setting_value; break;
+    case 6: settings.show_sleep_clock = s_setting_value; break;
+    case 7: settings.sleep_minutes = s_setting_value; break;
+    case 8: settings.oled_timeout_s = s_setting_value; break;
+    case 9: settings.timezone_minutes = s_setting_value; break;
+    case SETTING_R21_DEBUG_INDEX: settings.show_r21 = s_setting_value; break;
+    case SETTING_BAD_I2C_COUNT_INDEX: settings.show_bad_i2c_count = s_setting_value; break;
 #if COOKER_I2C_DEBUG_DISPLAY_ENABLED
     case SETTING_I2C_DEBUG_INDEX: settings.show_i2c_debug = s_setting_value; break;
 #endif
@@ -702,7 +746,7 @@ static void save_setting(void)
         return;
     }
     sound_set_enabled(settings.sound_enabled);
-    if (s_setting == 8) network_prod_apply_timezone();
+    if (s_setting == 9) network_prod_apply_timezone();
     s_view = VIEW_SETTINGS;
     display_prod_show_confirm();
 }
@@ -754,8 +798,8 @@ static void encoder_event(const ui_input_event_t *event)
             s_setting_value = clamp(s_setting_value + (step > 0 ? 1 : -1),
                                     LANG_EN, LANG_ZH);
         else if (setting_is_toggle(s_setting)) s_setting_value = !s_setting_value;
-        else if (s_setting == 6) s_setting_value = clamp(s_setting_value + (step > 0 ? 1 : -1), 1, 60);
-        else if (s_setting == 7) s_setting_value = oled_timeout_step(s_setting_value, step);
+        else if (s_setting == 7) s_setting_value = clamp(s_setting_value + (step > 0 ? 1 : -1), 1, 60);
+        else if (s_setting == 8) s_setting_value = oled_timeout_step(s_setting_value, step);
         else s_setting_value = clamp(s_setting_value + (step > 0 ? 30 : -30), -720, 840);
         break;
     case VIEW_WIFI_MENU: s_wifi_selection = (unsigned)clamp((int)s_wifi_selection + (step > 0 ? 1 : -1), 0, WIFI_ITEMS - 1); break;

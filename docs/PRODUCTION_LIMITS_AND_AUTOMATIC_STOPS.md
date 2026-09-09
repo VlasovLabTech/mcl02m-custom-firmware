@@ -5,7 +5,7 @@ real cooker behavior. It covers the production build, not the deliberately stric
 laboratory power-test firmware. Update it whenever a production limit, timeout,
 debounce rule, or automatic Stop/Fault path changes.
 
-Status: source version `0.2.35-dev`, 7 September 2026 (offline build).
+Status: source version `0.2.38-dev`, 9 September 2026 (offline build).
 
 The [2026-09-07 follow-up audit](STATE_MACHINE_FOLLOWUP_2026-09-07.md) corrects
 false transition faults around cooling waits, Pause/Resume and scheduled retries.
@@ -43,12 +43,12 @@ and any enabled cooking countdown continue to apply.
 | Bottom NTC raw sensor outside `0x0B…0xFB` | 2 consecutive checksum-valid samples | `E08`, repeated Stop | Custom sensor-validity guard |
 | Converted IGBT temperature `>98 °C` during a session | 2 consecutive valid samples | Marked interface `E07`, repeated Stop | Explicitly requested interface ceiling; native plain E07 remains separate |
 | Converted bottom temperature `>210 °C` | 6 consecutive valid samples | `E05`-class interface Stop | Explicitly requested 210 °C emergency ceiling and filter |
-| Critical I²C read path lost | 3 bad cycles enter 320 ms recovery; 5 s continuous loss faults | `E09`, repeated Stop | Current agreed recovery policy |
-| Power-board command writes lost | 3 s continuous loss | `E09`, repeated Stop | Current agreed recovery policy |
+| Critical I²C read path lost | 3 bad cycles enter 320 ms recovery; 15 s continuous loss faults | `E09`, repeated Stop | Current agreed recovery policy |
+| Power-board command writes lost | 10 s continuous loss | `E09`, repeated Stop | Current agreed recovery policy |
 | Cooking task stops renewing its lease | 3 s | `ECL`, lower task independently Stops | Custom safety watchdog; can terminate cooking if the cooking task stalls |
 | Start acknowledgement missing | 8 s after the transmitted Start command; nonzero output needs `R26=01/02`, zero output also accepts two fresh compatible `R26=00` samples | `EST`, repeated Stop if unconfirmed; no timeout after a zero wait is confirmed | Custom transactional safety timeout |
 | Active-zero/Pause/Resume/pan-return acknowledgement missing | Normally 3 s; first actual heat after a cold zero wait gets 8 s. Zero transitions also accept two fresh compatible `R26=00` samples | Latched transition fault, normally shown as `EPB`, only if the requested transition remains unconfirmed | Custom transactional safety timeout; physical follow-up remains useful |
-| Temperature sensor communication becomes invalid while regulating | The temperature loop freezes immediately; critical I²C loss must remain continuous for 5 s to become `E09` | The last lower-board output command can remain in effect during the recovery interval | Custom continuity policy; important owner-review item |
+| Temperature sensor communication becomes invalid while regulating | The temperature loop freezes immediately; critical I²C loss must remain continuous for 15 s to become `E09` | The last lower-board output command can remain in effect during the recovery interval | Custom continuity policy; important owner-review item |
 | Retained cooking session reaches wall limit | 8 h including heating, active zero, Pause and NoPan | Transactional Stop, shown as `ETM` | Custom hard ceiling; review before sessions longer than 8 h |
 | Manual Pause reaches 2 h | Continuous manual Pause only | Normal transactional Stop | Explicitly requested; POWER 0/profile wait is not Pause |
 | Cooking timer or full profile reaches 5 h | Countdown/profile accounting | Normal completion Stop | Deliberate timer/profile cap |

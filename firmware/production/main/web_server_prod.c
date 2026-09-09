@@ -56,7 +56,7 @@ static const char PAGE[] =
 "<button onclick=wifi()>Save & connect</button></section>"
 "<section id=settings><h2>Настройки</h2><label>Language <select id=lang><option value=0>English</option><option value=1>Русский</option><option value=2>简体中文</option></select></label>"
 "<label><input id=sound type=checkbox checked> Sound</label><label><input id=context type=checkbox checked> Live data</label>"
-"<label><input id=igbt type=checkbox> IGBT temperature</label><label><input id=tscreen type=checkbox> Timer screen always</label>"
+"<label><input id=igbt type=checkbox> IGBT temperature</label><label><input id=r21 type=checkbox> DEBUG SHOW R21</label><label><input id=badi2c type=checkbox> SHOW DEBUG BAD I2C CNT</label><label><input id=tscreen type=checkbox> Timer screen always</label><label><input id=cookscreen type=checkbox> Screen on while cooking</label>"
 "<label><input id=sclock type=checkbox checked> Clock during sleep</label><br>"
 "<label>Sleep min <input id=sleep type=number min=1 max=60 value=1></label><label>OLED timeout <select id=oled>"
 "<option value=60>1 min</option><option value=120>2 min</option><option value=180 selected>3 min</option>"
@@ -78,10 +78,10 @@ static const char PAGE[] =
 "async function login(){try{let j=await req('/api/login',{method:'POST',body:enc({password:pw.value})});csrf=j.csrf;auth.hidden=true;app.hidden=false;poll()}catch(e){alert(e)}}"
 "async function setup(){try{let j=await req('/api/setup',{method:'POST',body:enc({password:pw.value})});csrf=j.csrf;auth.hidden=true;app.hidden=false;poll()}catch(e){alert(e)}}"
 "async function wifi(){try{await req('/api/wifi',{method:'POST',body:enc({ssid:ssid.value,password:wpass.value})});alert('Saved')}catch(e){alert(e)}}"
-"async function saveSettings(){try{await req('/api/settings',{method:'POST',body:enc({language:lang.value,sound:+sound.checked,context:+context.checked,igbt:+igbt.checked,timer_screen:+tscreen.checked,sleep_clock:+sclock.checked,sleep:sleep.value,oled:oled.value,timezone:timezone.value})});alert('Saved')}catch(e){alert(e)}}"
+"async function saveSettings(){try{await req('/api/settings',{method:'POST',body:enc({language:lang.value,sound:+sound.checked,context:+context.checked,igbt:+igbt.checked,r21:+r21.checked,bad_i2c:+badi2c.checked,timer_screen:+tscreen.checked,cook_screen:+cookscreen.checked,sleep_clock:+sclock.checked,sleep:sleep.value,oled:oled.value,timezone:timezone.value})});alert('Saved')}catch(e){alert(e)}}"
 "async function saveProfile(){try{let o={index:pindex.value-1,name:pname.value};for(let i=1;i<=5;i++){o['mode'+i]=el('pmode'+i).value;o['gear'+i]=el('pgear'+i).value;o['temp'+i]=el('ptemp'+i).value;o['time'+i]=el('ptime'+i).value}await req('/api/profile',{method:'POST',body:enc(o)});alert('Saved')}catch(e){alert(e)}}"
 "let profiles=[],loaded=false;function showProfile(){let p=profiles[Math.max(0,Math.min(4,pindex.value-1))];if(!p)return;pname.value=p.name;for(let i=1;i<=5;i++){let s=p.stages[i-1];el('pmode'+i).value=s[0];el('pgear'+i).value=s[1];el('ptemp'+i).value=s[2];el('ptime'+i).value=Math.floor(s[3]/60)}}"
-"async function poll(){try{let j=await req('/api/status');status.textContent=JSON.stringify(j,null,2);net.textContent=!j.network.enabled?'Wi-Fi OFF':(j.network.sta_connected?'LAN '+j.network.ip:'Setup AP '+j.network.ap_ssid);profiles=j.profiles;if(!loaded){lang.value=j.settings.language;sound.checked=j.settings.sound;context.checked=j.settings.context;igbt.checked=j.settings.igbt;tscreen.checked=j.settings.timer_screen;sclock.checked=j.settings.sleep_clock;sleep.value=j.settings.sleep;oled.value=j.settings.oled;timezone.value=j.settings.timezone;showProfile();loaded=true}setTimeout(poll,1000)}catch(e){auth.hidden=false;app.hidden=true;net.textContent='Login required'}}poll();</script></html>";
+"async function poll(){try{let j=await req('/api/status');status.textContent=JSON.stringify(j,null,2);net.textContent=!j.network.enabled?'Wi-Fi OFF':(j.network.sta_connected?'LAN '+j.network.ip:'Setup AP '+j.network.ap_ssid);profiles=j.profiles;if(!loaded){lang.value=j.settings.language;sound.checked=j.settings.sound;context.checked=j.settings.context;igbt.checked=j.settings.igbt;r21.checked=j.settings.r21;badi2c.checked=j.settings.bad_i2c;tscreen.checked=j.settings.timer_screen;cookscreen.checked=j.settings.cook_screen;sclock.checked=j.settings.sleep_clock;sleep.value=j.settings.sleep;oled.value=j.settings.oled;timezone.value=j.settings.timezone;showProfile();loaded=true}setTimeout(poll,1000)}catch(e){auth.hidden=false;app.hidden=true;net.textContent='Login required'}}poll();</script></html>";
 
 static void random_hex(char output[33])
 {
@@ -300,7 +300,7 @@ static esp_err_t status_handler(httpd_req_t *req)
              "\"network\":{\"enabled\":%s,\"sta_connected\":%s,\"ip\":\"%s\","
              "\"ap_ssid\":\"%s\",\"clock\":%s},"
              "\"settings\":{\"language\":%u,\"sound\":%s,\"context\":%s,"
-             "\"igbt\":%s,\"timer_screen\":%s,\"sleep_clock\":%s,"
+             "\"igbt\":%s,\"r21\":%s,\"bad_i2c\":%s,\"timer_screen\":%s,\"cook_screen\":%s,\"sleep_clock\":%s,"
              "\"i2c_debug\":%s,"
              "\"wifi_enabled\":%s,\"sleep\":%u,\"oled\":%u,"
              "\"timezone\":%d},\"profiles\":%s,\"persistence\":%s,"
@@ -312,7 +312,10 @@ static esp_err_t status_handler(httpd_req_t *req)
              settings.language, settings.sound_enabled ? "true" : "false",
              settings.show_context_value ? "true" : "false",
              settings.show_igbt ? "true" : "false",
+             settings.show_r21 ? "true" : "false",
+             settings.show_bad_i2c_count ? "true" : "false",
              settings.timer_screen_mode == TIMER_SCREEN_ALWAYS ? "true" : "false",
+             settings.keep_oled_on_while_cooking ? "true" : "false",
              settings.show_sleep_clock ? "true" : "false",
              settings.show_i2c_debug ? "true" : "false",
              settings.wifi_enabled ? "true" : "false",
@@ -352,7 +355,10 @@ static esp_err_t settings_handler(httpd_req_t *req)
     settings.sound_enabled = form_int(body, "sound", settings.sound_enabled) != 0;
     settings.show_context_value = form_int(body, "context", settings.show_context_value) != 0;
     settings.show_igbt = form_int(body, "igbt", settings.show_igbt) != 0;
+    settings.show_r21 = form_int(body, "r21", settings.show_r21) != 0;
+    settings.show_bad_i2c_count = form_int(body, "bad_i2c", settings.show_bad_i2c_count) != 0;
     settings.timer_screen_mode = form_int(body, "timer_screen", 0) ? TIMER_SCREEN_ALWAYS : TIMER_SCREEN_AUTO;
+    settings.keep_oled_on_while_cooking = form_int(body, "cook_screen", settings.keep_oled_on_while_cooking) != 0;
     settings.show_sleep_clock = form_int(body, "sleep_clock", settings.show_sleep_clock) != 0;
     settings.sleep_minutes = form_int(body, "sleep", settings.sleep_minutes);
     settings.oled_timeout_s = form_int(body, "oled", settings.oled_timeout_s);

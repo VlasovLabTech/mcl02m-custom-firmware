@@ -78,6 +78,8 @@ static int64_t s_igbt_warning_last_beep_us;
 static int64_t s_delayed_retry_not_before_us;
 static int64_t s_delayed_retry_deadline_us;
 static bool s_delayed_launch_attempt_active;
+static uint32_t s_i2c_bad_session_baseline;
+static bool s_i2c_bad_session_active;
 
 typedef enum {
     STOP_TERMINAL_IDLE = 0,
@@ -305,6 +307,8 @@ static void set_fault_locked(cooker_fault_t fault, const char *detail)
     s_igbt_warning_last_beep_us = 0;
     s_status.pause_remaining_s = 0;
     s_manual_pause_since_us = 0;
+    s_i2c_bad_session_active = false;
+    s_status.i2c_bad_session_count = 0;
     strlcpy(s_status.detail, detail == NULL ? cooking_fault_name(fault) : detail,
             sizeof(s_status.detail));
     sound_stop();
@@ -400,6 +404,10 @@ static esp_err_t begin_run_locked(void)
         gear = initial_temperature_gear_locked();
     if (gear > COOKER_MAX_GEAR) return ESP_ERR_INVALID_ARG;
 
+    powerboard_status_t session_start_pb;
+    powerboard_control_get_status(&session_start_pb);
+    const uint32_t session_i2c_baseline = session_start_pb.critical_bad_cycles;
+
     bool armed = false;
     esp_err_t err = powerboard_control_arm(COOKER_POWERBOARD_ARM_MS);
     if (err == ESP_OK) {
@@ -419,6 +427,14 @@ static esp_err_t begin_run_locked(void)
     powerboard_status_t pb;
     powerboard_control_get_status(&pb);
     copy_transition_status_locked(&pb);
+
+    s_i2c_bad_session_baseline = session_i2c_baseline;
+    s_i2c_bad_session_active = true;
+    const uint32_t initial_bad_cycles =
+        pb.critical_bad_cycles - s_i2c_bad_session_baseline;
+    s_status.i2c_bad_session_count = (uint16_t)(
+        initial_bad_cycles > COOKER_SESSION_I2C_BAD_MAX ?
+        COOKER_SESSION_I2C_BAD_MAX : initial_bad_cycles);
 
     s_active_zero = false;
     s_status.active_zero = false;
@@ -493,6 +509,8 @@ static void finish_normal_stop_locked(void)
     s_complete_notice_since_us = complete ? esp_timer_get_time() : 0;
     s_run_started_us = 0;
     reset_session_timing_locked();
+    s_i2c_bad_session_active = false;
+    s_status.i2c_bad_session_count = 0;
     if (complete) sound_play(SOUND_COMPLETE);
     strlcpy(s_status.detail, s_stop_reason[0] == '\0' ? "STOP" : s_stop_reason,
             sizeof(s_status.detail));
@@ -908,9 +926,18 @@ static void apply_power_status_locked(const powerboard_status_t *pb, int64_t now
     s_status.applied_gear = pb->applied_gear;
     s_status.igbt_c = pb->igbt_c;
     s_status.bottom_c = pb->bottom_c;
+    s_status.r21_value = pb->registers[1];
+    s_status.r21_valid = (pb->valid_mask & (1U << 1)) != 0;
     s_status.i2c_bad_cycles = (uint8_t)(pb->consecutive_bad_cycles > COOKER_I2C_DEBUG_MAX ?
                                         COOKER_I2C_DEBUG_MAX :
                                         pb->consecutive_bad_cycles);
+    if (s_i2c_bad_session_active) {
+        const uint32_t bad_cycles =
+            pb->critical_bad_cycles - s_i2c_bad_session_baseline;
+        s_status.i2c_bad_session_count = (uint16_t)(
+            bad_cycles > COOKER_SESSION_I2C_BAD_MAX ?
+            COOKER_SESSION_I2C_BAD_MAX : bad_cycles);
+    }
     s_status.readings_valid = (pb->valid_mask & ((1U << 3) | (1U << 4))) ==
                               ((1U << 3) | (1U << 4));
     if (readings_were_valid && !s_status.readings_valid) {
@@ -1458,7 +1485,8 @@ size_t cooking_engine_status_json(char *output, size_t output_size)
     return snprintf(output, output_size,
         "{\"state\":\"%s\",\"mode\":%u,\"phase\":%u,\"fault\":\"%s\","
         "\"selected_gear\":%u,\"applied_gear\":%u,\"paused_gear\":%u,\"target_c\":%u,"
-        "\"bottom_c\":%u,\"igbt_c\":%u,\"i2c_bad_cycles\":%u,"
+        "\"bottom_c\":%u,\"igbt_c\":%u,\"r21\":%u,\"r21_valid\":%s,"
+        "\"i2c_bad_cycles\":%u,\"i2c_bad_session_count\":%u,"
         "\"voltage_v\":%u,\"readings_valid\":%s,"
         "\"power_board_revision\":%u,\"power_board_revision_valid\":%s,"
         "\"pan\":%s,\"cookware_limited\":%s,\"cookware_notice_seq\":%" PRIu32 ","
@@ -1495,7 +1523,8 @@ size_t cooking_engine_status_json(char *output, size_t output_size)
         "\"no_pan_s\":%" PRIu32 ",\"detail\":\"%s\"}",
         cooking_state_name(s.state), s.mode, s.temp_phase, cooking_fault_name(s.fault),
         s.selected_gear, s.applied_gear, s.paused_gear, s.target_temperature_c,
-        s.bottom_c, s.igbt_c, s.i2c_bad_cycles,
+        s.bottom_c, s.igbt_c, s.r21_value, s.r21_valid ? "true" : "false",
+        s.i2c_bad_cycles, s.i2c_bad_session_count,
         s.mains_voltage_v, s.readings_valid ? "true" : "false",
         s.power_board_revision, s.power_board_revision_valid ? "true" : "false",
         s.pan_present ? "true" : "false",

@@ -13,7 +13,7 @@ from a request to edit or build software.
 - Xiaomi device model: `chunmi.ihcooker.v2`.
 - Interface controller: Espressif `ESP-WROOM-32D` (classic ESP32).
 - Display: monochrome 64×48 OLED, page-major 384-byte framebuffer.
-- Current custom source version: `0.2.35-dev` (offline audit build; not yet flashed).
+- Current custom source version: `0.2.38-dev` (persisted raw-R21 and session-I²C corner diagnostics). The immediately preceding private 0.2.36 build was flashed on 2026-09-08; 0.2.38 is not flashed.
 - The 2026-09-07 hot-start EST fix and follow-up transition audit are documented in
   `docs/STATE_MACHINE_FOLLOWUP_2026-09-07.md`. Zero-output Start/Pause/Resume/hold
   accept fresh output-off feedback, the first subsequent heating request follows
@@ -34,7 +34,7 @@ from a request to edit or build software.
   equally. `R20/R22/R23/R24/R26` and all `0D/00/0C` writes are critical;
   `R21/R25/R27` are service-only. Three critical-bad cycles enter a 320-ms
   critical-only recovery poll, two complete good cycles restore 500-ms polling,
-  and E09 requires 5 s of continuous critical loss or 3 s of continuous command
+  and E09 requires 15 s of continuous critical loss or 10 s of continuous command
   write loss. The first-cause masks/timers/state/commands are frozen in RAM.
 - `0.2.29-dev` completes the English/Russian/Simplified-Chinese OLED audit. It
   localizes the remaining Chinese firmware/version and power-board headings, the
@@ -542,13 +542,22 @@ Settings menu:
 3. Show live context.
 4. Show IGBT temperature.
 5. Timer screen mode (Auto off or Always countdown).
-6. Show clock in Sleep.
-7. Idle-to-Sleep minutes.
-8. Active OLED timeout (1, 2, 3, 5, 10, 20, 30 min; 1–5 h).
-9. Timezone (`UTC-12:00…UTC+14:00`).
-10. Wi-Fi submenu.
-11. Firmware and live raw `R28` power-board revision.
-12. Factory reset.
+6. `SCREEN ON → COOK MODE`: optional OLED-always-on behavior only while cooking is
+   active (`STARTING`, `COOKING`, `PAUSED`, `NO_PAN`, or `STOPPING`). It does not
+   override the normal Idle, Ready, or Sleep timeout policy.
+7. Show clock in Sleep.
+8. Idle-to-Sleep minutes.
+9. Active OLED timeout (1, 2, 3, 5, 10, 20, 30 min; 1–5 h).
+10. Timezone (`UTC-12:00…UTC+14:00`).
+11. English-only `DEBUG SHOW → R21`: display the last checksum-valid raw decimal
+    `R21` byte as `Rxxx`. With live context and IGBT enabled, the corner rotates
+    5 s context, 2 s IGBT, and 2 s R21. The setting is diagnostic only.
+12. English-only `SHOW DEBUG → BAD I2C CNT`: display `B000…B999` for every
+    critical bad I²C cycle in the current cooking session. Isolated failures count,
+    good cycles do not reset it, and service-only register failures are excluded.
+13. Wi-Fi submenu.
+14. Firmware and live raw `R28` power-board revision.
+15. Factory reset.
 
 The former temporary I²C-counter item is excluded when
 `COOKER_I2C_DEBUG_DISPLAY_ENABLED=0`, as it is in the production build. Its menu,
@@ -677,12 +686,16 @@ Before any release or hardware write:
    power tests with a water load.
 
 The reference artifact identified in `firmware/production/BUILD_MANIFEST.md` follows
-the current source. The deployed `0.2.34-dev-private` app (910112 bytes; SHA-256
-`f874c5e02e8dc12c36df6b6585ce1d7a99ca4ba9854a4bd9412fa6acd8ed5107`) was
-flashed to stock `ota_1` at `0x170000` on 2026-09-01 after explicit owner
+the current source. The deployed preceding `0.2.36-dev-private`
+app (911312 bytes; SHA-256
+`fdee4fc27105f6b2ff2e2eca2e29a57ae81194f3841c74b4504a672c7a19e411`) was
+flashed to stock `ota_1` at `0x170000` on 2026-09-08 after explicit owner
 authorization. Esptool verified the written data and hard-reset the ESP32.
 That deployment did not touch the bootloader, partition table, NVS, `otadata`,
 `ota_0`, PHY or eFuse. This status is not permission for another flash operation.
+The unflashed 0.2.38 source differs by the display-only raw-R21 setting, the
+session-total critical-I²C `Bxxx` setting, and their
+schema/UI/status plumbing; cooking and safety decisions are unchanged.
 
 ## 13. Remaining uncertainties and optional characterization
 
@@ -700,7 +713,7 @@ That deployment did not touch the bootloader, partition table, NVS, `otadata`,
   Service-only `R21/R25/R27` failures never trigger it alone. After three
   critical-bad cycles the task polls the critical set every 320 ms and returns to
   its full 500-ms schedule only after two complete good critical cycles. E09 latches
-  after 5 s of continuous critical-path loss or 3 s of continuous `0D/00/0C` write
+  after 15 s of continuous critical-path loss or 10 s of continuous `0D/00/0C` write
   loss; its RAM incident freezes masks, timers, state and commands. The complete Stop
   sequence is still retransmitted while the fault remains latched. Wiring, pull-ups,
   supply integrity, and EMI coupling still need physical inspection if E09 recurs.

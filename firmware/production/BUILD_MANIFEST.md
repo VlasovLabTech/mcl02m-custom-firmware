@@ -1,9 +1,9 @@
 # Reference offline build manifest
 
-Build date: 2026-09-07
+Build date: 2026-09-09
 ESP-IDF: 6.0.2
 Target: ESP32, Unicore
-Firmware: `0.2.35-dev` (offline audit build; not flashed)
+Firmware: `0.2.38-dev` (persisted raw-R21 and session-I²C corner diagnostics)
 
 The app header embeds compile metadata, so a clean rebuild may have a different
 SHA-256 while retaining the same source, layout, size and validation gates.
@@ -12,33 +12,36 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 ## App image
 
 - File: `build/mcl02m_custom.bin`
-- Size: `910688` bytes (`0xDE560`)
-- SHA-256: `bd4f2308ee84f41aa31d780b05981f8dee61250d24d2a3432843cd951b2f5b31`
-- ESP image validation hash: `315c3313ef73c4e2f72d64ec39361a9d1dd5b3ca2476c09a1d571ef835b29f65`
-- Stock OTA slot: `0x160000` bytes; image fits with `531104` bytes free.
+- Size: `912176` bytes (`0xDEB30`)
+- SHA-256: `8db484a07c512d96c8f84711bd5cbf3adbcc18ca228375f4fd7e1a530794d65e`
+- ESP image validation hash: `f3235dcfd14400e91e6547006021f5f9c63facf54b802bb2af8bbbd5f96284e7`
+- Stock OTA slot: `0x160000` bytes; image fits with `529616` bytes free.
 
 ## Private sound flavor
 
 - File: ignored `build_private/mcl02m_custom_private.bin`
-- Size: `910912` bytes (`0xDE640`)
-- SHA-256: `efd77c5a9f591a276d8791b6d9647b6b41414e1405d57e97121dcf5e2c04006c`
-- ESP image validation hash: `3c9eb33366a343ea5aa7840e1b9e478e821c57480a1ddfaaf67935a9da408322`
-- Stock OTA slot: `0x160000` bytes; image fits with `530880` bytes free.
-- Project/app metadata: `mcl02m_custom_private`, `0.2.35-dev-private`.
+- Size: `912416` bytes (`0xDEC20`)
+- SHA-256: `ecd65a0cf3f9640019ff9c5067ad3fb85e595ee707f78adcc8d756119f4dc32e`
+- ESP image validation hash: `4599ed3fae4abf3ea4aa6e75ad1a1b8c078e717949a5219897e4748461f3ca6c`
+- Stock OTA slot: `0x160000` bytes; image fits with `529376` bytes free.
+- Project/app metadata: `mcl02m_custom_private`, `0.2.38-dev-private`.
 
 ## Linked memory
 
-- Flash code: 649170 bytes
-- Flash data: 156844 bytes
+- Flash code: 650014 bytes
+- Flash data: 157484 bytes
 - IRAM: 89047 / 131072 bytes (67.94%)
-- DRAM static: 37404 / 180736 bytes (20.70%)
+- DRAM static: 37420 / 180736 bytes (20.70%)
 - RTC slow: 64 / 8192 bytes
 
 ## Offline gates
 
 - `idf.py build`: PASS.
 - `tests/policy_tests.py`: PASS.
-- `tests/host_scenarios.py`: PASS, 25 scenarios executing the actual engine,
+- `tests/host_scenarios.py`: the existing 25 scenarios last passed before this
+  display-only change; a native host compiler was unavailable in the 2026-09-09
+  shell. Both complete ESP-IDF public/private builds compile the changed engine,
+  settings, display, UI and web sources. The scenarios execute the actual engine,
   driver and temperature-controller C with mock RTOS/time/hardware. Covers
   zero Start/Pause/Resume, first heating ramp/deadline, pan-return overlaps,
   delayed retries, stale confirmations, timer completion and real fault paths.
@@ -119,14 +122,22 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
   exactly three 4 kHz tones of 300 ms with two 100 ms gaps at the normal 50% duty.
   The trilingual manual gate requires the same timing plus the cross-mode
   small-cookware cap and the distinct bottom-NTC/IGBT threshold table.
+  The `0.2.37-dev` policy/static gates additionally prove the 5 s context / 2 s
+  IGBT / 2 s R21 corner rotation, timer/Pause suppression, raw decimal `Rxxx`
+  rendering, schema-7 migration with a default-off flag, and the identical
+  English-only `DEBUG SHOW R21` label in all physical UI languages.
+  The `0.2.38-dev` gates additionally prove the independent English-only
+  `SHOW DEBUG BAD I2C CNT` setting, 2 s `Bxxx` corner phase, pre-Start session
+  baseline, inclusion of isolated critical bad cycles, 999 saturation, terminal
+  reset, exclusion of service-only failures, and schema-8 migration.
 - `tests/safety_check.py`: PASS.
 - The public ELF contains no private LCE/SNM table or adapter symbols. The private
   flavor was built separately from the ignored local source and exposes the distinct
-  `mcl02m_custom_private` project name and `0.2.35-dev-private` app version.
+  `mcl02m_custom_private` project name and `0.2.38-dev-private` app version.
 - Production ELF check: temporary `I2C ERRORS` menu/overlay code is absent while
   its guarded source remains available.
-- `tests/localization_check.py`: PASS; 112 used CJK glyphs, 76 Chinese strings,
-  81 Russian strings, complete glyph coverage, trilingual manual coverage, no
+- `tests/localization_check.py`: PASS; 112 used CJK glyphs, 78 Chinese strings,
+  83 Russian strings, complete glyph coverage, trilingual manual coverage, no
   moving text and no string wider than the applicable 64-pixel rendering path.
 - `tools/generate_oled_assets.py --check`: PASS, 19 exact 384-byte frames.
 - `esptool image-info`: valid checksum and validation hash, ESP32/DIO/40 MHz/16 MiB.
@@ -138,10 +149,15 @@ Set `MCL02M_VERIFY_MANIFEST=1` only when verifying this exact reference artifact
 
 ## Development-unit deployment
 
-Neither current `0.2.35-dev` artifact has been flashed. The immediately preceding
-hot-start fix (`0.2.34-dev-private`, 910288 bytes) was written only to `ota_1`
-at `0x170000` on 2026-09-07 and esptool verified the written data. Its full-file
-SHA-256 was not recorded before this audit rebuild replaced the local artifact.
+The current `0.2.38-dev` artifacts have not been flashed. The
+immediately preceding private `0.2.36-dev-private` artifact (911312 bytes; SHA-256
+`fdee4fc27105f6b2ff2e2eca2e29a57ae81194f3841c74b4504a672c7a19e411`) was
+written only to `ota_1` at `0x170000` on 2026-09-08. Esptool's write-time hash
+verification passed and hard-reset the ESP32; the operation did not write the
+bootloader, partition table, `otadata`, NVS, PHY, `ota_0` or eFuse. Its control
+and safety behavior remains identical to the current artifact; 0.2.38 adds only
+persisted display-only raw-R21 and per-session critical-I²C diagnostics plus their
+status/UI plumbing.
 
 Earlier deployment record:
 

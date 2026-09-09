@@ -1,6 +1,7 @@
 # Follow-up audit: false faults around zero-output waits
 
-Source: `0.2.35-dev`, 2026-09-07. Both production flavors share these fixes.
+Source: `0.2.38-dev`, 2026-09-09. Both production flavors share these fixes plus the
+less aggressive E09 communication-loss thresholds.
 Status: offline C scenarios and builds; this audit build has not been flashed.
 
 ## Field evidence and scope

@@ -155,7 +155,7 @@ int main(int argc, char **argv) {
         start_zero(); feedback(0x17, 0); assert(cook().fault == FAULT_NONE);
         feedback(0x17, 0); assert(cook().fault == FAULT_E07_IGBT_OVERHEAT);
     } else if (!strcmp(scenario, "i2c_loss_still_stops")) {
-        start_zero(); test_pb_bus_failure(5000); test_engine_tick();
+        start_zero(); test_pb_bus_failure(15000); test_engine_tick();
         assert(cook().fault == FAULT_E09_COMMUNICATION);
         assert(!strcmp(pb().i2c_incident.reason, "CRITICAL LOSS"));
     } else if (!strcmp(scenario, "lease_loss_still_stops")) {

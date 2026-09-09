@@ -34,6 +34,8 @@ keeping all heating commands behind the physical controls on the cooker.
   conservative approach, and a hold stage capped at gear 35;
 - live NTC temperature, IGBT temperature, mains voltage, selected/applied power,
   countdown, and state information on the 64×48 OLED;
+- configurable OLED behavior: the normal active-screen timeout, a persistent timer
+  screen, or an optional screen that remains on only throughout active cooking;
 - cooking timer with seconds, manual 24-hour clock, SNTP time synchronization,
   **START IN** and **START AT** delayed start;
 - five persistent presets, each containing up to five timed POWER or TEMPERATURE
@@ -175,9 +177,10 @@ modified. See [Flashing and recovery](docs/FLASHING.md) before writing anything.
 
 ## Development status
 
-The current source version is `0.2.34-dev`; the hash-verified
-`0.2.34-dev-private` app image was written only to stock `ota_1` at `0x170000`
-on the development unit on 2026-09-01.
+The current source version is `0.2.38-dev`; its public and private reference
+artifacts are built and hash-recorded. The preceding private 2.36 image was written
+only to stock `ota_1` at `0x170000` on 2026-09-08. The 2.38 artifacts have not been
+flashed.
 Supervised testing of the preceding `0.2.24-dev` image confirmed retained-session active zero without
 unexpected relay switching, Sleep/Wake, the temporary I2C debug display, and
 temperature operation with water. A 125 °C empty-pan test then showed about 5 °C of first-heat
@@ -268,7 +271,7 @@ critical-bad cycles enter a 320-ms critical-only poll; two good critical cycles 
 recovery; continuous critical loss faults after five seconds and continuous command
 write loss after three seconds. The first-cause masks, timers, state and command
 snapshot remain in RAM and authenticated diagnostics.
-Current `0.2.34-dev` keeps native E07 debounced at two matching `R20=17` samples.
+Current `0.2.38-dev` keeps native E07 debounced at two matching `R20=17` samples.
 During an active session, two valid readings above 92 °C start a persistent
 `IGBT / >92°C` warning with three 4 kHz, 300 ms beeps separated by 100 ms every
 three seconds; physical input hides
@@ -283,6 +286,15 @@ Cold Start now selects the target's final relay topology immediately and ramps o
 inside it: `1…10` direct, `11…35` from 10, `36` direct, `37…55` from 36, `56`
 direct, and `57…99` from 56. This preserves a gentle ramp without artificial
 intermediate relay/IGBT transitions.
+It also increases E09's continuous-loss limits to 15 seconds for critical reads
+and 10 seconds for command writes, and adds the persisted `SCREEN ON → COOK MODE`
+setting so an owner may keep OLED lit during active cooking only. It also adds the
+English-only `DEBUG SHOW → R21` setting. Raw decimal `R21` load feedback can rotate
+in the normal corner with live context and IGBT temperature; it remains display-only
+and has no proven physical units or control authority. The independent English-only
+`SHOW DEBUG → BAD I2C CNT` setting adds `B000…B999` to the same rotation. It counts
+every critical bad I²C cycle in the current cooking session, including isolated
+failures, and resets only when that session ends or a new one begins.
 The supervised
 operator/monitor sequence is documented in the
 [hardware validation plan](docs/HARDWARE_VALIDATION_PLAN.md). The

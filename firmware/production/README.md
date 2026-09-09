@@ -13,8 +13,13 @@
 - `R26=01` restricted-cookware feedback is accepted as normal heating and caps every
   control path at real gear `35`/`A1`; POWER reports the permitted value, blocks only
   upward edits above 35, and displays a temporary explanatory message;
-- physical Settings shows both `0.2.35-dev` firmware and live raw `R28` power-board
+- physical Settings shows both `0.2.38-dev` firmware and live raw `R28` power-board
   revision/type with four left-aligned rows;
+- English-only `DEBUG SHOW R21` can add the raw decimal load-feedback byte to the
+  no-timer corner rotation without using it for control or protection;
+- English-only `SHOW DEBUG BAD I2C CNT` can add a session-total `B000…B999` to that
+  rotation. It counts every critical bad I²C cycle, including isolated failures,
+  without resetting on recovery; it resets at the session boundary;
 - `R20=2B/29/2A` are silent nonfaults; another unknown nonzero `R20` shows its exact
   hex value as a persistent warning, and the first physical input dismisses only the
   warning without changing the cooking state;
@@ -128,7 +133,7 @@
   critical, while `R21/R25/R27` are service-only and cannot cause E09 alone. Three
   critical-bad cycles enter a 320-ms critical-only recovery poll; two good critical
   cycles return to the normal 500-ms schedule. Continuous critical loss faults after
-  5 s, or failed control writes after 3 s. A latched fault keeps retransmitting Stop.
+  15 s, or failed control writes after 10 s. A latched fault keeps retransmitting Stop.
 - The production build omits the temporary `Settings → Show → I2C Errors` item and
   OLED overlay. Their implementation, stored field, and two-second displayed-peak
   hold remain in the source behind `COOKER_I2C_DEBUG_DISPLAY_ENABLED=0`; changing the
@@ -198,12 +203,12 @@ Its input is
 local generator workspace, `build_private/`, and all firmware binaries are ignored
 by Git. The artifacts have distinct project names:
 
-- public: `build/mcl02m_custom.bin`, app version `0.2.35-dev`;
+- public: `build/mcl02m_custom.bin`, app version `0.2.38-dev`;
 - private: `build_private/mcl02m_custom_private.bin`, app version
-  `0.2.35-dev-private`.
+  `0.2.38-dev-private`.
 
 The physical version screen intentionally shows the shared source version
-`0.2.35-dev`; `esptool image-info` exposes the private suffix. Never reuse one build
+`0.2.38-dev`; `esptool image-info` exposes the private suffix. Never reuse one build
 directory for both flavors.
 
 An experiment-only `MCL02M_POWER_SWEEP_BUILD` flavor automates the supervised

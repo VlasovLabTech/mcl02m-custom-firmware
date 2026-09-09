@@ -4,7 +4,7 @@ Status: **in progress; the first bounded fix batch is implemented, while the rem
 
 Audit baseline: `0.2.10-dev`, commit `2b5784e` (`2026-08-28`)
 
-Current source: `0.2.35-dev` (offline). The follow-up audit and reproducible C scenarios
+Current source: `0.2.38-dev` (offline). The follow-up audit and reproducible C scenarios
 are in [STATE_MACHINE_FOLLOWUP_2026-09-07.md](STATE_MACHINE_FOLLOWUP_2026-09-07.md).
 The `0.2.34-dev-private` app image was flashed to the
 development cooker on 2026-09-01 after explicit authorization and hash verification.
@@ -397,7 +397,7 @@ Implementation status: **partially closed in `0.2.30-dev`**. E09 still does not 
 while the lower state is `STOPPED` or already `FAULT`, avoiding an idle nuisance
 fault. Runtime failures are now classified: service-only `R21/R25/R27` loss cannot
 cause E09; three critical-bad cycles enter a 320-ms critical-only recovery poll; two
-complete good cycles return to normal; 5 s continuous critical loss or 3 s continuous
+complete good cycles return to normal; 15 s continuous critical loss or 10 s continuous
 control-write loss latches E09 with immutable RAM evidence. A persistent idle outage
 can still remain a readiness/preflight issue rather than a displayed E09.
 

@@ -2,12 +2,11 @@
 
 Этот документ описывает будущую процедуру, но **не разрешает запись сейчас**.
 
-Current source version: `0.2.34-dev`; its reference public app artifact has not been
-flashed. The exact size and SHA-256 are recorded in `BUILD_MANIFEST.md`. The matching
-`0.2.34-dev-private` artifact (SHA-256
-`f874c5e02e8dc12c36df6b6585ce1d7a99ca4ba9854a4bd9412fa6acd8ed5107`) was
-flashed to stock `ota_1` at `0x170000` on 2026-09-01 after explicit authorization,
-and esptool verified the written data. No other partition was written.
+Current source version: `0.2.38-dev`; its exact artifact sizes and SHA-256 values
+are recorded in `BUILD_MANIFEST.md`. The immediately preceding private 2.36 image
+was written only to stock `ota_1` at `0x170000` on 2026-09-08 after explicit
+authorization; esptool verified the written data. No other partition was written.
+The current label-only rebuild and the public artifact have not been flashed.
 Чистая пересборка может иметь другой hash из-за compile metadata; для release
 нужно сохранить новый manifest и заново пройти все gates.
 

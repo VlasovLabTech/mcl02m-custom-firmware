@@ -382,6 +382,10 @@ static void display_task(void *arg)
         } else if (sleep_warning) {
             picture = oled_image_sleep_warning;
         }
+        const bool cooking_screen_always = settings.keep_oled_on_while_cooking &&
+            (cooker.state == COOK_STATE_STARTING || cooker.state == COOK_STATE_COOKING ||
+             cooker.state == COOK_STATE_PAUSED || cooker.state == COOK_STATE_NO_PAN ||
+             cooker.state == COOK_STATE_STOPPING);
         show = picture != NULL || hot_due || igbt_warning || r20_warning || cookware_notice || sleep_clock ||
                cooker.state == COOK_STATE_FAULT ||
                cooker.state == COOK_STATE_COMPLETE ||
@@ -389,6 +393,7 @@ static void display_task(void *arg)
                (settings.timer_screen_mode == TIMER_SCREEN_ALWAYS && cooker.timer_enabled &&
                 !cooker.hold_saturated &&
                 cooker.state == COOK_STATE_COOKING) ||
+               cooking_screen_always ||
                (cooker.state != COOK_STATE_SLEEP && now - s_last_activity_us < timeout_us);
         if (show != s_awake) {
             ui_oled_power(show);
@@ -501,8 +506,33 @@ static void display_task(void *arg)
                                                 (cook_mode_t)cooker.profile_stage_mode :
                                                 cooker.mode;
                 const bool profile = cooker.mode == COOK_MODE_PROFILE;
-                const bool show_igbt_phase = settings.show_igbt && !timer_active && !paused &&
-                                             ((now / 1000000LL) % 7LL) >= 5LL;
+                const uint32_t corner_cycle_ms = COOKER_CORNER_CONTEXT_MS +
+                    (settings.show_igbt ? COOKER_CORNER_DEBUG_MS : 0U) +
+                    (settings.show_r21 ? COOKER_CORNER_DEBUG_MS : 0U) +
+                    (settings.show_bad_i2c_count ? COOKER_CORNER_DEBUG_MS : 0U);
+                uint32_t corner_phase_ms = (uint32_t)((now / 1000LL) % corner_cycle_ms);
+                bool show_igbt_phase = false;
+                bool show_r21_phase = false;
+                bool show_bad_i2c_phase = false;
+                if (!timer_active && !paused &&
+                    corner_phase_ms >= COOKER_CORNER_CONTEXT_MS) {
+                    corner_phase_ms -= COOKER_CORNER_CONTEXT_MS;
+                    if (settings.show_igbt) {
+                        if (corner_phase_ms < COOKER_CORNER_DEBUG_MS)
+                            show_igbt_phase = true;
+                        else
+                            corner_phase_ms -= COOKER_CORNER_DEBUG_MS;
+                    }
+                    if (!show_igbt_phase && settings.show_r21) {
+                        if (corner_phase_ms < COOKER_CORNER_DEBUG_MS)
+                            show_r21_phase = true;
+                        else
+                            corner_phase_ms -= COOKER_CORNER_DEBUG_MS;
+                    }
+                    if (!show_igbt_phase && !show_r21_phase &&
+                        settings.show_bad_i2c_count)
+                        show_bad_i2c_phase = true;
+                }
                 if (active_mode == COOK_MODE_TEMPERATURE) {
                     snprintf(top_left, sizeof(top_left), "S%u°", cooker.target_temperature_c);
                     if (cooker.readings_valid) snprintf(value, sizeof(value), "%u", cooker.bottom_c);
@@ -514,6 +544,12 @@ static void display_task(void *arg)
                     } else if (show_igbt_phase) {
                         if (cooker.readings_valid) snprintf(top_right, sizeof(top_right), "I%u°", cooker.igbt_c);
                         else strlcpy(top_right, "I--", sizeof(top_right));
+                    } else if (show_r21_phase) {
+                        if (cooker.r21_valid) snprintf(top_right, sizeof(top_right), "R%u", cooker.r21_value);
+                        else strlcpy(top_right, "R--", sizeof(top_right));
+                    } else if (show_bad_i2c_phase) {
+                        snprintf(top_right, sizeof(top_right), "B%03u",
+                                 cooker.i2c_bad_session_count);
                     } else if (!paused && settings.show_context_value) {
                         snprintf(top_right, sizeof(top_right), "P%u", cooker.applied_gear);
                     }
@@ -525,6 +561,12 @@ static void display_task(void *arg)
                     if (show_igbt_phase) {
                         if (cooker.readings_valid) snprintf(top_right, sizeof(top_right), "I%u°", cooker.igbt_c);
                         else strlcpy(top_right, "I--", sizeof(top_right));
+                    } else if (show_r21_phase) {
+                        if (cooker.r21_valid) snprintf(top_right, sizeof(top_right), "R%u", cooker.r21_value);
+                        else strlcpy(top_right, "R--", sizeof(top_right));
+                    } else if (show_bad_i2c_phase) {
+                        snprintf(top_right, sizeof(top_right), "B%03u",
+                                 cooker.i2c_bad_session_count);
                     } else if (!paused && settings.show_context_value) {
                         if (cooker.readings_valid) snprintf(top_right, sizeof(top_right), "T%u°", cooker.bottom_c);
                         else strlcpy(top_right, "T--", sizeof(top_right));
